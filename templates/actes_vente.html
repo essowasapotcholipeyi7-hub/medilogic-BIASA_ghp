@@ -769,6 +769,19 @@ function resetListeTarif() {
     const info = document.getElementById('infoListeTarif');
     if (info) info.innerHTML = '';
 }
+// ⭐ 2026-10-19 : liste de prix de la fiche patient (Valeo : SMA, Expatriés) appliquée seule à l'ouverture
+async function appliquerListePatientActes() {
+    const id = sessionStorage.getItem('selectedPatientId');
+    if (!LISTES_TARIFS.length || !id || id === 'null' || listeTarifActive) return;
+    const fiche = await fetch('/api/patients/' + encodeURIComponent(id)).then(r => r.json()).catch(() => null);
+    if (!fiche || !fiche.liste_tarif || !LISTES_TARIFS.some(g => g.groupe === fiche.liste_tarif)) return;
+    const sel = document.getElementById('listeTarifVente');
+    if (sel) sel.value = fiche.liste_tarif;
+    await changerListeTarif(fiche.liste_tarif);
+    const info = document.getElementById('infoListeTarif');
+    if (info) info.innerHTML += ' <span class="badge bg-warning text-dark">liste du patient</span>';
+}
+document.addEventListener('DOMContentLoaded', () => setTimeout(appliquerListePatientActes, 300));
 function changerVarianteListeLigne(index, cle) { panier[index].liste_tarif = cle || null; afficherPanier(); }
 function arrondirPartPatientActes(montant, pas) { return arrondirPartPatient(montant, pas); }
 // ⭐ prix clinique d'où part la réduction d'une liste « remise » (SMA = prix social, c.-à-d. prix non assuré)

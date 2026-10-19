@@ -225,6 +225,9 @@
                             {% if patient.type_assurance != 'non_assure' %}<span class="taux-assurance">{{ '%g'|format((patient.taux_prise_charge or 0)|float) }}%</span>{% endif %}
                         </td>
                         <td style="vertical-align: middle; white-space: nowrap;">
+                            {% if listes_patients and listes_patients.get(patient.ID|string) %}
+                                <span class="badge bg-warning text-dark" title="Liste de prix appliquée à la vente">{{ listes_patients.get(patient.ID|string)|replace('Liste ', '') }}</span>
+                            {% endif %}
                             {% if patient.assurance2_nom %}
                                 <span class="badge bg-success">{{ patient.assurance2_nom }}</span>
                                 <span class="taux-assurance">{{ '%g'|format((patient.taux_assurance2 or 0)|float) }}%</span>
@@ -557,6 +560,21 @@
                                     <small class="text-muted">Société ayant souscrit cette assurance complémentaire pour le patient. Tapez le nom une première fois : il sera ensuite proposé au choix.</small>
                                 </div>
                             </div>
+                            {% if listes_tarifs %}
+                            <!-- ⭐ 2026-10-19 (Clinique Valeo) : liste de prix du patient, appliquée seule à la vente -->
+                            <div class="row">
+                                <div class="col-md-12 mb-2">
+                                    <label class="form-label" for="liste_tarif_patient"><i class="fas fa-tags"></i> Liste de prix</label>
+                                    <select class="form-select" id="liste_tarif_patient">
+                                        <option value="">Grande liste (selon l'assurance du patient)</option>
+                                        {% for g in listes_tarifs %}
+                                        <option value="{{ g.groupe }}">{{ g.libelle }}{% if g.remise %} (réduction {% for v in g.variantes %}{{ v.pct|int }} %{% if not loop.last %} ou {% endif %}{% endfor %}){% endif %}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="text-muted">Appliquée automatiquement à la vente, en proforma et à l'hospitalisation. Expatrié assuré : renseignez son assurance étrangère et son taux dans « Assurance complémentaire ».</small>
+                                </div>
+                            </div>
+                            {% endif %}
                             <div class="row">
                                 <div class="col-md-12">
                                     <small class="text-muted">
@@ -742,6 +760,21 @@
                                     <small class="text-muted">Société ayant souscrit cette assurance complémentaire pour le patient. Tapez le nom une première fois : il sera ensuite proposé au choix.</small>
                                 </div>
                             </div>
+                            {% if listes_tarifs %}
+                            <!-- ⭐ 2026-10-19 (Clinique Valeo) : liste de prix du patient, appliquée seule à la vente -->
+                            <div class="row">
+                                <div class="col-md-12 mb-2">
+                                    <label class="form-label" for="editListeTarifPatient"><i class="fas fa-tags"></i> Liste de prix</label>
+                                    <select class="form-select" id="editListeTarifPatient">
+                                        <option value="">Grande liste (selon l'assurance du patient)</option>
+                                        {% for g in listes_tarifs %}
+                                        <option value="{{ g.groupe }}">{{ g.libelle }}{% if g.remise %} (réduction {% for v in g.variantes %}{{ v.pct|int }} %{% if not loop.last %} ou {% endif %}{% endfor %}){% endif %}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="text-muted">Appliquée automatiquement à la vente, en proforma et à l'hospitalisation. Expatrié assuré : renseignez son assurance étrangère et son taux dans « Assurance complémentaire ».</small>
+                                </div>
+                            </div>
+                            {% endif %}
                             <div class="row">
                                 <div class="col-md-12">
                                     <small class="text-muted">
@@ -1994,7 +2027,9 @@ async function savePatient() {
         personne_a_prevenir_telephone: personnePrevenirTelephone || null,
         personne_a_prevenir_relation: personnePrevenirRelation || null,
         preinscription_id: preinscriptionIdCourante,
-        email: preinscriptionEmailCourante
+        email: preinscriptionEmailCourante,
+        // ⭐ 2026-10-19 : liste de prix (Valeo) — absente ailleurs
+        liste_tarif: document.getElementById('liste_tarif_patient') ? document.getElementById('liste_tarif_patient').value : undefined
     };
 
     if (!patient.nom || !patient.telephone) {
@@ -2145,6 +2180,7 @@ async function editPatient(id) {
             document.getElementById('editTauxAssurance2').value = patient.taux_assurance2 || 0;
             document.getElementById('editNumeroAssure2').value = patient.numero_assure2 || '';
             document.getElementById('editSocieteAssurance2').value = patient.societe_assurance2 || '';
+            if (document.getElementById('editListeTarifPatient')) document.getElementById('editListeTarifPatient').value = patient.liste_tarif || '';
 
             document.getElementById('editPersonnePrevenirNom').value = patient.personne_a_prevenir_nom || '';
             document.getElementById('editPersonnePrevenirTelephone').value = patient.personne_a_prevenir_telephone || '';
@@ -2231,9 +2267,11 @@ async function saveEditPatient() {
         societe_assurance2: societeAssurance2 || null,
         personne_a_prevenir_nom: personnePrevenirNom || null,
         personne_a_prevenir_telephone: personnePrevenirTelephone || null,
-        personne_a_prevenir_relation: personnePrevenirRelation || null
+        personne_a_prevenir_relation: personnePrevenirRelation || null,
+        // ⭐ 2026-10-19 : liste de prix (Valeo) — absente ailleurs
+        liste_tarif: document.getElementById('editListeTarifPatient') ? document.getElementById('editListeTarifPatient').value : undefined
     };
-    
+
     if (!patient.nom || !patient.telephone) {
         await afficherMessage('Veuillez remplir les champs obligatoires');
         return;

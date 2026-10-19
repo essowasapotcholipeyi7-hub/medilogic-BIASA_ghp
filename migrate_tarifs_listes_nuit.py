@@ -4,7 +4,8 @@
     compagnie ou d'une liste (« Liste Expatriés », « Liste SMA 25 % »…) ;
   - prix_non_assure_actes.prix_nuit : prix non assuré de nuit ;
   - parametrage_tarification : pas d'arrondi de la part patient par structure (0 = pas d'arrondi) ;
-  - listes_tarif_sejour : liste de prix choisie pour un séjour (hospitalisation / soins ambulatoires).
+  - listes_tarif_sejour : liste de prix choisie pour un séjour (hospitalisation / soins ambulatoires) ;
+  - patients_liste_tarif : liste de prix enregistrée sur la fiche du patient.
 Le code lit ces colonnes avec to_jsonb (services/hospitalisation_service.py) : il marche avant comme
 après cette migration. Idempotente.
 
@@ -36,6 +37,14 @@ def migrer(structure_id=None, pas=None):
                            variantes JSONB NOT NULL DEFAULT '{}'::jsonb,
                            updated_at TIMESTAMP DEFAULT NOW(),
                            UNIQUE (type_sejour, sejour_id)
+                       )""",
+                    # liste de prix enregistrée sur la fiche du patient (SMA, Expatriés...)
+                    """CREATE TABLE IF NOT EXISTS patients_liste_tarif (
+                           id SERIAL PRIMARY KEY,
+                           structure_id INTEGER NOT NULL,
+                           patient_id INTEGER NOT NULL UNIQUE,
+                           liste_tarif VARCHAR(150),
+                           updated_at TIMESTAMP DEFAULT NOW()
                        )"""):
             db.session.execute(db.text(sql))
         if structure_id is not None:
@@ -44,7 +53,7 @@ def migrer(structure_id=None, pas=None):
                    ON CONFLICT (structure_id) DO UPDATE SET arrondi_pas = EXCLUDED.arrondi_pas, updated_at = NOW()"""),
                 {'s': int(structure_id), 'p': float(pas or 0)})
         db.session.commit()
-        print("OK : tarif_nuit / pbr_nuit, prix_nuit, parametrage_tarification, listes_tarif_sejour"
+        print("OK : tarif_nuit / pbr_nuit, prix_nuit, parametrage_tarification, listes_tarif_sejour, patients_liste_tarif"
               + (f" ; structure {structure_id} : arrondi {pas} F" if structure_id is not None else ""))
 
 

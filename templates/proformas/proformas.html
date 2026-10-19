@@ -684,6 +684,18 @@ function prixReferenceProforma(item, ctx, l) {
     const ref = parseFloat((PRIX_NA_PROFORMA[item.type === 'produit' ? 'produit' : 'acte'] || {})[item.nom]) || parseFloat(item.prix) || 0;
     return ref > l.tarif ? ref : 0;
 }
+// ⭐ 2026-10-19 : liste de prix de la fiche patient (Valeo : SMA, Expatriés) appliquée seule
+async function appliquerListePatientProforma(id) {
+    if (!LISTES_TARIFS.length || !id) return;
+    const fiche = await fetch('/api/patients/' + encodeURIComponent(id)).then(r => r.json()).catch(() => null);
+    const liste = (fiche && fiche.liste_tarif && LISTES_TARIFS.some(g => g.groupe === fiche.liste_tarif)) ? fiche.liste_tarif : '';
+    if ((listeTarifActive || '') === liste) return;
+    const sel = document.getElementById('listeTarifProforma');
+    if (sel) sel.value = liste;
+    await changerListeTarifProforma(liste);
+    const info = document.getElementById('infoListeTarifProforma');
+    if (info && liste) info.innerHTML += ' <span class="badge bg-warning text-dark">liste du patient</span>';
+}
 function changerVarianteListeProforma(index, cle) { panierArticles[index].liste_tarif = cle || null; afficherPanier(); }
 function resetListeTarifProforma() {
     listeTarifActive = null;
@@ -1184,6 +1196,7 @@ function chargerInfosPatient() {
     }
     
     patientId = option.value;
+    appliquerListePatientProforma(patientId);   // ⭐ 2026-10-19 : liste de prix de la fiche (Valeo)
     document.getElementById('patientNom').value = option.dataset.nom || '';
     document.getElementById('patientTelephone').value = option.dataset.telephone || '';
     

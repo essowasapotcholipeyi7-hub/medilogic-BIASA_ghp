@@ -25,7 +25,7 @@ from services import theme_service
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, remise_pct_listes, pas_arrondi_structure, appliquer_liste_tarif, lignes_sans_taux_liste, contexte_tarif_sejour, article_tarif_soin, soins_a_taux_liste, type_sejour
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, remise_pct_listes, pas_arrondi_structure, appliquer_liste_tarif, lignes_sans_taux_liste, contexte_tarif_sejour, liste_tarif_patient, listes_tarif_patients, enregistrer_liste_tarif_patient, article_tarif_soin, soins_a_taux_liste, type_sejour
 from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu, arrondir_part_patient, ligne_remise
 from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
@@ -3634,7 +3634,9 @@ def patients():
             structure_id=structure_id, statut='en_attente'
         ).order_by(PreinscriptionPatient.created_at.asc()).all()
 
-        return render_template('patients.html', patients=patients_list, preinscriptions=preinscriptions)
+        return render_template('patients.html', patients=patients_list, preinscriptions=preinscriptions,
+                               listes_tarifs=listes_tarifs(structure_id),
+                               listes_patients={str(k): v for k, v in listes_tarif_patients(structure_id).items()})
 
     except Exception as e:
         print(f"❌ Erreur: {e}")
@@ -3989,6 +3991,9 @@ def api_add_patient():
             pousser_patients_gp(structure_id, [result[0]['id']])
             upsert_societe_assurance(structure_id, data.get('assurance2_nom'), data.get('societe_assurance2'))
             upsert_compagnie_complementaire(structure_id, data.get('assurance2_nom'))
+            # ⭐ 2026-10-19 : liste de prix de la fiche (Valeo : SMA, Expatriés), appliquée seule à la vente
+            if data.get('liste_tarif'):
+                enregistrer_liste_tarif_patient(structure_id, result[0]['id'], data.get('liste_tarif'))
 
             # ⭐ Patient créé à partir d'une préinscription (tablette d'accueil
             # ou QR code) : on marque la préinscription validée plutôt que de
@@ -4107,7 +4112,9 @@ def api_get_patient(id):
                 'personne_a_prevenir_nom': row.get('personne_a_prevenir_nom', ''),
                 'personne_a_prevenir_telephone': row.get('personne_a_prevenir_telephone', ''),
                 'personne_a_prevenir_relation': row.get('personne_a_prevenir_relation', ''),
-                'created_at': created_at_formatted
+                'created_at': created_at_formatted,
+                # ⭐ 2026-10-19 : liste de prix de la fiche (Valeo : SMA, Expatriés) ou null (grande liste)
+                'liste_tarif': liste_tarif_patient(session.get('structure_id'), row.get('id')),
             })
         
         # Si c'est un tuple
@@ -10034,6 +10041,10 @@ def api_update_patient(patient_id):
 
         upsert_societe_assurance(structure_id, data.get('assurance2_nom'), data.get('societe_assurance2'))
         upsert_compagnie_complementaire(structure_id, data.get('assurance2_nom'))
+        # ⭐ 2026-10-19 : liste de prix de la fiche (Valeo : SMA, Expatriés) — champ présent seulement là où
+        # la structure a des listes
+        if 'liste_tarif' in data:
+            enregistrer_liste_tarif_patient(structure_id, patient_id, data.get('liste_tarif'))
         # ⭐ envoi direct à gestion_patients (services/sync_patients_gp.py)
         from services.sync_patients_gp import pousser_patients_gp
         pousser_patients_gp(structure_id, [patient_id])

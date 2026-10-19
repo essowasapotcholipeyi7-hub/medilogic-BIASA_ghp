@@ -331,6 +331,51 @@ def appliquer_liste_tarif(structure_id, groupe_nom, articles, contexte, taux_com
     return groupe
 
 
+def liste_tarif_patient(structure_id, patient_id):
+    """⭐ 2026-10-19 (patron, Clinique Valeo) : liste de prix enregistrée sur la fiche du patient (« Liste SMA »,
+    « Liste Expatriés ») ou None (grande liste). Table patients_liste_tarif ; absente = None."""
+    from models import db
+    from sqlalchemy import text
+    if not patient_id:
+        return None
+    try:
+        with db.session.begin_nested():
+            r = db.session.execute(text(
+                "SELECT liste_tarif FROM patients_liste_tarif WHERE structure_id = :s AND patient_id = :p"),
+                {'s': structure_id, 'p': int(patient_id)}).fetchone()
+    except Exception:
+        return None
+    nom = r[0] if r else None
+    return nom if nom and any(g['groupe'] == nom for g in listes_tarifs(structure_id)) else None
+
+
+def listes_tarif_patients(structure_id):
+    """{patient_id: liste} pour la liste des patients (badge) ; table absente = {}."""
+    from models import db
+    from sqlalchemy import text
+    try:
+        with db.session.begin_nested():
+            return {r[0]: r[1] for r in db.session.execute(text(
+                "SELECT patient_id, liste_tarif FROM patients_liste_tarif WHERE structure_id = :s AND liste_tarif IS NOT NULL"),
+                {'s': structure_id}).fetchall()}
+    except Exception:
+        return {}
+
+
+def enregistrer_liste_tarif_patient(structure_id, patient_id, liste):
+    """Pose / retire (liste vide = grande liste) la liste de prix de la fiche patient. Liste inconnue -> refusée."""
+    from models import db
+    from sqlalchemy import text
+    liste = (liste or '').strip() or None
+    if liste and not any(g['groupe'] == liste for g in listes_tarifs(structure_id)):
+        raise ValueError('Liste de prix inconnue')
+    db.session.execute(text("""
+        INSERT INTO patients_liste_tarif (structure_id, patient_id, liste_tarif, updated_at) VALUES (:s, :p, :l, NOW())
+        ON CONFLICT (patient_id) DO UPDATE SET liste_tarif = EXCLUDED.liste_tarif, structure_id = EXCLUDED.structure_id,
+            updated_at = NOW()"""), {'s': structure_id, 'p': int(patient_id), 'l': liste})
+    db.session.commit()
+
+
 def type_sejour(sejour):
     """'hospitalisation' | 'ambulatoire' (épisode de soins ambulatoires)."""
     return 'hospitalisation' if sejour.__class__.__name__ == 'Hospitalisation' else 'ambulatoire'
@@ -346,8 +391,8 @@ def liste_choisie_sejour(structure_id, type_s, sejour_id):
             r = db.session.execute(text(
                 "SELECT liste_tarif, variantes FROM listes_tarif_sejour WHERE structure_id = :s AND type_sejour = :t AND sejour_id = :i"),
                 {'s': structure_id, 't': type_s, 'i': sejour_id}).fetchone()
-        if r and r[0]:
-            return r[0], dict(r[1] or {})
+        if r:   # choix fait pour ce séjour ('' = grande liste choisie explicitement)
+            return (r[0] or ''), dict(r[1] or {})
     except Exception:
         pass
     return None, {}
@@ -369,6 +414,8 @@ def contexte_tarif_sejour(sejour, pbr_cac_par_acte=None, variante='defaut'):
                 'privee': privee, 'taux_privee': taux2, 'pbr_prive_par_acte': pbr_cac_par_acte or {},
                 'variante': variante or 'defaut'}
     nom_liste, variantes = liste_choisie_sejour(sid, type_sejour(sejour), sejour.id)
+    if nom_liste is None:   # rien choisi pour ce séjour : liste de la fiche patient (Valeo : SMA, Expatriés)
+        nom_liste = liste_tarif_patient(sid, getattr(sejour, 'patient_id', None))
     groupe = appliquer_liste_tarif(sid, nom_liste, [], contexte, taux2, privee) if nom_liste else None
     info = {'contexte': contexte, 'groupe': groupe, 'variantes': variantes,
             'na': {'acte': charger_prix_non_assure(sid, 'acte'), 'produit': charger_prix_non_assure(sid, 'produit')}}
