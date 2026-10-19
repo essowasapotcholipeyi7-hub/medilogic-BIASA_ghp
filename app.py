@@ -15480,6 +15480,12 @@ def api_supprimer_signature_intervenant(signature_id):
 # ============================================================
 # LABORATOIRE / RADIOLOGIE — onglet Résultats d'analyses
 # ============================================================
+def _norm_prescripteur(nom):
+    import unicodedata
+    t = unicodedata.normalize('NFKD', nom or '')
+    return ' '.join(''.join(c for c in t if not unicodedata.combining(c)).lower().replace('.', ' ').split())
+
+
 @app.route('/resultats-analyses')
 @login_required
 def page_resultats_analyses():
@@ -15517,6 +15523,16 @@ def page_resultats_analyses():
         for p in PrescripteurExterne.query.filter_by(structure_id=session.get('structure_id')).order_by(PrescripteurExterne.nom).all():
             if p.actif is not False and p.nom and p.nom.strip() not in prescripteurs:
                 prescripteurs.append(p.nom.strip())
+        # ⭐ 2026-10-19 (patron) : prescripteurs déjà écrits dans des comptes rendus de la structure (« Autre »)
+        # — reproposés dans la liste, les plus récents d'abord
+        connus = {_norm_prescripteur(x) for x in prescripteurs}
+        for (nom,) in db.session.execute(db.text("""
+                SELECT prescripteur FROM resultats_examens
+                WHERE structure_id = :s AND prescripteur IS NOT NULL AND prescripteur <> ''
+                GROUP BY prescripteur ORDER BY MAX(id) DESC LIMIT 200"""), {'s': session.get('structure_id')}).fetchall():
+            if _norm_prescripteur(nom) not in connus:
+                connus.add(_norm_prescripteur(nom))
+                prescripteurs.append(nom.strip())
     except Exception as e:
         db.session.rollback()
         print(f"⚠️ Prescripteurs (résultats) : {e}")
@@ -15786,22 +15802,41 @@ def api_enregistrer_resultat(demande_id):
         titre_interprete = None
         signature_data = None
         signature_mime = None
-        if signature_id:
+        # ⭐ 2026-10-19 (patron) : une OU PLUSIEURS personnes signent (signature_ids « 3,7 ») ; un nom écrit
+        # à la main s'ajoute sans signature. Le premier signataire reste aussi dans les champs habituels.
+        import base64 as _b64
+        ids = []
+        for x in re.split(r'[,;\s]+', request.form.get('signature_ids') or (signature_id or '')):
+            if x.isdigit() and int(x) not in ids:
+                ids.append(int(x))
+        signataires = []
+        for sid in ids:
             signature = SignatureIntervenant.query.filter_by(
-                id=signature_id, structure_id=structure_id, filiere=demande.type_prestation, actif=True,
+                id=sid, structure_id=structure_id, filiere=demande.type_prestation, actif=True,
             ).first()
             if not signature:
                 return jsonify({'success': False, 'error': 'Signature introuvable'}), 404
-            nom_interprete = signature.nom
-            titre_interprete = signature.titre
-            signature_data = signature.signature_data
-            signature_mime = signature.signature_mime
+            signataires.append({'signature_id': signature.id, 'nom': signature.nom, 'titre': signature.titre or '',
+                                'mime': signature.signature_mime or 'image/png',
+                                'image': _b64.b64encode(signature.signature_data).decode() if signature.signature_data else ''})
+            if len(signataires) == 1:
+                titre_interprete = signature.titre
+                signature_data = signature.signature_data
+                signature_mime = signature.signature_mime
+        if nom_interprete:
+            signataires.append({'signature_id': None, 'nom': nom_interprete, 'titre': '', 'mime': '', 'image': ''})
+        if signataires:
+            nom_interprete = signataires[0]['nom']
+        signature_id = ids[0] if ids else None
 
         if not nom_interprete:
             return jsonify({'success': False, 'error': f"Nom du {'biologiste' if demande.type_prestation == 'analyse' else 'radiologue/interprète'} requis"}), 400
         if not fichier and not contenu_html:
             return jsonify({'success': False, 'error': 'Fichier ou contenu rédigé requis'}), 400
 
+        if contenu_html and signataires:
+            from services.modele_formulaire import apposer_signatures
+            contenu_html = apposer_signatures(contenu_html, signataires)
         resultat = ResultatExamen(
             structure_id=structure_id, demande_id=demande_id,
             fichier_nom=fichier.filename if fichier else None,
@@ -15810,6 +15845,8 @@ def api_enregistrer_resultat(demande_id):
             contenu_html=contenu_html or None,
             modele_utilise_id=int(modele_id) if modele_id else None,
             nom_interprete=nom_interprete, created_by=session.get('user_name', 'System'),
+            prescripteur=(request.form.get('prescripteur') or '').strip()[:150] or None,
+            signataires=json.dumps(signataires, ensure_ascii=False) if signataires else None,
             signature_intervenant_id=int(signature_id) if signature_id else None,
             titre_interprete=titre_interprete, signature_data=signature_data, signature_mime=signature_mime,
         )

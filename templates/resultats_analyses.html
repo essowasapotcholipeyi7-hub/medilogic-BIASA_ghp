@@ -73,12 +73,14 @@
                 <div class="row g-2 mb-2">
                 <div class="col-md-6">
                     <label class="form-label mb-1" id="labelInterprete">Biologiste <span class="text-danger">*</span></label>
-                    <select class="form-select" id="resultatSignatureSelect" onchange="changerSignatureSelectionnee()">
-                        <option value="">-- Sélectionner --</option>
-                    </select>
-                    <div class="text-center mt-2" id="apercuSignatureResultatZone" style="display:none;">
-                        <img id="apercuSignatureResultat" style="max-height:60px; border:1px solid #dee2e6; border-radius:6px; padding:4px; background:#fff;">
-                        <div class="text-muted small mt-1"><i class="fas fa-check-circle text-success me-1"></i>Signature électronique appliquée</div>
+                    <!-- ⭐ 2026-10-19 (patron) : une OU PLUSIEURS personnes responsables du résultat ; leurs
+                         signatures sont apposées sous « Le Radiologue » / « Le Laboratoire » du compte rendu -->
+                    <div id="resultatSignataires" class="border rounded px-2 py-1 bg-white small" style="max-height:150px; overflow:auto;">
+                        <span class="text-muted">Chargement...</span>
+                    </div>
+                    <div class="mt-2" id="apercuSignatureResultatZone" style="display:none;">
+                        <div class="d-flex flex-wrap gap-2" id="apercuSignaturesResultat"></div>
+                        <div class="text-muted small mt-1"><i class="fas fa-check-circle text-success me-1"></i>Signature(s) apposée(s) sous « <span id="apercuSignatureLibelle">Le Radiologue</span> » du compte rendu</div>
                     </div>
                     <input type="text" class="form-control mt-2" id="resultatNomInterprete" placeholder="Nom (saisie libre, aucune signature ne sera apposée)" style="display:none;">
                     <small class="text-muted d-block mt-1">
@@ -597,34 +599,42 @@ function ouvrirModalResultat(demandeId, patientNom, acteNom, typePrestation) {
         if (lignes.length) proposerModele(demandeId);
     });
 
-    const select = document.getElementById('resultatSignatureSelect');
-    select.innerHTML = '<option value="">Chargement...</option>';
+    const boite = document.getElementById('resultatSignataires');
+    boite.innerHTML = '<span class="text-muted">Chargement...</span>';
+    document.getElementById('apercuSignatureLibelle').textContent = typePrestation === 'analyse' ? 'Le Laboratoire' : 'Le Radiologue';
     fetch(`/api/signatures-intervenants?filiere=${typePrestation}&actif_seulement=1`)
         .then(r => r.json())
         .then(lignes => {
-            select.innerHTML = '<option value="">-- Sélectionner --</option>' +
-                lignes.map(s => `<option value="${s.id}">${typePrestation === 'analyse' ? (s.titre + ' — ' + s.nom) : s.nom}</option>`).join('') +
-                '<option value="__autre__">Autre (saisie libre, sans signature)</option>';
+            boite.innerHTML = lignes.map(s => `<div class="form-check my-1">
+                    <input class="form-check-input sig-choix" type="checkbox" value="${s.id}" id="sig${s.id}" data-nom="${_esc(typePrestation === 'analyse' ? (s.titre + ' — ' + s.nom) : s.nom)}" onchange="changerSignatureSelectionnee()">
+                    <label class="form-check-label" for="sig${s.id}">${_esc(typePrestation === 'analyse' ? (s.titre + ' — ' + s.nom) : s.nom)}</label>
+                </div>`).join('') +
+                `<div class="form-check my-1"><input class="form-check-input" type="checkbox" id="sigAutre" onchange="changerSignatureSelectionnee()">
+                    <label class="form-check-label text-muted" for="sigAutre">Autre (nom écrit à la main, sans signature)</label></div>`;
+            // une seule personne enregistrée : cochée d'office
+            const choix = boite.querySelectorAll('.sig-choix');
+            if (choix.length === 1) { choix[0].checked = true; changerSignatureSelectionnee(); }
         });
 
     new bootstrap.Modal(document.getElementById('modalResultat')).show();
 }
 
+function _esc(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+
+function signatairesCoches() {
+    return [...document.querySelectorAll('#resultatSignataires .sig-choix:checked')];
+}
+
 function changerSignatureSelectionnee() {
-    const val = document.getElementById('resultatSignatureSelect').value;
-    const apercuZone = document.getElementById('apercuSignatureResultatZone');
+    const coches = signatairesCoches();
+    const autre = document.getElementById('sigAutre');
     const texteLibre = document.getElementById('resultatNomInterprete');
-    if (val === '__autre__') {
-        apercuZone.style.display = 'none';
-        texteLibre.style.display = 'block';
-    } else if (val) {
-        texteLibre.style.display = 'none';
-        document.getElementById('apercuSignatureResultat').src = '/api/signatures-intervenants/' + val + '/image';
-        apercuZone.style.display = 'block';
-    } else {
-        apercuZone.style.display = 'none';
-        texteLibre.style.display = 'none';
-    }
+    texteLibre.style.display = autre && autre.checked ? 'block' : 'none';
+    if (autre && autre.checked && !texteLibre.value) texteLibre.focus();
+    document.getElementById('apercuSignaturesResultat').innerHTML = coches.map(c => `<div class="text-center">
+            <img src="/api/signatures-intervenants/${c.value}/image" style="max-height:55px; border:1px solid #dee2e6; border-radius:6px; padding:3px; background:#fff;" onerror="this.style.display='none'">
+            <div class="small">${c.dataset.nom}</div></div>`).join('');
+    document.getElementById('apercuSignatureResultatZone').style.display = coches.length ? 'block' : 'none';
 }
 
 // ⭐ N'envoie plus rien nous-mêmes (SMTP peu fiable selon la structure,
@@ -648,8 +658,9 @@ async function envoyerResultatEmail(resultatId, patientNom) {
 }
 
 async function enregistrerResultat() {
-    const val = document.getElementById('resultatSignatureSelect').value;
-    if (!val) { await afficherMessage('Choisissez qui signe.'); return; }
+    const idsSignataires = signatairesCoches().map(c => c.value);
+    const signataireLibre = !!(document.getElementById('sigAutre') || {}).checked;
+    if (!idsSignataires.length && !signataireLibre) { await afficherMessage('Choisissez qui signe (une ou plusieurs personnes).'); return; }
 
     const fd = new FormData();
     if (modeResultatActuel === 'fichier') {
@@ -669,14 +680,14 @@ async function enregistrerResultat() {
         if (modeleUtilise) fd.append('modele_utilise_id', modeleUtilise);
     }
 
-    if (val === '__autre__') {
+    if (signataireLibre) {
         const nom = document.getElementById('resultatNomInterprete').value.trim();
-        if (!nom) { await afficherMessage('Le nom est obligatoire.'); return; }
+        if (!nom) { await afficherMessage('Écrivez le nom de la personne (case « Autre »).'); return; }
         fd.append('nom_interprete', nom);
-    } else {
-        fd.append('signature_id', val);
     }
+    if (idsSignataires.length) fd.append('signature_ids', idsSignataires.join(','));
 
+    fd.append('prescripteur', prescripteurChoisi() || '');   // ⭐ 2026-10-19 : reproposé ensuite dans la liste
     fetch('/api/resultats-analyses/' + demandeChoisie, { method: 'POST', body: fd })
         .then(r => r.json())
         .then(async data => {

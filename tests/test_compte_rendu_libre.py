@@ -75,3 +75,17 @@ def test_proposition_radiologie():
     assert proposer_modele('Q201 Examen radiologique des poumons et du coeur sans opacification', modeles) == 3
     assert proposer_modele("Q212 Hystero-salpingograhie incluant l'abdomen sans preparation", modeles) == 4
     assert proposer_modele('Q100 Examen radiologique du doigt', modeles) is None
+
+
+def test_signatures_apposees_sous_le_radiologue():
+    from services.modele_formulaire import apposer_signatures
+    html = ('<div class="modele-formulaire"><p>Conclusion : normal.</p><p>Bien confraternellement,</p>'
+            '<p> &nbsp; &nbsp;Le Radiologue&emsp;</p><p>Merci</p></div>')
+    sg = [{'nom': 'Dr A', 'titre': 'Radiologue', 'mime': 'image/png', 'image': 'QUJD'},
+          {'nom': 'Dr B', 'titre': '', 'mime': '', 'image': ''}]
+    out = apposer_signatures(html, sg)
+    i_ligne, i_bloc, i_merci = out.index('Le Radiologue'), out.index('mf-signatures'), out.index('Merci')
+    assert i_ligne < i_bloc < i_merci
+    assert out.count('<img') == 1 and 'Radiologue — Dr A' in out and 'Dr B' in out
+    assert apposer_signatures(out, sg) == out                       # jamais deux fois
+    assert apposer_signatures('<p>Résultat sans mention</p>', sg) == '<p>Résultat sans mention</p>'

@@ -1,0 +1,26 @@
+{# ⭐ 2026-10-19 (patron) : bloc de signature d'un compte rendu — un ou plusieurs signataires. Rien ici si
+   les signatures sont déjà apposées dans le texte (sous « Le Radiologue » / « Le Laboratoire ») ni pour un
+   fichier importé (qui a sa propre signature). Variable attendue : url_signature (ancienne signature unique). #}
+{% if not resultat.fichier_data and not resultat.signatures_dans_le_texte %}
+<div class="mt-4 text-end" style="font-size: 13px;">
+    <strong>{% if demande.type_prestation == 'analyse' %}Le Laboratoire{% else %}Le Radiologue{% endif %}</strong>
+    {% set liste = resultat.signataires_liste %}
+    {% if liste %}
+    <div class="d-flex justify-content-end flex-wrap" style="gap: 24px;">
+        {% for sg in liste %}
+        <div class="text-center">
+            {% if sg.image %}<div class="mt-1"><img src="data:{{ sg.mime or 'image/png' }};base64,{{ sg.image }}" style="max-height:60px; max-width:160px;" alt="Signature"></div>{% endif %}
+            <div>{% if sg.titre %}{{ sg.titre }} — {% endif %}{{ sg.nom }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    {% if resultat.signature_data %}
+    <div class="mt-1"><img src="{{ url_signature }}" style="max-height:60px; max-width:160px;" alt="Signature"></div>
+    {% endif %}
+    <div>
+        {% if resultat.titre_interprete %}{{ resultat.titre_interprete }} — {% endif %}{{ resultat.nom_interprete }}
+    </div>
+    {% endif %}
+</div>
+{% endif %}

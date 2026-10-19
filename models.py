@@ -3930,6 +3930,8 @@ class ResultatExamen(db.Model):
     contenu_html = db.Column(db.Text)
     modele_utilise_id = db.Column(db.Integer)  # traçabilité — modèle de départ, si utilisé
     nom_interprete = db.Column(db.String(200), nullable=False)  # biologiste (analyse) / radiologue (examen)
+    # ⭐ 2026-10-19 : prescripteur du compte rendu (choisi ou écrit) — reproposé ensuite dans la liste
+    prescripteur = db.Column(db.String(150))
     # ⭐ Signature électronique — patron : "on met Le Laboratoire et on met
     # le titre de celui qui signe avec son nom" / "on met Le Radiologue...
     # dès qu'on sélectionne son nom sa signature s'appose s'il y en a".
@@ -3946,8 +3948,26 @@ class ResultatExamen(db.Model):
     titre_interprete = db.Column(db.String(100))
     signature_data = db.Column(db.LargeBinary)
     signature_mime = db.Column(db.String(100))
+    # ⭐ 2026-10-19 : TOUS les signataires (un ou plusieurs), copiés comme la signature ci-dessus :
+    # JSON [{nom, titre, mime, image (base64, vide si saisie libre), signature_id}] ; le premier est
+    # aussi dans nom_interprete / titre_interprete / signature_data (listes, portail, anciens écrans)
+    signataires = db.Column(db.Text)
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def signataires_liste(self):
+        import json as _json
+        try:
+            return _json.loads(self.signataires) if self.signataires else []
+        except ValueError:
+            return []
+
+    @property
+    def signatures_dans_le_texte(self):
+        """Signatures déjà apposées dans le compte rendu (sous « Le Radiologue » / « Le Laboratoire ») :
+        le bloc de signature séparé de l'impression n'est alors pas répété."""
+        return bool(self.contenu_html and 'mf-signatures' in self.contenu_html)
 
     # ⭐ Origine miroir (voir DemandeExamen.source_app ci-dessus)
     source_app = db.Column(db.String(30))

@@ -947,4 +947,74 @@ def docx_compte_rendu_libre(data):
     if 0 < debut < fin:
         html = (html[:debut] + '<div class="mf-libre" contenteditable="true" spellcheck="true">'
                 + html[debut:fin] + '</div>' + html[fin:])
+        html = mettre_en_forme_compte_rendu(html)
     return html, propre
+
+
+# ⭐ 2026-10-19 (patron) : signature(s) apposée(s) LÀ OÙ le compte rendu dit « Le Radiologue » (ou « Le
+# Laboratoire » / « Le Biologiste ») — sous la dernière ligne qui le dit ; rien si le texte ne le dit pas
+# (l'impression ajoute alors son bloc de signature habituel en bas).
+_LIGNE_SIGNATURE = re.compile(r'\ble\s+(radiologue|laboratoire|biologiste|m[ée]decin\s+radiologue)\b', re.I)
+
+
+def apposer_signatures(html, signataires):
+    if not html or not signataires or 'mf-signatures' in html:
+        return html
+    trouve = None
+    for m in re.finditer(r'<p\b[^>]*>.*?</p>', html, flags=re.S):
+        texte = re.sub(r'<[^>]+>|&nbsp;|&emsp;', ' ', m.group(0))
+        if _LIGNE_SIGNATURE.search(texte):
+            trouve = m
+    if not trouve:
+        return html
+    blocs = []
+    for sg in signataires:
+        img = (f'<img src="data:{escape(sg.get("mime") or "image/png")};base64,{sg["image"]}" alt="Signature" '
+               'style="max-height:60px;max-width:170px;display:block;margin:0 auto 2px">') if sg.get('image') else ''
+        nom = ' — '.join(x for x in (sg.get('titre') or '', sg.get('nom') or '') if x)
+        blocs.append(f'<div style="text-align:center;min-width:150px">{img}<div style="font-size:10.5pt">{escape(nom)}</div></div>')
+    bloc = ('<div class="mf-signatures" style="display:flex;justify-content:flex-end;flex-wrap:wrap;gap:28px;'
+            'margin:4px 0 6px">' + ''.join(blocs) + '</div>')
+    return html[:trouve.end()] + bloc + html[trouve.end():]
+
+
+# ⭐ 2026-10-19 (patron) : titre de l'examen mis en exergue ; mention de l'appareil (« Examen réalisé sur ... »)
+# rangée dans la partie TECHNIQUE (avant : coincée sous le titre, décalée à droite).
+def _texte_p(p):
+    return ' '.join(re.sub(r'<[^>]+>', '', p.replace('&nbsp;', ' ').replace('&emsp;', ' ')).split())
+
+
+def mettre_en_forme_compte_rendu(html):
+    if not html or 'mf-titre-examen' in html:
+        return html
+    m = re.search(r'<div class="mf-libre"[^>]*>', html)
+    if not m:
+        return html
+    debut = m.end()
+    paras = [(x.start(), x.end(), x.group(0)) for x in re.finditer(r'<p\b[^>]*>.*?</p>', html[debut:], flags=re.S)]
+    paras = [(debut + a, debut + b, t) for a, b, t in paras]
+    # mention de l'appareil : retirée de sous le titre
+    appareil = next(((a, b, t) for a, b, t in paras if re.search(r'examen\s+r[ée]alis[ée]\s+sur', _texte_p(t), re.I)), None)
+    titre = next(((a, b, t) for a, b, t in paras if _texte_p(t)), None)
+    if not titre or (appareil and titre[0] == appareil[0]):
+        return html
+    morceaux = []   # (début, fin, remplacement), appliqués de la fin vers le début
+    morceaux.append((titre[0], titre[1],
+                     '<p class="mf-titre-examen" style="text-align:center;margin:10px 0 10px">'
+                     '<span style="display:inline-block;border:2px solid #1a1a1a;padding:5px 18px;font-weight:bold;'
+                     f'font-size:15pt;letter-spacing:.5px">{escape(_texte_p(titre[2]))}</span></p>'))
+    if appareil:
+        ligne = ('<p style="margin:2px 0 0;text-align:justify"><span style="font-style:italic;font-size:12pt">'
+                 f'{escape(_texte_p(appareil[2]))}</span></p>')
+        resultats = next((i for i, (a, b, t) in enumerate(paras) if re.match(r'r[ée]sultats?\b', _texte_p(t), re.I)), None)
+        technique = next((i for i, (a, b, t) in enumerate(paras) if re.match(r'technique\b', _texte_p(t), re.I)), None)
+        if technique is not None and resultats is not None and technique < resultats:
+            # après le dernier paragraphe non vide de la partie TECHNIQUE
+            dernier = max(i for i in range(technique, resultats) if _texte_p(paras[i][2]))
+            morceaux.append((paras[dernier][1], paras[dernier][1], ligne))
+            morceaux.append((appareil[0], appareil[1], ''))
+        else:   # pas de partie TECHNIQUE : centrée juste sous le titre
+            morceaux.append((appareil[0], appareil[1], ligne.replace('text-align:justify', 'text-align:center')))
+    for a, b, t in sorted(morceaux, key=lambda x: (x[0], x[1]), reverse=True):
+        html = html[:a] + t + html[b:]
+    return html
