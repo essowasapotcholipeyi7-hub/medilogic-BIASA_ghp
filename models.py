@@ -4256,7 +4256,9 @@ class SoinsAmbulatoires(db.Model):
     @property
     def nombre_jours(self):
         fin = self.date_fin or datetime.utcnow()
-        jours = (fin.date() - self.date_debut.date()).days + 1
+        # date ou datetime (valeur juste posée, pas encore relue de la base) : les deux marchent
+        en_date = lambda d: d.date() if hasattr(d, 'date') else d
+        jours = (en_date(fin) - en_date(self.date_debut)).days + 1
         return max(jours, 1)
 
 

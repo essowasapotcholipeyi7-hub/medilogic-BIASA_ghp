@@ -458,12 +458,31 @@ def contexte_tarif_sejour(sejour, pbr_cac_par_acte=None, variante='defaut'):
     return info
 
 
+def _nom_pour_tarif(nom, info, type_art):
+    """Nom sous lequel ce soin est tarifé. ⭐ 2026-10-19 : la ligne de chambre d'un séjour long porte le nom de
+    sa période (« … Premiere Semaine », « … 8e jour au 14e jour », « … 15 jours et plus ») alors que le tarif
+    de la compagnie, le prix non assuré et les listes sont enregistrés sous le nom de la chambre — sans ce
+    repli, la chambre retombait au prix clinique (tarif SUNU / prix non assuré perdus)."""
+    contexte = info['contexte']
+    def connu(n):
+        return (n in info['na'][type_art] or n in (contexte.get('pbr_prive_par_acte') or {})
+                or any(n in (l or {}) for l in (contexte.get('listes') or {}).values()))
+    if not nom or connu(nom):
+        return nom
+    base = nom_sans_palier(nom)
+    for candidat in (base, f"{base} Premiere Semaine"):
+        if candidat and candidat != nom and connu(candidat):
+            return candidat
+    return nom
+
+
 def article_tarif_soin(soin, info, pbr, prise_amu):
     """Ligne pour repartir_ligne() : soin du séjour + prix non assuré + variante de la liste choisie."""
     type_art = 'produit' if getattr(soin, 'type', '') == 'medicament' else 'acte'
-    article = {'nom': soin.nom, 'prix': float(soin.prix or 0), 'pbr': pbr, 'quantite': int(soin.quantite or 0),
+    nom = _nom_pour_tarif(soin.nom, info, type_art)
+    article = {'nom': nom, 'prix': float(soin.prix or 0), 'pbr': pbr, 'quantite': int(soin.quantite or 0),
                'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': bool(soin.prise_en_charge_cac),
-               'prix_non_assure': info['na'][type_art].get(soin.nom)}
+               'prix_non_assure': info['na'][type_art].get(nom)}
     if info['groupe']:
         article['liste_tarif'] = info['variantes'].get(str(getattr(soin, 'id', ''))) or info['groupe']['defaut']
     return article

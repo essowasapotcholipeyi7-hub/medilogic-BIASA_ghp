@@ -402,3 +402,15 @@ def test_categorie_chambre_deduite_du_nom_et_paliers():
     lignes = construire_lignes_chambre({'nom': 'P160 Hospitalisation Cabine ventillee avec 2 lits', 'prix': 7000, 'pbr': 5000},
                                        18, date(2026, 10, 1), [], True, niveau_soins='3')
     assert [(l['quantite'], l['pbr']) for l in lignes] == [(7, 5000), (7, 3375), (4, 1625)]
+
+
+def test_ligne_de_chambre_par_periode_garde_le_tarif_de_la_chambre():
+    # séjour long : la ligne « … 8e jour au 14e jour » doit prendre le tarif enregistré sous le nom de la chambre
+    from types import SimpleNamespace as N
+    from services.hospitalisation_service import article_tarif_soin
+    chambre = 'P160 Hospitalisation Chambre categorie 1'
+    info = {'contexte': {'pbr_prive_par_acte': {chambre: {'tarif_prive': 25000}}}, 'groupe': None, 'variantes': {},
+            'na': {'acte': {chambre: 15000}, 'produit': {}}}
+    for suffixe in (' Premiere Semaine', ' 8e jour au 14e jour', ' 15 jours et plus'):
+        a = article_tarif_soin(N(id=1, nom=chambre + suffixe, prix=20000, quantite=7, prise_en_charge_cac=True, type='acte'), info, 5000, True)
+        assert a['nom'] == chambre and a['prix_non_assure'] == 15000

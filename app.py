@@ -23362,7 +23362,7 @@ def api_ajouter_ligne_soin_ambulatoire(episode_id):
         except ValueError:
             return jsonify({'success': False, 'error': 'Date invalide'}), 400
 
-        if episode.date_debut and date_prestation < episode.date_debut.date():
+        if episode.date_debut and date_prestation < (episode.date_debut.date() if hasattr(episode.date_debut, 'date') else episode.date_debut):
             return jsonify({'success': False, 'error': "La date du soin ne peut pas précéder la date de début de l'épisode."}), 400
 
         # ⭐ Part médecin — même principe que api_ajouter_soin_hospitalisation
@@ -23489,7 +23489,7 @@ def api_cloturer_soins_ambulatoires(episode_id):
         except ValueError:
             return jsonify({'success': False, 'error': 'Date invalide'}), 400
 
-        if date_fin < episode.date_debut.date():
+        if date_fin < (episode.date_debut.date() if hasattr(episode.date_debut, 'date') else episode.date_debut):
             return jsonify({'success': False, 'error': "La date de fin ne peut pas précéder la date de début"}), 400
 
         episode.date_fin = date_fin
