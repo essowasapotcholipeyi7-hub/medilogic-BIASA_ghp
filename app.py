@@ -15658,7 +15658,34 @@ def api_identite_resultat(demande_id):
                 res['age'] = f"{jours // 30} mois"
             elif jours >= 0:
                 res['age'] = f"{jours} jour{'s' if jours > 1 else ''}"
+    res['dossier'] = _numero_dossier_resultat(demande)
     return jsonify({'success': True, **res})
+
+
+def _numero_dossier_resultat(demande):
+    """⭐ 2026-10-19 (patron) : n° de dossier d'un compte rendu = son rang dans l'année parmi les demandes
+    de la même filière (radiologie ou laboratoire) de la structure qui ont un résultat — « 0012/2026 ».
+    Une demande qui a déjà un résultat garde son rang (même numéro si on refait le compte rendu) ; sinon
+    elle prend le suivant."""
+    from sqlalchemy import text as _text
+    try:
+        premier = db.session.execute(_text(
+            "SELECT id, created_at FROM resultats_examens WHERE demande_id = :d ORDER BY id LIMIT 1"),
+            {'d': demande.id}).first()
+        annee = (premier.created_at if premier and premier.created_at else datetime.now()).year
+        avant = db.session.execute(_text("""
+            SELECT COUNT(DISTINCT r.demande_id) FROM resultats_examens r JOIN demandes_examens d ON d.id = r.demande_id
+            WHERE d.structure_id = :s AND d.type_prestation = :t AND r.demande_id <> :dem
+              AND r.created_at >= :debut AND r.created_at < :fin
+              AND (CAST(:premier AS INTEGER) IS NULL OR r.id < :premier)"""),
+            {'s': demande.structure_id, 't': demande.type_prestation, 'dem': demande.id,
+             'debut': datetime(annee, 1, 1), 'fin': datetime(annee + 1, 1, 1),
+             'premier': premier.id if premier else None}).scalar() or 0
+        return f"{avant + 1:04d}/{annee}"
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ N° de dossier du compte rendu {demande.id} : {e}")
+        return ''
 
 
 _CACHE_MOTS_MODELES = {}   # (id, nom, longueur du contenu) -> mots du modèle
