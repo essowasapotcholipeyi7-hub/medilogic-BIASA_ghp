@@ -978,8 +978,8 @@ def apposer_signatures(html, signataires):
     return html[:trouve.end()] + bloc + html[trouve.end():]
 
 
-# ⭐ 2026-10-19 (patron) : titre de l'examen mis en exergue ; mention de l'appareil (« Examen réalisé sur ... »)
-# rangée dans la partie TECHNIQUE (avant : coincée sous le titre, décalée à droite).
+# ⭐ 2026-10-19 (patron) : titre de l'examen mis en exergue. Mention de l'appareil (« Examen réalisé sur ... ») :
+# d'abord rangée dans TECHNIQUE, puis (2026-10-20, photo du patron) juste sous le titre — ajuster_compte_rendu.
 def _texte_p(p):
     return ' '.join(re.sub(r'<[^>]+>', '', p.replace('&nbsp;', ' ').replace('&emsp;', ' ')).split())
 
@@ -1017,4 +1017,66 @@ def mettre_en_forme_compte_rendu(html):
             morceaux.append((appareil[0], appareil[1], ligne.replace('text-align:justify', 'text-align:center')))
     for a, b, t in sorted(morceaux, key=lambda x: (x[0], x[1]), reverse=True):
         html = html[:a] + t + html[b:]
+    return ajuster_compte_rendu(html)
+
+
+# ⭐ 2026-10-20 (patron, photo d'un compte rendu Word de Valeo) : « que les résultats ressemblent à ceci » —
+#   - la date (« Baguida, le ... ») bien à droite ;
+#   - « Examen réalisé sur J@DIX-I ... » juste sous le titre de l'examen (petit, italique, centré) ;
+#   - le nom du radiologue (et sa signature) centré sous « Le Radiologue », le tout à droite.
+# Appliqué à l'affichage (impression, portail) et à l'ouverture d'un modèle : les comptes rendus déjà
+# enregistrés en profitent aussi, rien n'est réécrit en base. Sans effet sur un texte déjà ajusté.
+_APPAREIL = re.compile(r'examen\s+r[ée]alis[ée]\s+sur', re.I)
+
+
+def _fin_div(html, debut):
+    """Indice de fin du <div> ouvert à `debut` (divs imbriqués compris)."""
+    profondeur = 0
+    for m in re.finditer(r'<div\b|</div>', html[debut:]):
+        profondeur += 1 if m.group(0) == '<div' else -1
+        if profondeur == 0:
+            return debut + m.end()
+    return len(html)
+
+
+def ajuster_compte_rendu(html):
+    if not html or 'mf-' not in html:
+        return html
+    # 1) date à droite
+    html = re.sub(r'<p\b[^>]*>(?=(?:(?!</p>).)*data-id="date_complete")',
+                  '<p style="margin:0;text-align:right">', html, count=1, flags=re.S)
+    # 2) mention de l'appareil juste sous le titre de l'examen
+    titre = re.search(r'<p class="mf-titre-examen"[^>]*>.*?</p>', html, flags=re.S)
+    if titre and 'mf-appareil' not in html:
+        appareil = next((m for m in re.finditer(r'<p\b[^>]*>.*?</p>', html, flags=re.S)
+                         if _APPAREIL.search(_texte_p(m.group(0)))), None)
+        if appareil:
+            ligne = ('<p class="mf-appareil" style="text-align:center;margin:-6px 0 12px">'
+                     f'<span style="font-style:italic;font-size:9.5pt">{escape(_texte_p(appareil.group(0)))}</span></p>')
+            html = html[:appareil.start()] + html[appareil.end():]
+            titre = re.search(r'<p class="mf-titre-examen"[^>]*>.*?</p>', html, flags=re.S)
+            html = html[:titre.end()] + ligne + html[titre.end():]
+    # 3) « Le Radiologue » + nom(s) centrés dessous, le bloc à droite
+    if 'mf-bloc-signature' not in html:
+        ligne_sig = None
+        for m in re.finditer(r'<p\b[^>]*>.*?</p>', html, flags=re.S):
+            if _LIGNE_SIGNATURE.search(_texte_p(m.group(0))):
+                ligne_sig = m
+        if ligne_sig:
+            libelle = _texte_p(ligne_sig.group(0))
+            fin, noms = ligne_sig.end(), ''
+            suite = re.match(r'\s*(?=<div class="mf-signatures")', html[fin:])
+            if suite:
+                debut_sg = fin + suite.end()
+                fin_sg = _fin_div(html, debut_sg)
+                interieur = re.sub(r'^<div class="mf-signatures"[^>]*>|</div>$', '', html[debut_sg:fin_sg])
+                noms = ('<div class="mf-signatures" style="display:flex;justify-content:center;flex-wrap:wrap;'
+                        f'gap:24px;margin:2px 0 0">{interieur}</div>')
+                fin = fin_sg
+            bloc = ('<div class="mf-bloc-signature" style="display:flex;justify-content:flex-end;margin:6px 0 6px">'
+                    f'<div style="text-align:center;min-width:170px"><p style="margin:0">{escape(libelle)}</p>{noms}</div></div>')
+            html = html[:ligne_sig.start()] + bloc + html[fin:]
+    if 'mf-bloc-signature' in html:   # signature apposée après coup dans un bloc déjà prêt : centrée aussi
+        html = html.replace('<div class="mf-signatures" style="display:flex;justify-content:flex-end',
+                            '<div class="mf-signatures" style="display:flex;justify-content:center')
     return html

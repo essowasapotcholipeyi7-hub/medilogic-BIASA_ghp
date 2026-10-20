@@ -81,7 +81,7 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                      cas qui échouait avant : l'ancien bouton "Télécharger"
                      pointait vers un fichier qui n'existait pas pour ces
                      résultats-là. -->
-                <div class="resultat-contenu-html">{{ resultat.contenu_html | safe }}</div>
+                <div class="resultat-contenu-html">{{ resultat.contenu_html | mise_en_page_cr | safe }}</div>
                 {% elif resultat.fichier_mime and 'pdf' in resultat.fichier_mime %}
                 <!-- ⭐ Fichier PDF importé — rendu page par page avec PDF.js
                      directement dans le flux de la page (voir

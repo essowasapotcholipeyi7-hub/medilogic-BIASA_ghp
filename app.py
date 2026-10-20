@@ -15188,6 +15188,9 @@ def api_convertir_modele_html(modele_id):
     if modele.contenu_html:
         formulaire = est_formulaire(modele.contenu_html)
         contenu = adapter_entete(modele.contenu_html, _fiche_structure_resultats(structure_id), modele.type_prestation) if formulaire else modele.contenu_html
+        if 'mf-libre' in contenu:   # compte rendu (radiologie) : même mise en page qu'à l'impression
+            from services.modele_formulaire import ajuster_compte_rendu
+            contenu = ajuster_compte_rendu(contenu)
         return jsonify({'success': True, 'contenu_html': contenu, 'formulaire': formulaire})
     if not modele.fichier_data:
         return jsonify({'success': False, 'error': 'Aucun fichier à convertir'}), 400
@@ -27879,6 +27882,14 @@ def api_finaliser_panier_prescriptions():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.template_filter('mise_en_page_cr')
+def filtre_mise_en_page_cr(html):
+    """⭐ 2026-10-20 : mise en page des comptes rendus (date à droite, appareil sous le titre, nom sous
+    « Le Radiologue ») — voir services/modele_formulaire.ajuster_compte_rendu."""
+    from services.modele_formulaire import ajuster_compte_rendu
+    return ajuster_compte_rendu(html)
+
 
 @app.template_filter('format_currency')
 def format_currency(value):

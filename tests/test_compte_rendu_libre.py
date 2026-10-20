@@ -89,3 +89,31 @@ def test_signatures_apposees_sous_le_radiologue():
     assert out.count('<img') == 1 and 'Radiologue — Dr A' in out and 'Dr B' in out
     assert apposer_signatures(out, sg) == out                       # jamais deux fois
     assert apposer_signatures('<p>Résultat sans mention</p>', sg) == '<p>Résultat sans mention</p>'
+
+
+def test_mise_en_page_comme_le_word_de_valeo():
+    """Patron, 2026-10-20 (photo du Word) : date à droite, « Examen réalisé sur » sous le titre, nom du
+    radiologue centré sous « Le Radiologue » — à l'ouverture du modèle comme sur un compte rendu enregistré."""
+    from services.modele_formulaire import ajuster_compte_rendu, apposer_signatures
+    html = ('<style></style><table class="mf-entete"></table>'
+            '<p style="margin:0;padding-left:200pt">Baguida, le <span class="mf-valeur" data-id="date_complete">20/10/2026</span></p>'
+            '<div class="mf-libre" contenteditable="true">'
+            '<p class="mf-titre-examen" style="text-align:center"><span>RADIOGRAPHIE DU RACHIS LOMBAIRE</span></p>'
+            '<p><b>TECHNIQUE :</b></p><p>Incidence de face et profil.</p>'
+            '<p style="margin:2px 0 0"><span>Examen réalisé sur J@DIX-I mise en service le 18/01/2023</span></p>'
+            '<p><b>RESULTATS :</b></p><p>Normal.</p></div>'
+            '<p>Bien confraternellement,</p><p style="margin:0">&nbsp; &nbsp; &nbsp; Le Radiologue </p>')
+    # compte rendu déjà enregistré (nom apposé avant l'ajustement)
+    imprime = ajuster_compte_rendu(apposer_signatures(html, [{'nom': 'Dr AYIVI', 'titre': '', 'image': ''}]))
+    assert '<p style="margin:0;text-align:right">Baguida, le' in imprime
+    titre = imprime.index('mf-titre-examen')
+    assert titre < imprime.index('mf-appareil') < imprime.index('TECHNIQUE')
+    assert imprime.count('Examen réalisé sur') == 1
+    bloc = imprime[imprime.index('mf-bloc-signature'):]
+    assert bloc.index('Le Radiologue') < bloc.index('Dr AYIVI') and 'justify-content:center' in bloc
+    assert ajuster_compte_rendu(imprime) == imprime
+    # modèle ajusté à l'ouverture, nom apposé à l'enregistrement : même résultat
+    ouvert = ajuster_compte_rendu(html)
+    enregistre = ajuster_compte_rendu(apposer_signatures(ouvert, [{'nom': 'Dr AYIVI', 'titre': '', 'image': ''}]))
+    bloc = enregistre[enregistre.index('mf-bloc-signature'):]
+    assert bloc.index('Le Radiologue') < bloc.index('Dr AYIVI') and 'justify-content:flex-end;flex-wrap' not in bloc
