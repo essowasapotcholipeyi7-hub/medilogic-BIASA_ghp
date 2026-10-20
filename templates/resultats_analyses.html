@@ -205,6 +205,8 @@ function afficherFormulaire(html) {
     fetch('/api/resultats-analyses/' + demandeChoisie + '/identite').then(r => r.json()).then(d => {
         if (!d.success) return;
         choisirNormes(zone, d.sexe_code || '', d.age_jours);
+        zone.dataset.sexe = d.sexe_code || '';
+        marquerHorsNormes(zone);
         // ⭐ 2026-10-18 (patron) : le sexe est enregistré avec le patient — affiché, plus à choisir ;
         // seulement s'il manque dans la fiche (anciens patients), la liste reste, signalée en orange
         zone.querySelectorAll('select[data-id="sexe"]').forEach(sel => {
@@ -272,6 +274,72 @@ document.addEventListener('click', e => {
     p.style.cssText = 'margin:0;font-weight:bold;font-size:12pt';
     p.textContent = texte;
     zone.appendChild(p);
+});
+
+// ⭐ 2026-10-20 (patron : « oui mets en gras ») — biologie : une valeur hors des normes écrites sur sa ligne
+// est mise en gras toute seule (comme dans les Word de Valeo), et redevient normale si on la corrige.
+// Normes comprises : « 0,70 – 1,10 g/l », « < 150 mg/dl », « Inférieur à 6 mg/l », « > 32 g/dl »,
+// « H : 7 – 15 mg/l F : 6 – 12 mg/l » (selon le sexe du patient), « 2,5.10³ - 5.10³/µl » (valeur saisie en
+// 10³), « Euthyroïdie : 0,25-5 ... » (1re norme). Normes selon l'âge (« < 50 ans : ... ») : rien n'est touché.
+function _nombreNorme(t) { return parseFloat(t.replace(',', '.')); }
+function _bornesNorme(texte, sexe) {
+    let t = (texte || '').replace(/[–—]/g, '-').replace(/\u00a0/g, ' ');
+    if (/\bans\b|\bmois\b|\bjours?\b/i.test(t)) return null;
+    t = t.replace(/[.,]?\s*10\s*[³⁶]/g, '');                       // 2,5.10³ -> 2,5 ; 4,10³ -> 4 ; 1 10³ -> 1
+    // segments « libellé : norme »
+    const morceaux = [], re = /([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ()\/ ]*?)\s*:/g;
+    let m, prec = null;
+    while ((m = re.exec(t))) {
+        if (prec) prec.texte = t.slice(prec.fin, m.index);
+        prec = { libelle: m[1].trim().toLowerCase(), fin: re.lastIndex };
+        morceaux.push(prec);
+    }
+    if (prec) prec.texte = t.slice(prec.fin);
+    if (morceaux.length) {
+        const sexes = morceaux.filter(x => /^(h|f|hommes?|femmes?)\b/.test(x.libelle));
+        if (sexes.length) {
+            if (!sexe) return null;
+            const bon = sexes.find(x => (sexe === 'M') === /^h/.test(x.libelle));
+            if (!bon) return null;
+            t = bon.texte;
+        } else {
+            t = morceaux[0].texte;
+        }
+    }
+    t = t.replace(/inf[ée]rieure?s?\s*[àa]/i, '<').replace(/sup[ée]rieure?s?\s*[àa]/i, '>');
+    let r = t.match(/(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)/);
+    if (r) return { min: _nombreNorme(r[1]), max: _nombreNorme(r[2]) };
+    r = t.match(/([<>])\s*=?\s*(\d+(?:[.,]\d+)?)/);
+    if (r) return r[1] === '<' ? { max: _nombreNorme(r[2]), strict: !/<\s*=/.test(t) } : { min: _nombreNorme(r[2]), strict: !/>\s*=/.test(t) };
+    return null;
+}
+function marquerHorsNormes(zone) {
+    if (!zone) return;
+    let sexe = zone.dataset.sexe || '';
+    if (!sexe) {
+        const s = zone.querySelector('[data-id="sexe"]');
+        const v = s ? _sansAccents(s.value !== undefined && s.tagName === 'SELECT' ? (s.selectedOptions[0] || {}).textContent : s.textContent) : '';
+        sexe = /^f/.test(v) ? 'F' : (/^m/.test(v) ? 'M' : '');
+    }
+    zone.querySelectorAll('span.mf-resultat').forEach(el => {
+        const td = el.closest('td');
+        let hors = false;
+        const brut = (el.textContent || '').replace(/[\s\u00a0\u202f]/g, '').replace(',', '.');
+        if (td && /^\d+(\.\d+)?$/.test(brut)) {
+            const norme = td.nextElementSibling;
+            const b = norme ? _bornesNorme([...norme.querySelectorAll('p')].map(p => p.textContent).join('\n') || norme.textContent, sexe) : null;
+            const v = parseFloat(brut);
+            if (b) hors = (b.min != null && (b.strict ? v <= b.min : v < b.min)) || (b.max != null && (b.strict ? v >= b.max : v > b.max));
+        }
+        el.style.fontWeight = hors ? 'bold' : '';
+        el.title = hors ? 'Hors normes : mis en gras automatiquement' : '';
+        if (!el.getAttribute('style')) el.removeAttribute('style');
+    });
+}
+document.addEventListener('input', e => {
+    const zone = document.getElementById('zoneFormulaire');
+    if (zone && zone.contains(e.target) && e.target.closest && (e.target.closest('.mf-resultat') || e.target.closest('[data-id="sexe"]')))
+        marquerHorsNormes(zone);
 });
 
 // retirer / remettre une ligne : petit bouton au survol
