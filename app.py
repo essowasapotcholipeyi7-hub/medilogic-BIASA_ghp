@@ -15685,6 +15685,8 @@ def api_identite_resultat(demande_id):
             elif jours >= 0:
                 res['age'] = f"{jours} jour{'s' if jours > 1 else ''}"
     res['dossier'] = _numero_dossier_resultat(demande)
+    # ⭐ 2026-10-20 : garde-fous des dates du compte rendu (prélèvement, date du compte rendu) — pas avant la demande
+    res['date_demande'] = demande.created_at.strftime('%Y-%m-%d') if demande.created_at else ''
     # « Mme ABDO Chinwa », « Enfant AYIKA Rayan », « Nné AHOTCHEME » (comme les Word de Valeo)
     civilite = ('Nné' if res['age_jours'] is not None and res['age_jours'] <= 28
                 else 'Enfant' if res['age_jours'] is not None and res['age_jours'] < 15 * 365

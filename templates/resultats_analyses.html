@@ -207,7 +207,6 @@ function afficherFormulaire(html) {
         choisirNormes(zone, d.sexe_code || '', d.age_jours);
         zone.dataset.sexe = d.sexe_code || '';
         marquerHorsNormes(zone);
-        signalerPrelevement(zone);
         // ⭐ 2026-10-18 (patron) : le sexe est enregistré avec le patient — affiché, plus à choisir ;
         // seulement s'il manque dans la fiche (anciens patients), la liste reste, signalée en orange
         zone.querySelectorAll('select[data-id="sexe"]').forEach(sel => {
@@ -239,6 +238,7 @@ function afficherFormulaire(html) {
                 el.textContent = v;
             }
         });
+        installerDatesHeures(zone, d.date_demande);
     });
     const premier = zone.querySelector('.modele-formulaire > table:not(.mf-entete):not(.mf-identite) .mf-champ');
     if (premier) setTimeout(() => premier.focus(), 300);
@@ -314,29 +314,123 @@ function _bornesNorme(texte, sexe) {
     if (r) return r[1] === '<' ? { max: _nombreNorme(r[2]), strict: !/<\s*=/.test(t) } : { min: _nombreNorme(r[2]), strict: !/>\s*=/.test(t) };
     return null;
 }
-// ⭐ 2026-10-20 (patron) : date et heure de prélèvement (biologie) laissées vides — le labo les écrit, et le
-// compte rendu ne s'enregistre pas sans elles. Cases en orange tant qu'elles ne sont pas bien remplies.
-const _PRELEVEMENT = [
-    { id: 'date_prelevement_complete', nom: 'la date de prélèvement (ex. 20/10/2026)', ok: v => /^\d{1,2}[\/.\-]\d{1,2}[\/.\-](\d{2}|\d{4})$/.test(v) },
-    { id: 'heure_prelevement', nom: "l'heure de prélèvement (ex. 09:20)", ok: v => /^\d{1,2}\s*[:hH]\s*\d{2}$/.test(v) },
-];
-function signalerPrelevement(zone) {
-    _PRELEVEMENT.forEach(p => zone.querySelectorAll(`[data-id="${p.id}"]`).forEach(el => {
-        const bon = p.ok((el.textContent || '').trim());
-        el.classList.toggle('mf-a-completer', !bon);
-        el.title = bon ? '' : 'Obligatoire : ' + p.nom;
+// ⭐ 2026-10-20 (patron) : dates et heures des comptes rendus — date en jj / mm / année (l'année en cours est
+// déjà mise, on complète jour et mois), heure à choisir comme pour les rendez-vous. Garde-fous : date qui
+// existe, pas dans le futur, pas avant la demande d'examen ; heure de prélèvement pas dans le futur ;
+// prélèvement de plus de 15 jours : confirmation. Biologie : date et heure de prélèvement (vides, obligatoires) ;
+// radiologie : date du compte rendu (« Baguida, le », aujourd'hui par défaut).
+const _CHAMPS_DATE = { date_prelevement_complete: 'la date de prélèvement', date_complete: 'la date du compte rendu' };
+const _CHAMPS_HEURE = { heure_prelevement: "l'heure de prélèvement" };
+const _STYLE_CASE = 'border:1px solid #0d6efd;border-radius:3px;background:#eef5ff;font:inherit;text-align:center;padding:0 2px;';
+const _majuscule = t => t.charAt(0).toUpperCase() + t.slice(1);
+
+function installerDatesHeures(zone, dateDemande) {
+    zone.dataset.dateDemande = dateDemande || '';
+    Object.keys(_CHAMPS_DATE).forEach(id => zone.querySelectorAll(`span[data-id="${id}"]`).forEach(sp => {
+        const m = (sp.textContent || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        const w = document.createElement('span');
+        w.className = 'mf-date';
+        w.dataset.id = id;
+        w.style.whiteSpace = 'nowrap';
+        w.innerHTML = `<input class="mf-jj" inputmode="numeric" maxlength="2" placeholder="jj" style="${_STYLE_CASE}width:2.3em">/`
+            + `<input class="mf-mm" inputmode="numeric" maxlength="2" placeholder="mm" style="${_STYLE_CASE}width:2.3em">/`
+            + `<input class="mf-aaaa" inputmode="numeric" maxlength="4" style="${_STYLE_CASE}width:3.5em">`;
+        w.querySelector('.mf-jj').value = m ? m[1].padStart(2, '0') : '';
+        w.querySelector('.mf-mm').value = m ? m[2].padStart(2, '0') : '';
+        w.querySelector('.mf-aaaa').value = m ? m[3] : String(new Date().getFullYear());
+        sp.replaceWith(w);
     }));
+    Object.keys(_CHAMPS_HEURE).forEach(id => zone.querySelectorAll(`span[data-id="${id}"]`).forEach(sp => {
+        const inp = document.createElement('input');
+        inp.type = 'time';
+        inp.className = 'mf-heure';
+        inp.dataset.id = id;
+        inp.style.cssText = _STYLE_CASE + 'width:6.5em';
+        const m = (sp.textContent || '').trim().match(/^(\d{1,2})\s*[:hH]\s*(\d{2})$/);
+        if (m) inp.value = m[1].padStart(2, '0') + ':' + m[2];
+        sp.replaceWith(inp);
+    }));
+    verifierDatesHeures(zone, false);
 }
-function prelevementManquant(zone) {
-    for (const p of _PRELEVEMENT) {
-        const el = zone.querySelector(`[data-id="${p.id}"]`);
-        if (el && !p.ok((el.textContent || '').trim())) { el.focus(); return p.nom; }
+function _dateDuChamp(w) {
+    const jj = w.querySelector('.mf-jj').value.trim(), mm = w.querySelector('.mf-mm').value.trim(), aa = w.querySelector('.mf-aaaa').value.trim();
+    if (!/^\d{1,2}$/.test(jj) || !/^\d{1,2}$/.test(mm) || !/^\d{4}$/.test(aa)) return null;
+    const d = new Date(+aa, +mm - 1, +jj);
+    if (d.getFullYear() !== +aa || d.getMonth() !== +mm - 1 || d.getDate() !== +jj) return 'invalide';
+    return d;
+}
+function _texteDate(w) {
+    if (!w || !(_dateDuChamp(w) instanceof Date)) return '';
+    return w.querySelector('.mf-jj').value.trim().padStart(2, '0') + '/' + w.querySelector('.mf-mm').value.trim().padStart(2, '0')
+        + '/' + w.querySelector('.mf-aaaa').value.trim();
+}
+function _erreurDate(zone, w) {
+    const nom = _CHAMPS_DATE[w.dataset.id];
+    const d = _dateDuChamp(w);
+    if (d === null) return `Écrivez ${nom} (jour et mois).`;
+    const affiche = ['.mf-jj', '.mf-mm', '.mf-aaaa'].map(c => w.querySelector(c).value.trim()).join('/');
+    if (d === 'invalide') return `${_majuscule(nom)} n'existe pas (${affiche}).`;
+    const aujourdhui = new Date(); aujourdhui.setHours(0, 0, 0, 0);
+    if (d > aujourdhui) return `${_majuscule(nom)} (${affiche}) est dans le futur.`;
+    if (zone.dataset.dateDemande) {
+        const demande = new Date(zone.dataset.dateDemande + 'T00:00:00');
+        const limite = new Date(demande);
+        if (w.dataset.id === 'date_prelevement_complete') limite.setDate(limite.getDate() - 3);   // prélevé juste avant l'enregistrement de la demande
+        if (d < limite) return `${_majuscule(nom)} (${affiche}) est avant la demande d'examen (${demande.toLocaleDateString('fr-FR')}).`;
     }
-    return null;
+    return '';
+}
+function _erreurHeure(zone, inp) {
+    const nom = _CHAMPS_HEURE[inp.dataset.id];
+    if (!/^\d{2}:\d{2}$/.test(inp.value)) return `Choisissez ${nom}.`;
+    const w = zone.querySelector('.mf-date[data-id="date_prelevement_complete"]');
+    const d = w ? _dateDuChamp(w) : null;
+    if (d instanceof Date) {
+        const [h, mi] = inp.value.split(':').map(Number);
+        const quand = new Date(d); quand.setHours(h, mi, 0, 0);
+        if (quand.getTime() > Date.now() + 5 * 60000) return `L'heure de prélèvement (${inp.value}) est dans le futur.`;
+    }
+    return '';
+}
+// Première erreur (texte) ou '' ; cases en orange tant qu'elles ne sont pas bonnes
+function verifierDatesHeures(zone, focus) {
+    let premiere = '';
+    zone.querySelectorAll('.mf-date, input.mf-heure').forEach(el => {
+        const err = el.classList.contains('mf-date') ? _erreurDate(zone, el) : _erreurHeure(zone, el);
+        el.classList.toggle('mf-a-completer', !!err);
+        el.title = err;
+        if (err && !premiere) {
+            premiere = err;
+            if (focus) (el.tagName === 'INPUT' ? el : ([...el.querySelectorAll('input')].find(i => !i.value.trim()) || el.querySelector('input'))).focus();
+        }
+    });
+    // cases pas encore transformées (fiche du patient pas chargée) : au moins remplies
+    Object.entries({ ..._CHAMPS_DATE, ..._CHAMPS_HEURE }).forEach(([id, nom]) => zone.querySelectorAll(`span[data-id="${id}"]`).forEach(sp => {
+        if (!premiere && !sp.textContent.trim()) premiere = `Écrivez ${nom}.`;
+    }));
+    return premiere;
+}
+function _avertissementDates(zone) {
+    const w = zone.querySelector('.mf-date[data-id="date_prelevement_complete"]');
+    const d = w ? _dateDuChamp(w) : null;
+    if (!(d instanceof Date)) return '';
+    const jours = Math.round((new Date().setHours(0, 0, 0, 0) - d.getTime()) / 86400000);
+    return jours > 15 ? `Le prélèvement date du ${_texteDate(w)} (il y a ${jours} jours). Est-ce bien la bonne date ?` : '';
 }
 document.addEventListener('input', e => {
     const zone = document.getElementById('zoneFormulaire');
-    if (zone && e.target.closest && e.target.closest('[data-id="date_prelevement_complete"], [data-id="heure_prelevement"]')) signalerPrelevement(zone);
+    const t = e.target;
+    if (!zone || !zone.contains(t) || !t.closest || !t.closest('.mf-date, input.mf-heure')) return;
+    if (t.closest('.mf-date')) {
+        t.value = t.value.replace(/\D/g, '');
+        // jour puis mois tapés : on passe à la case suivante
+        if (t.classList.contains('mf-jj') && t.value.length === 2) t.parentNode.querySelector('.mf-mm').focus();
+        else if (t.classList.contains('mf-mm') && t.value.length === 2) {
+            const heure = zone.querySelector('input.mf-heure');
+            if (heure && !heure.value && t.closest('.mf-date').dataset.id === 'date_prelevement_complete') heure.focus();
+        }
+    }
+    verifierDatesHeures(zone, false);
 });
 
 function marquerHorsNormes(zone) {
@@ -397,6 +491,25 @@ function figerFormulaire() {
     const src = document.querySelector('#zoneFormulaire .modele-formulaire');
     const c = src.cloneNode(true);
     c.querySelectorAll('button').forEach(b => b.remove());
+    // ⭐ 2026-10-20 : dates (jj / mm / année) et heures -> texte
+    const datesSrc = src.querySelectorAll('.mf-date');
+    c.querySelectorAll('.mf-date').forEach((w, i) => {
+        const sp = document.createElement('span');
+        sp.className = 'mf-valeur';
+        sp.dataset.id = w.dataset.id;
+        sp.textContent = _texteDate(datesSrc[i]);
+        if (!sp.textContent) sp.dataset.vide = '1';
+        w.replaceWith(sp);
+    });
+    const heuresSrc = src.querySelectorAll('input.mf-heure');
+    c.querySelectorAll('input.mf-heure').forEach((inp, i) => {
+        const sp = document.createElement('span');
+        sp.className = 'mf-valeur';
+        sp.dataset.id = inp.dataset.id;
+        sp.textContent = heuresSrc[i].value || '';
+        if (!sp.textContent) sp.dataset.vide = '1';
+        inp.replaceWith(sp);
+    });
     const listesSrc = src.querySelectorAll('select.mf-liste');
     c.querySelectorAll('select.mf-liste').forEach((s, i) => {
         const o = listesSrc[i].selectedOptions[0];
@@ -781,8 +894,11 @@ async function enregistrerResultat() {
         if (!fichier) { await afficherMessage('Choisissez le fichier du résultat.'); return; }
         fd.append('fichier', fichier);
     } else if (formulaireActif) {
-        const manque = prelevementManquant(document.getElementById('zoneFormulaire'));
-        if (manque) { await afficherMessage('Écrivez ' + manque + ' : obligatoire pour le compte rendu.'); return; }
+        const zoneF = document.getElementById('zoneFormulaire');
+        const erreurDates = verifierDatesHeures(zoneF, true);
+        if (erreurDates) { await afficherMessage(erreurDates); return; }
+        const avertissement = _avertissementDates(zoneF);
+        if (avertissement && !(await demanderConfirmation(avertissement))) return;
         fd.append('contenu_html', figerFormulaire());
         fd.append('modele_utilise_id', document.getElementById('resultatModeleSelect').value);
     } else {

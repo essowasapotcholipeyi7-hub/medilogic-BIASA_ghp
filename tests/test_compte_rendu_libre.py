@@ -217,3 +217,39 @@ def test_proposition_biologie_selon_le_patient():
     assert proposer_modele("R610 Electrophorese de l’hemoglobine a pH alcalin", modeles) is None
     assert proposer_modele('R842 Fer', modeles) is None
     assert proposer_modele('R819 Estradiol (libre)', modeles) is None
+
+
+def test_modeles_harmonises_tailles_et_nom_du_radiologue_retire():
+    """Patron, 2026-10-20 (« c'est discordant ») : même taille de texte dans tous les modèles de radiologie,
+    plus de nom de radiologue écrit en dur sous « Le Radiologue », mise en page de l'impression dans le modèle."""
+    from services.modele_formulaire import harmoniser_compte_rendu
+    html = ('<div class="modele-formulaire"><style></style><table class="mf-entete mf-entete-fixe"><tr><td>X</td></tr></table>'
+            '<p style="margin:0;padding-left:200pt"><span style="font-size:10pt">Baguida, le <span class="mf-champ mf-texte" data-id="date_complete"></span></span></p>'
+            '<p style="margin:0"><span style="font-weight:bold;font-size:10pt">Patient(e) : <span class="mf-champ mf-texte" data-id="patient"></span></span></p>'
+            '<p style="margin:0">Prescripteur : <span class="mf-champ mf-texte" data-id="prescripteur"></span></p>'
+            '<div class="mf-libre" contenteditable="true" spellcheck="true">'
+            '<p style="margin:0"><span style="font-weight:bold;font-size:10pt">RADIOGRAPHIE DE LA CUISSE</span></p>'
+            '<p style="margin:0"><span style="font-size:10pt">TECHNIQUE :</span></p><p><span style="font-size:13pt">Face.</span></p>'
+            '<p><span style="font-size:10pt">Examen réalisé sur J@DIX-I</span></p>'
+            '<table class="mf-table"><tr><td><span style="font-size:16pt">GENOUX</span></td></tr></table>'
+            '<p><span style="font-size:16pt">Conclusion : normal.</span></p></div>'
+            '<p style="margin:0">Bien confraternellement,</p>'
+            '<p style="margin:0">&nbsp; &nbsp; &nbsp;<span style="font-size:10pt">Le Radiologue</span></p>'
+            '<p style="margin:0">&nbsp;</p><p style="margin:0"><span style="font-size:10pt">Dr KOMLANVI</span></p></div>')
+    out = harmoniser_compte_rendu(html)
+    assert 'KOMLANVI' not in out and 'mf-bloc-signature' in out
+    libre = out[out.index('<div class="mf-libre"'):out.index('Bien confraternellement')]
+    tailles = set(re.findall(r'font-size:([\d.]+pt)', re.sub(r'<p class="mf-(titre-examen|appareil)".*?</p>|<table.*?</table>', '', libre, flags=re.S)))
+    assert tailles == {'14pt'}, tailles
+    assert '<table style="font-size:12pt"' in libre and '16pt' not in out
+    assert 'mf-titre-examen' in out and out.index('mf-titre-examen') < out.index('mf-appareil') < out.index('TECHNIQUE')
+    identite = out[out.index('</table>'):out.index('<div class="mf-libre"')]
+    assert '10pt' not in identite and identite.count('font-size:12pt') == 3
+    assert harmoniser_compte_rendu(out) == out
+
+
+def test_modele_biologie_tableaux_d_une_seule_taille():
+    from services.modele_formulaire import docx_compte_rendu_biologie, harmoniser_compte_rendu
+    html, _ = docx_compte_rendu_biologie(_docx_bio())
+    assert '<table class="mf-table mf-bordure" style="font-size:12pt">' in html and 'mf-bloc-signature' in html
+    assert harmoniser_compte_rendu(html) == html

@@ -1006,7 +1006,7 @@ def docx_compte_rendu_libre(data):
         html = (html[:debut] + '<div class="mf-libre" contenteditable="true" spellcheck="true">'
                 + html[debut:fin] + '</div>' + html[fin:])
         html = mettre_en_forme_compte_rendu(html)
-    return html, propre
+    return harmoniser_compte_rendu(html), propre
 
 
 # ⭐ 2026-10-19 (patron) : signature(s) apposée(s) LÀ OÙ le compte rendu dit « Le Radiologue » (ou « Le
@@ -1410,4 +1410,86 @@ def docx_compte_rendu_biologie(data, section=None, prelevement='', interpretatio
         i = html.rfind('</div>')
         html = (html[:i] + f'<p class="mf-pied" style="margin:34px 0 0;text-align:center;font-size:8pt">{escape(pied)}</p>'
                 + html[i:])
-    return html, propre
+    return harmoniser_compte_rendu(html), propre
+
+
+
+# ============================================================
+# ⭐ 2026-10-20 (patron : « regarde dans les modèles mêmes et apporte les corrections, c'est discordant ») :
+# un même rendu pour tous les MODÈLES de comptes rendus importés des Word (radiologie, biologie) —
+#   - mise en page de l'impression écrite dans le modèle lui-même (date à droite, appareil sous le titre,
+#     « Le Radiologue » / « Le Biologiste » à droite) : l'écran de saisie montre ce qui sera imprimé ;
+#   - radiologie : identité en 12 pt, texte du compte rendu en 14 pt (selon les Word : 10, 12, 13, 14 ou
+#     16 pt), tableaux en 12 pt ;
+#   - biologie : tableaux de résultats en 12 pt (une ligne à 16 pt dans un Word) ;
+#   - nom d'un radiologue resté écrit sous « Le Radiologue » retiré (ce sont les signataires cochés à
+#     l'enregistrement qui s'y inscrivent).
+# Pour les modèles seulement — jamais pour un compte rendu enregistré.
+# ============================================================
+_TAILLE = re.compile(r'font-size:\s*[\d.]+pt;?')
+
+
+def _retirer_noms_sous_signature(html):
+    lignes = list(re.finditer(r'<p\b[^>]*>.*?</p>', html, flags=re.S))
+    i = next((k for k, m in enumerate(lignes) if _LIGNE_SIGNATURE.search(_texte_p(m.group(0)))), None)
+    if i is None:
+        return html
+    morceaux = []
+    p = lignes[i]
+    texte = _texte_p(p.group(0))
+    libelle = _LIGNE_SIGNATURE.search(texte)
+    if texte[libelle.end():].strip():          # « Le Radiologue Dr KOMLANVI » dans le même paragraphe
+        morceaux.append((p.start(), p.end(), f'<p style="margin:0">{escape(texte[:libelle.end()])}</p>'))
+    for m in lignes[i + 1:i + 4]:
+        t = _texte_p(m.group(0))
+        if re.fullmatch(r'(dr|pr|docteur|professeur)\.?\s+[\w\s\'\-.]+', t, flags=re.I):
+            morceaux.append((m.start(), m.end(), ''))
+        elif t:
+            break
+    for a, b, t in sorted(morceaux, reverse=True):
+        html = html[:a] + t + html[b:]
+    return html
+
+
+def harmoniser_compte_rendu(html):
+    if not html or 'mf-entete-fixe' not in html:
+        return html
+    html = ajuster_compte_rendu(mettre_en_forme_compte_rendu(_retirer_noms_sous_signature(html)))
+    if 'mf-identite-bio' in html:
+        def tableau(m):
+            t = _TAILLE.sub('', m.group(0))
+            return t.replace('<table class="mf-table mf-bordure">', '<table class="mf-table mf-bordure" style="font-size:12pt">', 1)
+        return re.sub(r'<table class="mf-table mf-bordure">.*?</table>', tableau, html, flags=re.S)
+    i = html.find('<div class="mf-libre"')
+    if i < 0:
+        return html
+    j = _fin_div(html, i)
+    debut_id = html.find('</table>', html.find('mf-entete-fixe')) + len('</table>')
+    # identité (date, patient, sexe, âge, dossier, prescripteur) : 12 pt
+    identite = _TAILLE.sub('', html[debut_id:i])
+    identite = re.sub(r'<p style="([^"]*)">', lambda m: f'<p style="{m.group(1).rstrip(";")};font-size:12pt">', identite)
+    # texte du compte rendu : 14 pt (titre encadré et ligne de l'appareil gardés), tableaux 12 pt
+    libre = html[i:j]
+    gardes = []
+
+    def garder(m):
+        gardes.append(m.group(0))
+        return f'⟦garde{len(gardes) - 1}⟧'
+    libre = re.sub(r'<p class="mf-(?:titre-examen|appareil)"[^>]*>.*?</p>', garder, libre, flags=re.S)
+
+    def garder_tableau(m):
+        t = _TAILLE.sub('', re.sub(r'^<table style="font-size:12pt"', '<table', m.group(0)))
+        gardes.append(re.sub(r'<table\b', '<table style="font-size:12pt"', t, count=1))
+        return f'⟦garde{len(gardes) - 1}⟧'
+    libre = re.sub(r'<table\b.*?</table>', garder_tableau, libre, flags=re.S)
+    ouverture = libre[:libre.index('>') + 1]
+    if 'font-size' not in ouverture:
+        ouverture = ouverture[:-1] + ' style="font-size:14pt">'
+    libre = ouverture + _TAILLE.sub('font-size:14pt;', libre[libre.index('>') + 1:])
+    for k, g in enumerate(gardes):
+        libre = libre.replace(f'⟦garde{k}⟧', g)
+    # « Bien confraternellement, » : même taille que le texte
+    suite = re.sub(r'<p style="([^"]*)">((?:(?!</p>).)*confraternellement(?:(?!</p>).)*</p>)',
+                   lambda m: f'<p style="{_TAILLE.sub("", m.group(1)).rstrip(";")};font-size:14pt">{_TAILLE.sub("", m.group(2))}',
+                   html[j:], count=1, flags=re.S)
+    return html[:debut_id] + identite + libre + suite
