@@ -27887,8 +27887,9 @@ def api_finaliser_panier_prescriptions():
 def filtre_mise_en_page_cr(html):
     """⭐ 2026-10-20 : mise en page des comptes rendus (date à droite, appareil sous le titre, nom sous
     « Le Radiologue ») — voir services/modele_formulaire.ajuster_compte_rendu."""
-    from services.modele_formulaire import ajuster_compte_rendu
-    return ajuster_compte_rendu(html)
+    from services.modele_formulaire import ajuster_compte_rendu, mettre_en_forme_compte_rendu
+    # un compte rendu enregistré avant l'encadrement du titre (19/10) est encadré lui aussi
+    return ajuster_compte_rendu(mettre_en_forme_compte_rendu(html))
 
 
 @app.template_filter('format_currency')

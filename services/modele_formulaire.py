@@ -988,6 +988,9 @@ def mettre_en_forme_compte_rendu(html):
     if not html or 'mf-titre-examen' in html:
         return html
     m = re.search(r'<div class="mf-libre"[^>]*>', html)
+    if not m:   # compte rendu enregistré : la zone de texte est figée en <div class=""> après le prescripteur
+        i = html.find('data-id="prescripteur"')
+        m = re.compile(r'<div class="">').search(html, i) if i >= 0 else None
     if not m:
         return html
     debut = m.end()
