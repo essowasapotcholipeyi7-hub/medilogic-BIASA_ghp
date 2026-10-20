@@ -18,13 +18,22 @@
     }
     .pdf-page-canvas { width: 100%; height: auto; display: block; margin-bottom: 10px; border: 1px solid #dee2e6; border-radius: 6px; break-inside: avoid; page-break-inside: avoid; }
     .resultat-contenu-html { font-size: 13px; }
+    /* ⭐ 2026-10-20 (patron : « l'impression A4 est étroite ») : la page fait la largeur d'une A4 à l'écran
+       (avant : 2/3 de l'écran) ; à l'impression, un compte rendu fait sur un modèle (biologie, radiologie)
+       n'est plus dans un cadre avec marge intérieure — ~1 cm de gagné de chaque côté, comme le Word. */
+    .zone-a4 { max-width: 210mm; }
+    @media print {
+        .zone-a4 { max-width: none !important; width: 100% !important; flex: 0 0 100% !important; padding: 0 !important; }
+        .cr-formulaire { border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
+        .cr-formulaire > .card-body { padding: 0 !important; }
+    }
     .resultat-contenu-html img { max-width: 100%; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-8">
+    <div class="col-12 zone-a4">
         {% if resultat.fichier_data %}
         <div class="text-end mb-2 no-print">
             <a href="{{ url_for('api_portail_telecharger_resultat', resultat_id=resultat.id) }}" target="_blank" class="btn btn-outline-primary btn-sm">
@@ -32,7 +41,8 @@
             </a>
         </div>
         {% endif %}
-        <div class="card" id="resultatContenu">
+        {% set _cr_modele = resultat.contenu_html and 'mf-entete' in resultat.contenu_html %}
+        <div class="card{% if _cr_modele %} cr-formulaire{% endif %}" id="resultatContenu">
             <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
 
                 <!-- ⭐ EN-TÊTE CLINIQUE — masquée pour un fichier importé, voir
