@@ -2314,7 +2314,9 @@ async function saveEditPatient() {
     .then(async data => {
         hideLoader();
         if(data.success) {
-            await afficherMessage('Patient modifié avec succès !');
+            // ⭐ 2026-10-20 (patron) : plus de « OK » à cliquer après une modification réussie —
+            // la page se recharge tout de suite et affiche une courte confirmation qui disparaît seule.
+            try { sessionStorage.setItem('patientModifie', '1'); } catch (e) {}
             location.reload();
         } else {
             await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
@@ -2596,6 +2598,20 @@ async function envoyerLienPatient(id, nom, telephone) {
 // ============================================
 // INITIALISATION
 // ============================================
+// Confirmation discrète après une modification de patient (voir saveEditPatient)
+document.addEventListener('DOMContentLoaded', function() {
+    let modifie = false;
+    try { modifie = sessionStorage.getItem('patientModifie') === '1'; sessionStorage.removeItem('patientModifie'); } catch (e) {}
+    if (!modifie) return;
+    const note = document.createElement('div');
+    note.className = 'alert alert-success shadow py-2 px-3 mb-0';
+    note.setAttribute('role', 'status');
+    note.style.cssText = 'position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:100020; transition:opacity .4s;';
+    note.innerHTML = '<i class="fas fa-check-circle me-1"></i> Patient modifié avec succès';
+    document.body.appendChild(note);
+    setTimeout(() => { note.style.opacity = '0'; setTimeout(() => note.remove(), 500); }, 2500);
+});
+
 document.addEventListener('DOMContentLoaded', function() {
     const rows = document.querySelectorAll('#patientsList tr.patient-row');
     rows.forEach(row => {
