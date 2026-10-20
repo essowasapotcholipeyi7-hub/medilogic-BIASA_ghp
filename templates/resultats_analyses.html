@@ -256,6 +256,24 @@ document.addEventListener('change', async e => {
     }
 });
 
+// ⭐ 2026-10-20 (biologie Valeo) : phrases d'interprétation toutes prêtes — « Hémogramme normal. » remplace
+// tout ; une autre phrase s'ajoute à la suite (et enlève « Hémogramme normal. »)
+document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('#zoneFormulaire .mf-suggestion');
+    if (!b) return;
+    const zone = b.closest('.mf-interpretation').querySelector('.mf-libre');
+    const texte = b.dataset.texte;
+    const normal = t => /normal/i.test(t) && !/anormal/i.test(t);
+    const lignes = [...zone.querySelectorAll('p')];
+    if (normal(texte)) lignes.forEach(p => p.remove());
+    else lignes.forEach(p => { if (!p.textContent.trim() || normal(p.textContent)) p.remove(); });
+    if ([...zone.querySelectorAll('p')].some(p => p.textContent.trim() === texte)) return;
+    const p = document.createElement('p');
+    p.style.cssText = 'margin:0;font-weight:bold;font-size:12pt';
+    p.textContent = texte;
+    zone.appendChild(p);
+});
+
 // retirer / remettre une ligne : petit bouton au survol
 const _btnRetirerLigne = document.createElement('button');
 _btnRetirerLigne.type = 'button';
@@ -332,6 +350,7 @@ function figerFormulaire() {
         t.replaceWith(sp);
     });
     c.querySelectorAll('.mf-libre').forEach(d => { d.removeAttribute('contenteditable'); d.removeAttribute('spellcheck'); d.classList.remove('mf-libre'); });
+    c.querySelectorAll('.mf-suggestions').forEach(d => d.remove());
     c.querySelectorAll('tr.mf-retiree').forEach(tr => tr.remove());
     if (document.getElementById('mfMasquerVides').checked) {
         // cadre d'identification : une case vide disparaît avec son intitulé (ex. pas d'hypothèse)

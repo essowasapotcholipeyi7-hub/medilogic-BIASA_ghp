@@ -36,7 +36,7 @@ from services.service_acte_service import charger_services, deviner_service_acte
 from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION
 from models import ConsommableLabo, UsageConsommable, MouvementConsommable, ParametrageStockLabo
 from services import comptes_service   # ⭐ 2026-10-18 : comptes (structures, personnel) dans Neon
-from services.modele_formulaire import est_formulaire, docx_a_des_controles, docx_vers_formulaire, proposer_modele, mots_modele, adapter_entete
+from services.modele_formulaire import est_formulaire, docx_a_des_controles, docx_vers_formulaire, proposer_modele, mots_modele, adapter_entete, profil_patient, note_profil
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
@@ -15655,7 +15655,11 @@ def api_identite_resultat(demande_id):
            # ⭐ 2026-10-19 : comptes rendus de radiologie (« Baguida, le 19/10/2026 »)
            'date_complete': datetime.now().strftime('%d/%m/%Y'),
            'date': datetime.now().strftime('%d/%m/%y'),
-           'date_prelevement': demande.created_at.strftime('%d/%m/%y') if demande.created_at else ''}
+           'date_prelevement': demande.created_at.strftime('%d/%m/%y') if demande.created_at else '',
+           # ⭐ 2026-10-20 : comptes rendus de biologie de Valeo
+           'date_prelevement_complete': demande.created_at.strftime('%d/%m/%Y') if demande.created_at else '',
+           'heure_prelevement': demande.created_at.strftime('%H:%M') if demande.created_at else '',
+           'patient_civilite': demande.patient_nom or ''}
     # ⭐ 2026-10-18 (patron : « ça doit commencer par 1 ») : N° du compte rendu propre à la structure et à
     # la filière (labo / imagerie), compté sur les comptes rendus saisis sur un modèle formulaire
     deja = db.session.query(db.func.count(ResultatExamen.id)).join(DemandeExamen, DemandeExamen.id == ResultatExamen.demande_id)        .filter(ResultatExamen.structure_id == structure_id, DemandeExamen.type_prestation == demande.type_prestation,
@@ -15681,6 +15685,11 @@ def api_identite_resultat(demande_id):
             elif jours >= 0:
                 res['age'] = f"{jours} jour{'s' if jours > 1 else ''}"
     res['dossier'] = _numero_dossier_resultat(demande)
+    # « Mme ABDO Chinwa », « Enfant AYIKA Rayan », « Nné AHOTCHEME » (comme les Word de Valeo)
+    civilite = ('Nné' if res['age_jours'] is not None and res['age_jours'] <= 28
+                else 'Enfant' if res['age_jours'] is not None and res['age_jours'] < 15 * 365
+                else {'F': 'Mme', 'M': 'M.'}.get(res['sexe_code'], ''))
+    res['patient_civilite'] = f"{civilite} {res['patient']}".strip()
     return jsonify({'success': True, **res})
 
 
@@ -15744,13 +15753,24 @@ def api_modele_propose_resultat(demande_id):
             html = db.session.query(ModeleResultat.contenu_html).filter(ModeleResultat.id == mid).scalar()
             _CACHE_MOTS_MODELES[cle] = mots_modele(nom, html)
         candidats.append((mid, _CACHE_MOTS_MODELES[cle]))
-    mid = proposer_modele(demande.acte_nom, candidats)
+    # ⭐ 2026-10-20 : modèle fait pour ce patient d'abord (hémogramme homme / femme / enfant / nouveau-né)
+    profil = None
+    p = Patient.query.get(demande.patient_id) if demande.patient_id else None
+    if p and str(p.structure_id) == str(structure_id):
+        from crypto_helper import dechiffrer_patients_orm
+        dechiffrer_patients_orm([p])
+        age = (date.today() - p.date_naissance).days if p.date_naissance else None
+        profil = profil_patient(getattr(p, 'sexe', None), age)
+    if memoire and profil and note_profil(mots_modele(modeles[memoire], '')[0], profil) < 0:
+        memoire = None   # ex. « Hémogramme - homme » utilisé la dernière fois, patient enfant cette fois
+    couverture = 0.5 if demande.type_prestation == 'analyse' else 0.25
+    mid = proposer_modele(demande.acte_nom, candidats, profil, couverture)
     # ⭐ 2026-10-18 (patron : « quand on prend NFS, c'est NFS qui doit venir ») : le modèle utilisé
     # la dernière fois ne l'emporte plus sur un modèle qui correspond NETTEMENT mieux à l'acte (avant :
     # « NORMES NFS », compte rendu mélangé, revenait toujours pour une NFS).
     if memoire and mid and mid != memoire:
         duel = [c for c in candidats if c[0] in (mid, memoire)]
-        if len(duel) == 2 and proposer_modele(demande.acte_nom, duel) == mid:
+        if len(duel) == 2 and proposer_modele(demande.acte_nom, duel, profil, couverture) == mid:
             return jsonify({'success': True, 'modele_id': mid, 'nom': modeles[mid], 'raison': 'nom'})
     if memoire:
         return jsonify({'success': True, 'modele_id': memoire, 'nom': modeles[memoire], 'raison': 'memoire'})

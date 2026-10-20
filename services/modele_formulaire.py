@@ -729,10 +729,39 @@ _MOTS_VIDES = {'de', 'du', 'des', 'la', 'le', 'les', 'et', 'ou', 'un', 'une', 'e
                # ⭐ 2026-10-19 : radiologie (Valeo) — mots présents dans presque tous les actes et comptes rendus
                'radiologique', 'radiologiques', 'radiographie', 'radiographique', 'incidence', 'incidences',
                'minimum', 'deux', 'trois', 'face', 'profil', 'standard', 'sans', 'preparation', 'element',
-               'quel', 'que', 'soit', 'nombre', 'plus', 'inferieur', 'egal', 'incluant', 'davantage'}
+               'quel', 'que', 'soit', 'nombre', 'plus', 'inferieur', 'egal', 'incluant', 'davantage',
+               'acide', 'quantitative', 'quantitatif', 'qualitative', 'qualitatif', 'tri', 'totales', 'totaux',
+               'elisa', 'autres', 'autre', 'methode', 'methodes', 'immunologique', 'immunologiques', 'realisation',
+               'segment', 'segments', 'squelette', 'membre', 'membres'}
 # acte -> mot du modèle (ex. « Examen radiologique des poumons et du cœur » -> modèle Thorax)
 _SYNONYMES = {'poumon': 'thorax', 'poumons': 'thorax', 'coeur': 'thorax', 'pulmonaire': 'thorax',
-              'hanche': 'bassin', 'salpingograhie': 'hysterosalpingographie', 'salpingographie': 'hysterosalpingographie'}
+              'hanche': 'bassin', 'salpingograhie': 'hysterosalpingographie', 'salpingographie': 'hysterosalpingographie',
+              # ⭐ 2026-10-20 : biologie (Valeo) — nom de l'acte -> mot du compte rendu
+              'uree': 'uremie', 'urique': 'uricemie', 'albuminemie': 'albumine', 'calcemie': 'calcium',
+              'magnesemie': 'magnesium', 'iodothyronine': 'thyroidiennes', 'thyroxine': 'thyroidiennes',
+              'thyreostimuline': 'thyroidiennes', 'ggt': 'gamma', 'glucose': 'glycemie', 'nfs': 'hemogramme',
+              'transaminases': 'asat', 'sgot': 'asat', 'sgpt': 'alat',
+              'phosphatases': 'pal', 'alcalines': 'pal'}
+# ⭐ 2026-10-20 : modèles propres à une population (hémogramme homme / femme / enfant / nouveau-né)
+_PROFILS = {'nouveau': {'nouveau', 'nne', 'neonatal'}, 'enfant': {'enfant', 'enfants', 'pediatrique'},
+            'femme': {'femme', 'femmes'}, 'homme': {'homme', 'hommes'}}
+
+
+def profil_patient(sexe, age_jours):
+    """'nouveau' (28 jours au plus), 'enfant' (moins de 15 ans), sinon 'femme' / 'homme' (ou None)."""
+    if age_jours is not None and age_jours <= 28:
+        return 'nouveau'
+    if age_jours is not None and age_jours < 15 * 365:
+        return 'enfant'
+    return {'F': 'femme', 'M': 'homme'}.get(sexe or '')
+
+
+def note_profil(mots_nom, profil):
+    """+1 : modèle fait pour ce patient ; -1 : fait pour un autre (ex. « femme » pour un homme) ; 0 : général."""
+    pour = {p for p, mots in _PROFILS.items() if mots_nom & mots}
+    if not profil or not pour:
+        return 0
+    return 1 if profil in pour else -1
 
 
 def _norm(t):
@@ -771,10 +800,11 @@ def mots_modele(nom, html):
     return (_mots(nom), _mots(_texte_html(html)), _mots(_texte_html(html, listes=True)))
 
 
-def proposer_modele(acte_nom, modeles):
+def proposer_modele(acte_nom, modeles, profil=None, couverture=0.5):
     """Modèle formulaire le plus probable pour un acte, d'après son nom et son contenu — None si rien
     de net. `modeles` : [(id, nom, contenu_html)] ou [(id, mots_modele(...))]. Le code de l'acte (R831...)
-    est ignoré."""
+    est ignoré. `profil` (voir profil_patient) départage les modèles propres à une population ; `couverture` :
+    part des mots de l'acte que le modèle doit couvrir (radiologie : 0.25, ses actes sont longs et descriptifs)."""
     acte = re.sub(r'^[A-Z]{1,3}\d{2,4}\s*', '', (acte_nom or '').strip())
     mots_acte = _mots(acte, paires=True)
     mots_acte |= {_SYNONYMES[m] for m in mots_acte if m in _SYNONYMES}
@@ -782,28 +812,56 @@ def proposer_modele(acte_nom, modeles):
         return None
 
     def present(mot, mots):
-        # « creatinine » trouve « creatininemie », « bhcg » contient « hcg »
+        # « creatinine » trouve « creatininemie », « bhcg » finit par « hcg » ; un mot de 3 lettres au milieu
+        # d'un autre ne compte pas (2026-10-20 : « fer » dans « référence »)
         return any(m == mot or (len(mot) >= 5 and m.startswith(mot[:max(5, len(mot) - 2)]))
-                   or (len(mot) >= 3 and len(m) >= 4 and mot in m) for m in mots)
+                   or (len(mot) >= 3 and len(m) >= 4 and (m.startswith(mot) or (m.endswith(mot) and len(m) - len(mot) <= 3)))
+                   for m in mots)
 
     def abrege(mot, mots):
         # nom de modèle abrégé : « toxo » pour « toxoplasmose », « copro » pour « coproculture »
         return any(len(m) >= 4 and mot.startswith(m) for m in mots)
 
+    # ⭐ 2026-10-20 : un modèle n'est proposé que s'il couvre au moins la moitié des mots de l'acte (avant :
+    # « Ag » seul envoyait l'hépatite B vers la dengue, « hémoglobine » seul l'électrophorèse de l'hémoglobine
+    # vers l'hémoglobine glyquée). Un synonyme ne donne des points que dans le NOM du modèle (« calcémie » ->
+    # « Ionogramme (..., calcium) », pas l'ECBU qui parle de cristaux d'oxalate de calcium).
+    simples = _mots(acte)
+    paires = {m for m in mots_acte if m not in simples and m not in _SYNONYMES.values()}
+
     notes = []
     for m in modeles:
         mid, (mots_nom, mots_contenu, mots_listes) = (m[0], m[1]) if len(m) == 2 else (m[0], mots_modele(m[1], m[2]))
-        note = sum(3 if present(m, mots_nom) else (2 if abrege(m, mots_nom) else 0) for m in mots_acte)             + sum(1 if present(m, mots_contenu) else (0.5 if present(m, mots_listes) else 0) for m in mots_acte)
+        tous = mots_nom | mots_contenu | mots_listes
+
+        def trouve(mot):
+            return present(mot, tous) or abrege(mot, mots_nom)
+
+        def synonyme(w):
+            return w in _SYNONYMES and present(_SYNONYMES[w], mots_nom)
+        couverts = {w for w in simples if trouve(w) or (w in _SYNONYMES and trouve(_SYNONYMES[w]))}
+        couverts |= {w for w in simples for p in paires if trouve(p) and w in p}
+        if len(couverts) < couverture * len(simples):
+            continue
+
+        def score(mot):
+            return ((3 if present(mot, mots_nom) else (2 if abrege(mot, mots_nom) else 0))
+                    + (1 if present(mot, mots_contenu) else (0.5 if present(mot, mots_listes) else 0)))
+        note = sum(max(score(w), 3 if synonyme(w) else 0) for w in simples) + sum(score(p) for p in paires)
         if note:
             # ⭐ 2026-10-19 : à égalité, la version « normale » d'un examen (radiologie : Genou - normal avant
             # Genou - traumatique), puis le modèle le plus court
-            notes.append((note, int(bool(mots_nom & {'normal', 'normale'})), -len(mots_contenu | mots_listes), mid))
+            # ⭐ 2026-10-20 : d'abord le modèle fait pour ce patient (hémogramme enfant pour un enfant) ;
+            # biologie : « négative » joue le rôle de « normal » (goutte épaisse négative avant positive)
+            notes.append((note, note_profil(mots_nom, profil),
+                          int(bool(mots_nom & {'normal', 'normale', 'negative', 'negatif'})),
+                          -len(mots_contenu | mots_listes), mid))
     if not notes:
         return None
     notes.sort(reverse=True)
-    if len(notes) > 1 and notes[0][:3] == notes[1][:3]:
+    if len(notes) > 1 and notes[0][:4] == notes[1][:4]:
         return None
-    return notes[0][3]
+    return notes[0][4]
 
 
 # ============================================================
@@ -985,7 +1043,7 @@ def _texte_p(p):
 
 
 def mettre_en_forme_compte_rendu(html):
-    if not html or 'mf-titre-examen' in html:
+    if not html or 'mf-titre-examen' in html or 'mf-identite-bio' in html:   # biologie : pas de titre à encadrer
         return html
     m = re.search(r'<div class="mf-libre"[^>]*>', html)
     if not m:   # compte rendu enregistré : la zone de texte est figée en <div class=""> après le prescripteur
@@ -1083,3 +1141,273 @@ def ajuster_compte_rendu(html):
         html = html.replace('<div class="mf-signatures" style="display:flex;justify-content:flex-end',
                             '<div class="mf-signatures" style="display:flex;justify-content:center')
     return html
+
+
+# ============================================================
+# ⭐ 2026-10-20 (patron, Clinique Valeo — modèles de comptes rendus de BIOLOGIE, « dans le même esprit que la
+# radio ») : Word sans listes déroulantes, faits de tableaux remplis pour un vrai patient. À l'import :
+#   - seule la 1re page (jusqu'à « Le Biologiste ») est gardée — certains Word contenaient à la suite les
+#     comptes rendus complets de vrais patients (nom, âge, dossier) ;
+#   - chaque valeur de la colonne « Résultats » devient une case vide à remplir (l'unité écrite à côté est
+#     gardée), « NEGATIVE » devient une liste Négative / Positive, « DP = 374 » une case ;
+#   - cadre d'identité de Valeo (Prescrit par, Âge, Dossier N°, Type d'échantillon, date et heure de
+#     prélèvement ; patient, sexe, téléphone) rempli par le logiciel ;
+#   - interprétation modifiable, avec des phrases toutes prêtes à cliquer ; « Le Biologiste » à droite (les
+#     signatures s'y apposent) ; pied de page du Word gardé.
+# Les mêmes valeurs sont effacées dans la copie du Word gardée avec le modèle.
+# ============================================================
+_RE_BALISE = re.compile(r'<(/?)([A-Za-z][\w.-]*:[A-Za-z][\w.-]*)\b[^>]*?(/?)>')
+
+
+def _enfants(xml, debut, fin):
+    """Éléments enfants directs (balise, début, fin) du contenu xml[debut:fin] (texte XML du Word)."""
+    res, profondeur, ouvert = [], 0, None
+    for m in _RE_BALISE.finditer(xml, debut, fin):
+        if m.group(1):
+            profondeur -= 1
+            if profondeur == 0 and ouvert:
+                res.append((ouvert[0], ouvert[1], m.end()))
+        elif m.group(3):
+            if profondeur == 0:
+                res.append((m.group(2), m.start(), m.end()))
+        else:
+            if profondeur == 0:
+                ouvert = (m.group(2), m.start())
+            profondeur += 1
+    return res
+
+
+def _interieur(xml, el):
+    """Contenu d'un élément (entre sa balise ouvrante et sa balise fermante)."""
+    _, a, b = el
+    return xml.index('>', a) + 1, xml.rindex('<', a, b)
+
+
+def _textes_w(fragment):
+    from html import unescape
+    return [unescape(m.group(2)) for m in re.finditer(r'(<w:t(?:\s[^>]*)?>)(.*?)</w:t>', fragment, re.S)]
+
+
+def _texte_w(fragment):
+    return ''.join(_textes_w(fragment))
+
+
+def _remplacer_texte(fragment, debut, fin, marque):
+    """Dans un paragraphe Word (texte XML) : remplace les caractères [debut, fin) de son texte par `marque`,
+    sans toucher à la mise en forme des morceaux (runs)."""
+    from html import unescape
+    from xml.sax.saxutils import escape as xml_escape
+    runs = list(re.finditer(r'(<w:t(?:\s[^>]*)?>)(.*?)(</w:t>)', fragment, re.S))
+    pos, nouveaux, mise = 0, [], False
+    for m in runs:
+        t = unescape(m.group(2))
+        a, b = pos, pos + len(t)
+        garde = t[:max(0, min(len(t), debut - a))]
+        if not mise and debut < b or (not mise and debut == b and m is runs[-1]):
+            garde += marque
+            mise = True
+        garde += t[max(0, fin - a):] if fin < b else ''
+        nouveaux.append(garde)
+        pos = b
+    for m, t in reversed(list(zip(runs, nouveaux))):
+        ouv = m.group(1) if 'xml:space' in m.group(1) else m.group(1).replace('<w:t', '<w:t xml:space="preserve"', 1)
+        fragment = fragment[:m.start()] + ouv + xml_escape(t) + m.group(3) + fragment[m.end():]
+    return fragment
+
+
+_MARQUE_VALEUR, _MARQUE_CHOIX = '⟦v⟧', '⟦c⟧'
+_RE_VALEUR_CELLULE = re.compile(r'\s*((?:[<>]=?\s*)?\d[\d\s\u00a0,.]*\d|\d|n[ée]gati\w*|positi\w*)', re.I)
+
+
+def _norm_simple(t):
+    return ' '.join(_norm_txt(t).replace('\xa0', ' ').split())
+
+
+def _marquer_tableau(xml, tbl, remplacements):
+    """Valeurs d'un tableau de résultats -> marques. `remplacements` : [(début, fin, nouveau texte)]."""
+    _, ta, tb = tbl
+    lignes = [e for e in _enfants(xml, *_interieur(xml, tbl)) if e[0] == 'w:tr']
+    col_res = None
+    for tr in lignes:
+        cellules, col = [], 0
+        for tc in _enfants(xml, *_interieur(xml, tr)):
+            if tc[0] != 'w:tc':
+                continue
+            frag = xml[tc[1]:tc[2]]
+            m = re.search(r'<w:gridSpan w:val="(\d+)"', frag)
+            span = int(m.group(1)) if m else 1
+            cellules.append((col, span, tc))
+            col += span
+        if col_res is None:
+            for c, span, tc in cellules:
+                if re.fullmatch(r'r[ée]sultats?', _norm_simple(_texte_w(xml[tc[1]:tc[2]]))):
+                    col_res = c
+            if col_res is not None:
+                continue
+        for c, span, tc in cellules:
+            # cellule de la colonne « Résultats » : la valeur en tête de cellule ; ailleurs (goutte épaisse,
+            # sérologie) : « IgM : NEGATIVE », « DP = 374 »
+            dans_resultats = col_res is not None and c <= col_res < c + span
+            if col_res is not None and not dans_resultats:
+                continue   # paramètres, normes (« > = 8% ») : jamais touchés
+            for p in re.finditer(r'<w:p[ >].*?</w:p>', xml[tc[1]:tc[2]], re.S):
+                frag, a = p.group(0), tc[1] + p.start()
+                marque = _marque_paragraphe(_texte_w(frag), dans_resultats)
+                if marque:
+                    remplacements.append((a, a + len(frag), _remplacer_texte(frag, *marque)))
+
+
+def _marque_paragraphe(texte, dans_resultats):
+    """(début, fin, marque) de la valeur d'un paragraphe de résultat, ou None."""
+    if dans_resultats:
+        m = _RE_VALEUR_CELLULE.match(texte)
+        if m:
+            choix = not (m.group(1)[0].isdigit() or m.group(1)[0] in '<>')
+            return m.start(1), m.end(1), (_MARQUE_CHOIX if choix else _MARQUE_VALEUR)
+    m = re.search(r':\s*(n[ée]gati\w*|positi\w*)\s*$', texte, re.I)
+    if m:
+        return m.start(1), m.end(1), _MARQUE_CHOIX
+    m = re.search(r'=\s*(\d[\d\s\u00a0,.]*\d|\d)', texte)
+    if m:
+        return m.start(1), m.end(1), _MARQUE_VALEUR
+    return None
+
+
+def _pied_de_page(z, racine):
+    try:
+        rels = {r.get('Id'): r.get('Target') for r in ET.fromstring(z.read('word/_rels/document.xml.rels'))}
+    except Exception:
+        return ''
+    lignes = []
+    for ref in racine.findall('.//' + W + 'footerReference'):
+        try:
+            f = ET.fromstring(z.read('word/' + rels.get(ref.get(REL + 'id'), '')))
+        except Exception:
+            continue
+        for p in f.iter(W + 'p'):
+            if p.find('.//' + W + 'p') is not None:
+                continue
+            t = ' '.join(''.join(x.text or '' for x in p.iter(W + 't')).split())
+            if t and t not in lignes:
+                lignes.append(t)
+    return ' '.join(lignes)
+
+
+def identite_biologie(prelevement=''):
+    """Cadre d'identité des comptes rendus de biologie de Valeo (à gauche : compte rendu, prescripteur,
+    âge, dossier, échantillon, prélèvement ; à droite, encadré : patient, sexe, téléphone)."""
+    def case(cle, largeur='7em'):
+        return (f'<span class="mf-champ mf-texte" data-id="{cle}" contenteditable="true" '
+                f'style="min-width:{largeur}"></span>')
+    echantillons = ('Sang total', 'Sang', 'Sérum', 'Plasma', 'Urines', 'Selles', 'Liquide de ponction', 'Pus', 'Sécrétions vaginales')
+    echantillon = ('<input type="text" class="mf-champ mf-combo" data-id="prelevement" list="mfl-echantillon" autocomplete="off" '
+                   f'placeholder="taper ou choisir" value="{escape(prelevement)}" style="min-width:7em">'
+                   '<datalist id="mfl-echantillon">' + ''.join(f'<option>{escape(e)}</option>' for e in echantillons) + '</datalist>')
+    td = 'border:0;padding:0 14px 0 0;vertical-align:top'
+    lignes = [('Prescrit par', case('prescripteur', '10em')), ('Age', case('age', '5em')), ('Dossier N°', case('dossier', '6em')),
+              ("Type d’échantillon", echantillon), ('Date de prélèvement', case('date_prelevement_complete', '6em')),
+              ('Heure de prélèvement', case('heure_prelevement', '4em'))]
+    gauche = ''.join(f'<tr><td style="{td}">{escape(l)}</td><td style="border:0;padding:0">{v}</td></tr>' for l, v in lignes)
+    return ('<table class="mf-identite mf-identite-bio" style="border:0;width:100%;margin:6px 0 16px;font-size:10.5pt"><tr>'
+            '<td style="border:0;padding:0;width:58%;vertical-align:top">'
+            '<div style="font-style:italic">COMPTE-RENDU D’ANALYSES MÉDICALES</div>'
+            f'<table style="border-collapse:collapse">{gauche}</table></td>'
+            '<td style="border:0;padding:0;vertical-align:top">'
+            '<div style="border:1px solid #000;padding:3px 8px;min-height:4.2em">'
+            f'<div style="font-size:11.5pt">{case("patient_civilite", "12em")}</div>'
+            f'<div>Sexe : {case("sexe", "6em")}</div><div>Téléphone : {case("telephone", "7em")}</div>'
+            '</div></td></tr></table>')
+
+
+def docx_compte_rendu_biologie(data, section=None, prelevement='', interpretation=None, suggestions=(), pied=''):
+    """Word de compte rendu de biologie (tableaux remplis pour un patient) -> (HTML du modèle, copie du Word
+    sans valeurs ni pages de patients). `section` : (titre de début, titre de fin exclu ou None) pour tirer
+    un modèle d'une partie du Word (ex. CRP) ; `prelevement` : type d'échantillon proposé ; `interpretation`
+    : texte mis par défaut dans l'interprétation ; `suggestions` : phrases à cliquer sous l'interprétation."""
+    z = zipfile.ZipFile(BytesIO(data))
+    xml = z.read('word/document.xml').decode('utf-8')
+    corps = re.search(r'<w:body>', xml).end(), xml.rindex('</w:body>')
+    enfants = _enfants(xml, *corps)
+    textes = [_norm_simple(_texte_w(xml[a:b])) if t in ('w:p', 'w:tbl') else '' for t, a, b in enfants]
+    biologiste = [i for i, t in enumerate(textes) if enfants[i][0] == 'w:p' and re.fullmatch(r'le biologiste', t)]
+    patient = [i for i, t in enumerate(textes) if 'prescrit par' in t or 'compte-rendu d' in t]
+    fin_page = min([i for i in biologiste] + [i - 1 for i in patient] + [len(enfants) - 1])
+    if section:
+        debut = next(i for i, t in enumerate(textes) if t == _norm_simple(section[0]))
+        fins = [i for i, t in enumerate(textes) if i > debut and ((section[1] and t == _norm_simple(section[1]))
+                                                                 or i in biologiste or i in patient)]
+        garder = list(range(debut, (fins[0] if fins else len(enfants)))) + biologiste[:1]
+    else:
+        garder = list(range(0, fin_page + 1))
+    garder += [i for i, e in enumerate(enfants) if e[0] == 'w:sectPr' and i not in garder]
+    remplacements = []
+    for i in garder:
+        if enfants[i][0] == 'w:tbl':
+            _marquer_tableau(xml, enfants[i], remplacements)
+        elif enfants[i][0] == 'w:p' and re.fullmatch(r'[\s²]*²[\s²]*', _texte_w(xml[enfants[i][1]:enfants[i][2]]) or 'x'):
+            remplacements.append((enfants[i][1], enfants[i][2], ''))   # « ² » tapé par erreur
+    remplacements.sort()
+
+    def morceau(a, b):
+        out, pos = [], a
+        for ra, rb, nouveau in remplacements:
+            if a <= ra and rb <= b:
+                out.append(xml[pos:ra] + nouveau)
+                pos = rb
+        return ''.join(out) + xml[pos:b]
+
+    marque = xml[:corps[0]] + ''.join(morceau(enfants[i][1], enfants[i][2]) for i in garder) + xml[corps[1]:]
+    propre = _docx_remplace(data, 'word/document.xml',
+                            marque.replace(_MARQUE_VALEUR, '').replace(_MARQUE_CHOIX, '').encode('utf-8'))
+    donnees_marquees = _docx_remplace(data, 'word/document.xml', marque.encode('utf-8'))
+    html = docx_vers_formulaire(donnees_marquees)
+    html = html.replace(_MARQUE_VALEUR, '<span class="mf-champ mf-texte mf-resultat" contenteditable="true"></span>')
+    html = html.replace(_MARQUE_CHOIX, '<select class="mf-champ mf-liste mf-resultat"><option value="">— choisir —</option>'
+                                       '<option>NÉGATIVE</option><option>POSITIVE</option>'
+                                       '<option value="__autre__">✎ Autre…</option></select>')
+    zm = zipfile.ZipFile(BytesIO(donnees_marquees))
+    racine = ET.fromstring(zm.read('word/document.xml'))
+    entete = _entete_fixe(zm, racine)
+    m = re.search(r'<table class="mf-entete">.*?</table>', html, flags=re.S)
+    if m:
+        html = html.replace(m.group(0), '', 1)
+    html = html.replace('</style>', '</style>' + entete + identite_biologie(prelevement), 1)
+    # tableaux de résultats toujours encadrés (certains Word tenaient leurs bordures d'un style de tableau)
+    html = html.replace('<table class="mf-table">', '<table class="mf-table mf-bordure">')
+    # titre de l'analyse (1er paragraphe écrit après le cadre d'identité) : centré, gras, comme dans les Word
+    # (certains le tenaient d'un style Word, perdu à la conversion)
+    i = html.find('mf-identite-bio')
+    for m in re.finditer(r'<p\b[^>]*>.*?</p>', html[i:], flags=re.S):
+        titre = _texte_p(m.group(0))
+        if titre:
+            a, b = i + m.start(), i + m.end()
+            html = (html[:a] + '<p class="mf-titre-analyse" style="margin:10px 0 8px;text-align:center;font-weight:bold;'
+                    f'font-size:14pt">{escape(titre)}</p>' + html[b:])
+            break
+    # « Le Biologiste » : à droite (les espaces du Word ne suffisent pas à l'écran)
+    html = re.sub(r'<p style="[^"]*">(?:(?!</p>).)*Le Biologist(?:(?!</p>).)*</p>',
+                  '<p style="margin:26px 60px 0 0;text-align:right;font-size:12pt">Le Biologiste</p>', html, count=1, flags=re.S)
+    if 'Le Biologiste' not in html:   # Word sans la mention (ex. hémogramme femme)
+        i = html.rfind('</div>')
+        html = html[:i] + '<p style="margin:26px 60px 0 0;text-align:right;font-size:12pt">Le Biologiste</p>' + html[i:]
+    # interprétation (hémogramme) : modifiable, phrases toutes prêtes
+    i = html.find('INTERPR')
+    if i >= 0:
+        debut = html.find('</p>', i) + 4
+        fin = html.find('<p style="margin:26px 60px 0 0', debut)
+        fin = fin if fin >= 0 else html.rfind('</div>')
+        contenu = html[debut:fin]
+        if interpretation is not None:
+            contenu = f'<p style="margin:0;font-weight:bold;font-size:12pt">{escape(interpretation)}</p>'
+        boutons = ''.join(
+            f'<button type="button" class="mf-suggestion" data-texte="{escape(s, quote=True)}" '
+            'style="font-size:9pt;margin:2px 4px 0 0;padding:0 6px;border:1px solid #0d6efd;border-radius:10px;'
+            f'background:#eef5ff;color:#0d6efd;cursor:pointer">+ {escape(s)}</button>' for s in suggestions)
+        html = (html[:debut] + '<div class="mf-interpretation"><div class="mf-libre" contenteditable="true" spellcheck="true">'
+                + contenu + '</div>' + (f'<div class="mf-suggestions">{boutons}</div>' if boutons else '') + '</div>' + html[fin:])
+    pied = _pied_de_page(zm, racine) or pied
+    if pied:
+        i = html.rfind('</div>')
+        html = (html[:i] + f'<p class="mf-pied" style="margin:34px 0 0;text-align:center;font-size:8pt">{escape(pied)}</p>'
+                + html[i:])
+    return html, propre
