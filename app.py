@@ -15222,6 +15222,8 @@ def api_definir_contenu_modele(modele_id):
         if not modele:
             return jsonify({'success': False, 'error': 'Introuvable'}), 404
         contenu_html = (request.json.get('contenu_html') or '').strip()
+        from services.modele_formulaire import retirer_couleurs_du_theme   # ⭐ 2026-10-20 : jamais les couleurs du thème sombre
+        contenu_html = retirer_couleurs_du_theme(contenu_html)
         if not contenu_html:
             return jsonify({'success': False, 'error': 'Contenu vide'}), 400
         modele.contenu_html = contenu_html
@@ -15251,6 +15253,8 @@ def api_creer_modele_resultat():
         # ⭐ Alternative au fichier importé : rédigé directement dans
         # l'éditeur en ligne (voir modeles_resultats.html).
         contenu_html = (request.form.get('contenu_html') or '').strip()
+        from services.modele_formulaire import retirer_couleurs_du_theme   # ⭐ 2026-10-20 : jamais les couleurs du thème sombre
+        contenu_html = retirer_couleurs_du_theme(contenu_html)
 
         if not nom or not (fichier or contenu_html):
             return jsonify({'success': False, 'error': 'Nom et (fichier ou contenu) requis'}), 400
@@ -15820,6 +15824,8 @@ def api_enregistrer_resultat(demande_id):
         # dans l'éditeur en ligne (voir resultats_analyses.html) — évite le
         # détour par Word/Excel + conversion PDF manuelle.
         contenu_html = (request.form.get('contenu_html') or '').strip()
+        from services.modele_formulaire import retirer_couleurs_du_theme   # ⭐ 2026-10-20 : jamais les couleurs du thème sombre
+        contenu_html = retirer_couleurs_du_theme(contenu_html)
         modele_id = request.form.get('modele_utilise_id')
 
         # ⭐ Signature pré-enregistrée sélectionnée : sa signature s'appose
@@ -27919,7 +27925,9 @@ def filtre_mise_en_page_cr(html):
     « Le Radiologue ») — voir services/modele_formulaire.ajuster_compte_rendu."""
     from services.modele_formulaire import ajuster_compte_rendu, mettre_en_forme_compte_rendu
     # un compte rendu enregistré avant l'encadrement du titre (19/10) est encadré lui aussi
-    return ajuster_compte_rendu(mettre_en_forme_compte_rendu(html))
+    # ⭐ 2026-10-20 : couleurs du thème sombre enregistrées par erreur (texte blanc à l'impression) retirées
+    from services.modele_formulaire import retirer_couleurs_du_theme
+    return ajuster_compte_rendu(mettre_en_forme_compte_rendu(retirer_couleurs_du_theme(html)))
 
 
 @app.template_filter('format_currency')

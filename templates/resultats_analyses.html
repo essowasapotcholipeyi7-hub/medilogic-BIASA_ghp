@@ -139,7 +139,7 @@
                     </div>
                     <div id="blocQuillResultat">
                         <label class="form-label mb-1">Contenu du résultat</label>
-                        <div id="editeurResultat" style="height:220px; background:#fff;"></div>
+                        <div id="editeurResultat" data-th-garder style="height:220px; background:#fff; color:#000; color-scheme:light;"></div>
                     </div>
                     <!-- ⭐ 2026-10-18 : modèle « formulaire » importé de Word — listes et zones à remplir -->
                     <div id="blocFormulaire" style="display:none;">
@@ -150,7 +150,7 @@
                                 <label class="form-check-label" for="mfMasquerVides">Ne pas imprimer les lignes laissées vides</label>
                             </div>
                         </div>
-                        <div id="zoneFormulaire" style="border:1px solid #dee2e6; border-radius:6px; padding:14px; max-height:65vh; overflow:auto; background:#fff; position:relative;"></div>
+                        <div id="zoneFormulaire" data-th-garder style="border:1px solid #dee2e6; border-radius:6px; padding:14px; max-height:65vh; overflow:auto; background:#fff; color:#000; color-scheme:light; position:relative;"></div>{# ⭐ 2026-10-20 : la feuille du compte rendu reste « papier » en thème sombre (data-th-garder + color-scheme:light : cases de saisie à texte noir) #}
                     </div>
                 </div>
             </div>

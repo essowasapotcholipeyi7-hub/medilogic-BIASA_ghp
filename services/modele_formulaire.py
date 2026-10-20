@@ -1493,3 +1493,21 @@ def harmoniser_compte_rendu(html):
                    lambda m: f'<p style="{_TAILLE.sub("", m.group(1)).rstrip(";")};font-size:14pt">{_TAILLE.sub("", m.group(2))}',
                    html[j:], count=1, flags=re.S)
     return html[:debut_id] + identite + libre + suite
+
+
+# ⭐ 2026-10-20 (patron : « à l'impression le texte est blanc » / « en thème sombre c'est presque invisible ») :
+# le thème sombre (static/js/theme_sombre.js) repeint la page en posant des couleurs « !important » sur les
+# éléments ; enregistrées avec le compte rendu, elles donnaient du texte blanc sur le papier. Un compte rendu
+# ou un modèle ne garde jamais ces couleurs (aucun modèle n'utilise « !important »).
+_DECL_THEME = re.compile(r'^\s*(background-color|color|transition|border-color)\s*:[^;]*!\s*important\s*$', re.I)
+
+
+def retirer_couleurs_du_theme(html):
+    if not html or ('!important' not in html and 'data-th-sombre' not in html):
+        return html
+    html = re.sub(r'\sdata-th-sombre="[^"]*"', '', html)
+
+    def style(m):
+        decl = [d.strip() for d in m.group(2).split(';') if d.strip() and not _DECL_THEME.match(d)]
+        return f'{m.group(1)}style="{"; ".join(decl)}"' if decl else m.group(1).rstrip()
+    return re.sub(r'(<[a-zA-Z][^>]*?\s)style="([^"]*!\s*important[^"]*)"', style, html)

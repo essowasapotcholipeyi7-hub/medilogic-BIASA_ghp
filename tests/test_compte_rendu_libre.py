@@ -253,3 +253,16 @@ def test_modele_biologie_tableaux_d_une_seule_taille():
     html, _ = docx_compte_rendu_biologie(_docx_bio())
     assert '<table class="mf-table mf-bordure" style="font-size:12pt">' in html and 'mf-bloc-signature' in html
     assert harmoniser_compte_rendu(html) == html
+
+
+def test_couleurs_du_theme_sombre_jamais_gardees():
+    """Patron, 2026-10-20 : NFS saisie en thème sombre -> texte blanc à l'impression."""
+    from services.modele_formulaire import retirer_couleurs_du_theme
+    html = ('<div class="modele-formulaire" data-th-sombre="1" style="color: rgb(232, 232, 232) !important;">'
+            '<span class="mf-valeur" style="font-weight: bold; background-color: rgb(20, 20, 20) !important; '
+            'transition: none !important; border-color: rgba(255, 255, 255, 0.14) !important; white-space: pre-wrap;">67</span>'
+            '<p style="margin:0;color:#c00">rouge du modèle</p></div>')
+    out = retirer_couleurs_du_theme(html)
+    assert out.startswith('<div class="modele-formulaire">') and '!important' not in out and 'data-th-sombre' not in out
+    assert 'font-weight: bold; white-space: pre-wrap' in out and 'color:#c00' in out
+    assert retirer_couleurs_du_theme(out) == out
