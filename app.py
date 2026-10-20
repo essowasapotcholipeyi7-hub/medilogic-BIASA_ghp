@@ -22856,9 +22856,13 @@ def api_sortie_hospitalisation(hospit_id):
         # une mise en observation (catégorie 'observation') : porte le code
         # P160 et reste remboursée à 90%, mais n'est pas soumise à EP
         # (patron, 2026-10-01).
+        # ⭐ 2026-10-20 (patron) : une chambre dont le NOM dit mise en observation (Elite « Chambre
+        # Commune MEO », « Chambre MEO VIP » : hors AMU, sans catégorie de salle) est aussi dispensée d'EP.
+        observation = (categorie_salle_chambre == 'observation'
+                       or deduire_categorie_salle((chambre or {}).get('nom')) == 'observation')
         patient_amu = (
             patient_assure and str(hospit.assurance_nom).lower().startswith('amu')
-            and categorie_salle_chambre != 'observation'
+            and not observation
         )
         if patient_amu and not data.get('ep_confirme'):
             return jsonify({

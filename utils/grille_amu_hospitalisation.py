@@ -190,7 +190,7 @@ def deduire_categorie_salle(nom):
     t = unicodedata.normalize('NFD', str(nom or '')).encode('ascii', 'ignore').decode().lower()
     if not t:
         return None
-    if 'observation' in t or re.search(r'meo', t):
+    if 'observation' in t or re.search(r'\bmeo\b', t):
         return 'observation'
     if 'reanimation' in t:
         return 'reanimation'

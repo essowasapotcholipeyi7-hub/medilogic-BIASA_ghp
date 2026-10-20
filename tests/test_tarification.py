@@ -399,6 +399,8 @@ def test_categorie_chambre_deduite_du_nom_et_paliers():
     assert deduire_categorie_salle('P160 Hospitalisation Salle commune 3 a 6 lits') == 'salle_commune_3_6'
     assert deduire_categorie_salle('P160 Reanimation') == 'reanimation'
     assert deduire_categorie_salle('P160 Hospitalisation Salle commune') is None
+    assert deduire_categorie_salle('Chambre MEO VIP') == 'observation'   # Elite, mise en observation
+    assert deduire_categorie_salle('Chambre romeo') == 'cabine'
     lignes = construire_lignes_chambre({'nom': 'P160 Hospitalisation Cabine ventillee avec 2 lits', 'prix': 7000, 'pbr': 5000},
                                        18, date(2026, 10, 1), [], True, niveau_soins='3')
     assert [(l['quantite'], l['pbr']) for l in lignes] == [(7, 5000), (7, 3375), (4, 1625)]
@@ -414,3 +416,19 @@ def test_ligne_de_chambre_par_periode_garde_le_tarif_de_la_chambre():
     for suffixe in (' Premiere Semaine', ' 8e jour au 14e jour', ' 15 jours et plus'):
         a = article_tarif_soin(N(id=1, nom=chambre + suffixe, prix=20000, quantite=7, prise_en_charge_cac=True, type='acte'), info, 5000, True)
         assert a['nom'] == chambre and a['prix_non_assure'] == 15000
+
+
+def test_chambre_non_prise_par_amu_jamais_decoupee():
+    """Patron, 2026-10-20 : Elite « Chambre VIP » / « Chambre Commune », aucune assurance — même pour un
+    patient assuré, une seule ligne au prix clinique (pas de périodes AMU ni de PBR de la grille)."""
+    from datetime import date
+    from services.hospitalisation_service import construire_lignes_chambre
+    catalogue = [{'nom': 'Chambre VIP', 'prix': '15000', 'pbr': '0', 'prise_en_charge_amu': 'FALSE'},
+                 {'nom': 'P160 Hospitalisation Cabine climatisee avec 1 lit', 'prix': '15000', 'pbr': '15000', 'prise_en_charge_amu': 'TRUE'}]
+    lignes = construire_lignes_chambre({'nom': 'Chambre VIP', 'id': '169', 'prix': 15000.0, 'pbr': 0.0}, 16, date(2026, 10, 1),
+                                       catalogue, True, niveau_soins='2', type_prestataire='cabinet_prive')
+    assert [(l['nom'], l['quantite'], l['prix']) for l in lignes] == [('Chambre VIP', 16, 15000.0)]
+    # une chambre P160 du même patient reste découpée par période
+    lignes = construire_lignes_chambre({'nom': 'P160 Hospitalisation Cabine climatisee avec 1 lit', 'id': '152', 'prix': 15000.0, 'pbr': 15000.0},
+                                       16, date(2026, 10, 1), catalogue, True, niveau_soins='2', type_prestataire='cabinet_prive')
+    assert [l['quantite'] for l in lignes] == [7, 7, 2]

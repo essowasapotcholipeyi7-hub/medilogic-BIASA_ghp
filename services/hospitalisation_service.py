@@ -161,6 +161,18 @@ def _lignes_palier_depuis_grille(acte_choisi, nb_jours, date_entree, niveau_soin
     return lignes
 
 
+def chambre_prise_en_charge_amu(acte_choisi, tous_les_actes):
+    """La chambre est-elle prise en charge par l'AMU ? Indication portée par l'acte choisi si présente,
+    sinon colonne prise_en_charge_amu de l'acte du catalogue de même nom (TRUE par défaut)."""
+    if acte_choisi.get('prise_en_charge_amu') is not None:
+        return str(acte_choisi.get('prise_en_charge_amu')).strip().upper() not in ('FALSE', '0', 'NON', 'NO')
+    nom = str(acte_choisi.get('nom') or '').strip().lower()
+    for a in tous_les_actes or []:
+        if str(a.get('nom') or '').strip().lower() == nom:
+            return str(a.get('prise_en_charge_amu', 'TRUE')).strip().upper() not in ('FALSE', '0', 'NON', 'NO')
+    return True
+
+
 def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes, patient_assure,
                                niveau_soins=None, categorie_salle=None, type_prestataire=None):
     """Construit les lignes SoinHospitalisation (sous forme de dicts prêts
@@ -179,6 +191,11 @@ def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes
     (date_prestation -> date_fin_prestation)."""
     lignes_grille = None
     groupe = None
+    # ⭐ 2026-10-20 (patron) : une chambre que l'AMU ne prend pas en charge (ex. Elite « Chambre VIP »,
+    # « Chambre Commune » : aucune assurance) n'est jamais découpée par période AMU — une seule ligne au
+    # prix clinique, même pour un patient assuré.
+    if patient_assure and not chambre_prise_en_charge_amu(acte_choisi, tous_les_actes):
+        patient_assure = False
     # ⭐ 2026-10-19 (patron) : patient assuré -> PBR depuis la grille AMU (ramené au prix clinique) QUELLE
     # QUE SOIT la durée — un séjour de 7 jours ou moins aussi (une seule ligne, palier 1).
     if patient_assure and nb_jours > 0:
