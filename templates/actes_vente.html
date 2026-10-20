@@ -2966,7 +2966,7 @@ async function redirigerVersReçuActes(venteId, typeDocument, formatImpression, 
         window.open(formatImpression === 'A4'
             ? `/factures_deux/${venteId}/actes?imprimer=1`
             : `/facture/${venteId}/actes${urlParams}${urlParams ? '&' : '?'}ensuite=structure`, '_blank');
-        window.location.href = "/dashboard";
+        window.location.href = '/actes_vente';   // ⭐ 2026-10-20 : on reste dans la vente (patron)
         return;
     } else if (typeDocument === 'les_deux') {
         // un seul onglet : reçu patient, puis copie structure (voir recu_client.html)
@@ -2974,10 +2974,10 @@ async function redirigerVersReçuActes(venteId, typeDocument, formatImpression, 
         window.open(formatImpression === 'A4'
             ? `/recus_deux/${venteId}/actes?imprimer=1`
             : `/recu/${venteId}/actes${urlParams}${urlParams ? '&' : '?'}ensuite=structure`, '_blank');
-        window.location.href = "/dashboard";
+        window.location.href = '/actes_vente';   // ⭐ 2026-10-20 : on reste dans la vente (patron)
         return;
     } else {
-        window.location.href = "/dashboard";
+        window.location.href = '/actes_vente';   // ⭐ 2026-10-20 : on reste dans la vente (patron)
         return;
     }
     
@@ -2993,7 +2993,7 @@ async function redirigerVersReçuActes(venteId, typeDocument, formatImpression, 
         }
     }
     
-    window.location.href = "/dashboard";
+    window.location.href = '/actes_vente';   // ⭐ 2026-10-20 : on reste dans la vente (patron)
 }
 
 // ============================================

@@ -2502,7 +2502,7 @@ async function redirigerApresVente(venteId) {
         window.open(format === 'A4'
             ? `/factures_deux/${venteId}/pharma?imprimer=1`
             : `/facture/${venteId}/pharma?format=${format}&ensuite=structure`, '_blank');
-        window.location.href = '/dashboard';
+        window.location.href = '/pharma_vente';   // ⭐ 2026-10-20 : on reste dans la vente (patron)
         return;
     }
 
@@ -2512,7 +2512,7 @@ async function redirigerApresVente(venteId) {
         window.open(format === 'A4'
             ? `/recus_deux/${venteId}/pharma?imprimer=1`
             : `/recu/${venteId}/pharma?format=${format}&ensuite=structure`, '_blank');
-        window.location.href = '/dashboard';
+        window.location.href = '/pharma_vente';   // ⭐ 2026-10-20 : on reste dans la vente (patron)
         return;
     }
     
@@ -2541,7 +2541,7 @@ async function redirigerApresVente(venteId) {
         }
     }
     
-    window.location.href = '/dashboard';
+    window.location.href = '/pharma_vente';   // ⭐ 2026-10-20 : on reste dans la vente (patron)
 }
 
 // ============================================

@@ -54,6 +54,9 @@ class Domaine:
     # Le laborantin/radiologue n'a accès qu'au domaine Labo/Radio (même
     # restriction que le menu horizontal).
     pour_labo_radio: bool = False
+    # ⭐ 2026-10-20 (patron) : onglets d'AUTRES domaines aussi proposés dans la barre de celui-ci
+    # (« quand on est dans vente acte, qu'on puisse voir vente pharmacie, et vice-versa »).
+    voisins: tuple = ()
 
 
 def _pas_cache(module):
@@ -94,7 +97,7 @@ DOMAINES = [
         Onglet('protocoles', 'Protocoles et modèles', 'protocoles.page_protocoles', 'fa-clipboard-list',
                'Modèles de soins', 'protocole modèle',
                visible=lambda c: c.a_acces('protocoles') and not c.onglet_cache('protocoles')),
-    ]),
+    ], voisins=('pharma_vente',)),
     Domaine('pharmacie', 'Pharmacie', 'fa-pills', [
         Onglet('pharma_vente', 'Vente pharmacie', 'pharma_vente', 'fa-cart-shopping',
                'Vendre des médicaments', 'médicament vente caisse',
@@ -108,7 +111,7 @@ DOMAINES = [
         Onglet('codes_barres', 'Codes-barres', 'page_codes_barres', 'fa-barcode',
                'Codes des articles', 'douchette scan',
                visible=lambda c: c.is_admin or c.role in ('gestionnaire', 'secretaire', 'caissier', 'pharmacien')),
-    ]),
+    ], voisins=('actes_vente',)),
     Domaine('amu', 'AMU', 'fa-shield-heart', [
         Onglet('entente_prealable', 'Entente préalable', 'page_amu_entente_prealable', 'fa-file-medical',
                'Demander un accord AMU', 'ep accord cnss inam tns',

@@ -350,9 +350,12 @@ def _navigation_session():
 
     arguments = {**(request.view_args or {}), **request.args.to_dict()}
     domaine_actif, onglet_actif = onglet_courant(domaines, request.endpoint, arguments)
+    # ⭐ 2026-10-20 : onglets voisins (autre domaine) proposés dans la barre — seulement s'ils sont visibles
+    visibles = {o.id: (o, d) for d, onglets in domaines for o in onglets}
     g._navigation_cache = {
         'domaines': [
-            {'id': d.id, 'libelle': d.libelle, 'icone': d.icone, 'onglets': [_vers_dict(o, d) for o in onglets]}
+            {'id': d.id, 'libelle': d.libelle, 'icone': d.icone, 'onglets': [_vers_dict(o, d) for o in onglets],
+             'voisins': [_vers_dict(*visibles[i]) for i in d.voisins if i in visibles]}
             for d, onglets in domaines
         ],
         'parcours': [

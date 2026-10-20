@@ -1232,6 +1232,10 @@
         .nav-domaine a:focus-visible { outline: 2px solid #0E9D67; outline-offset: 2px; }
         .nav-domaine a.actif { background: #0A3D5C; border-color: #0A3D5C; color: #fff; }
         .nav-domaine a.nav-domaine-accueil { margin-left: auto; border-style: dashed; color: #51636D; }
+        /* ⭐ 2026-10-20 : retour à l'onglet quitté + onglet voisin d'un autre domaine */
+        .nav-domaine a.nav-domaine-retour { background: #E8F6EF; border-color: #0E9D67; color: #0A6E48; font-weight: 600; }
+        .nav-domaine a.nav-domaine-retour:hover { background: #0E9D67; color: #fff; }
+        .nav-domaine a.nav-domaine-voisin { border-style: dashed; border-color: #0E9D67; color: #0A6E48; }
         
         .loader {
             width: 44px;
@@ -3117,9 +3121,15 @@ async function appliquerPropositionTheme() {
         {% if not (cacher_navigation is defined and cacher_navigation) and request.endpoint not in ['dashboard', 'page_accueil'] %}
         {% set _nav = navigation() %}
         {% set _dom = (_nav.domaines | selectattr('id', 'equalto', _nav.domaine_actif) | list | first) if _nav.domaine_actif else none %}
-        {% if _dom and _dom.onglets | length > 1 %}
+        {% if _dom and (_dom.onglets | length > 1 or _dom.voisins) %}
         <nav class="nav-domaine" aria-label="Onglets {{ _dom.libelle }}">
             <span class="nav-domaine-titre"><i class="fas {{ _dom.icone }} me-1" aria-hidden="true"></i>{{ _dom.libelle }}</span>
+            {# ⭐ 2026-10-20 (patron) : bouton pour revenir à l'onglet qu'on vient de quitter (rempli plus bas) #}
+            <a href="#" id="navRetourOnglet" class="nav-domaine-retour" hidden title="Revenir à l'onglet précédent"><i class="fas fa-arrow-left me-1" aria-hidden="true"></i>Retour : <span></span></a>
+            {# onglet d'un autre domaine (Vente d'actes <-> Vente pharmacie), en tête pour être vu tout de suite #}
+            {% for o in _dom.voisins %}
+            <a href="{{ o.url }}" class="nav-domaine-voisin" data-onglet="{{ o.id }}" title="{{ o.domaine }}"><i class="fas {{ o.icone }} me-1" aria-hidden="true"></i>{{ o.libelle }}</a>
+            {% endfor %}
             {% for o in _dom.onglets %}
             <a href="{{ o.url }}" class="{{ 'actif' if o.id == _nav.onglet_actif }}" {% if o.id == _nav.onglet_actif %}aria-current="page"{% endif %}>{{ o.libelle }}</a>
             {% endfor %}
@@ -3138,6 +3148,25 @@ async function appliquerPropositionTheme() {
             const liste = JSON.parse(localStorage.getItem(cle) || '[]').filter(id => id !== actuel);
             liste.unshift(actuel);
             localStorage.setItem(cle, JSON.stringify(liste.slice(0, 6)));
+        } catch (e) { /* stockage indisponible : sans conséquence */ }
+        // ⭐ 2026-10-20 (patron) : « un bouton pour retourner dans l'onglet qu'on venait de quitter » —
+        // mémorisé par onglet du navigateur (sessionStorage), adresse complète gardée (filtres compris).
+        try {
+            {% set _onglet = (_nav.domaines | map(attribute='onglets') | sum(start=[]) | selectattr('id', 'equalto', _nav.onglet_actif) | list | first) %}
+            const courant = {id: {{ _nav.onglet_actif | tojson }}, libelle: {{ (_onglet.libelle if _onglet else '') | tojson }},
+                             url: location.pathname + location.search};
+            const avant = JSON.parse(sessionStorage.getItem('ongletCourant') || 'null');
+            if (avant && avant.id !== courant.id) sessionStorage.setItem('ongletPrecedent', JSON.stringify(avant));
+            sessionStorage.setItem('ongletCourant', JSON.stringify(courant));
+            const precedent = JSON.parse(sessionStorage.getItem('ongletPrecedent') || 'null');
+            const bouton = document.getElementById('navRetourOnglet');
+            if (bouton && precedent && precedent.id !== courant.id && precedent.libelle) {
+                bouton.href = precedent.url;
+                bouton.querySelector('span').textContent = precedent.libelle;
+                bouton.hidden = false;
+                // le même onglet voisin juste à côté ferait doublon
+                document.querySelectorAll('.nav-domaine-voisin[data-onglet="' + precedent.id + '"]').forEach(a => { a.hidden = true; });
+            }
         } catch (e) { /* stockage indisponible : sans conséquence */ }
         </script>
         {% endif %}
