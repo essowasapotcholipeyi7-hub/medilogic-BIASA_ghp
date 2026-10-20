@@ -207,6 +207,7 @@ function afficherFormulaire(html) {
         choisirNormes(zone, d.sexe_code || '', d.age_jours);
         zone.dataset.sexe = d.sexe_code || '';
         marquerHorsNormes(zone);
+        signalerPrelevement(zone);
         // ⭐ 2026-10-18 (patron) : le sexe est enregistré avec le patient — affiché, plus à choisir ;
         // seulement s'il manque dans la fiche (anciens patients), la liste reste, signalée en orange
         zone.querySelectorAll('select[data-id="sexe"]').forEach(sel => {
@@ -313,6 +314,31 @@ function _bornesNorme(texte, sexe) {
     if (r) return r[1] === '<' ? { max: _nombreNorme(r[2]), strict: !/<\s*=/.test(t) } : { min: _nombreNorme(r[2]), strict: !/>\s*=/.test(t) };
     return null;
 }
+// ⭐ 2026-10-20 (patron) : date et heure de prélèvement (biologie) laissées vides — le labo les écrit, et le
+// compte rendu ne s'enregistre pas sans elles. Cases en orange tant qu'elles ne sont pas bien remplies.
+const _PRELEVEMENT = [
+    { id: 'date_prelevement_complete', nom: 'la date de prélèvement (ex. 20/10/2026)', ok: v => /^\d{1,2}[\/.\-]\d{1,2}[\/.\-](\d{2}|\d{4})$/.test(v) },
+    { id: 'heure_prelevement', nom: "l'heure de prélèvement (ex. 09:20)", ok: v => /^\d{1,2}\s*[:hH]\s*\d{2}$/.test(v) },
+];
+function signalerPrelevement(zone) {
+    _PRELEVEMENT.forEach(p => zone.querySelectorAll(`[data-id="${p.id}"]`).forEach(el => {
+        const bon = p.ok((el.textContent || '').trim());
+        el.classList.toggle('mf-a-completer', !bon);
+        el.title = bon ? '' : 'Obligatoire : ' + p.nom;
+    }));
+}
+function prelevementManquant(zone) {
+    for (const p of _PRELEVEMENT) {
+        const el = zone.querySelector(`[data-id="${p.id}"]`);
+        if (el && !p.ok((el.textContent || '').trim())) { el.focus(); return p.nom; }
+    }
+    return null;
+}
+document.addEventListener('input', e => {
+    const zone = document.getElementById('zoneFormulaire');
+    if (zone && e.target.closest && e.target.closest('[data-id="date_prelevement_complete"], [data-id="heure_prelevement"]')) signalerPrelevement(zone);
+});
+
 function marquerHorsNormes(zone) {
     if (!zone) return;
     let sexe = zone.dataset.sexe || '';
@@ -755,6 +781,8 @@ async function enregistrerResultat() {
         if (!fichier) { await afficherMessage('Choisissez le fichier du résultat.'); return; }
         fd.append('fichier', fichier);
     } else if (formulaireActif) {
+        const manque = prelevementManquant(document.getElementById('zoneFormulaire'));
+        if (manque) { await afficherMessage('Écrivez ' + manque + ' : obligatoire pour le compte rendu.'); return; }
         fd.append('contenu_html', figerFormulaire());
         fd.append('modele_utilise_id', document.getElementById('resultatModeleSelect').value);
     } else {

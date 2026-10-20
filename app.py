@@ -15656,9 +15656,9 @@ def api_identite_resultat(demande_id):
            'date_complete': datetime.now().strftime('%d/%m/%Y'),
            'date': datetime.now().strftime('%d/%m/%y'),
            'date_prelevement': demande.created_at.strftime('%d/%m/%y') if demande.created_at else '',
-           # ⭐ 2026-10-20 : comptes rendus de biologie de Valeo
-           'date_prelevement_complete': demande.created_at.strftime('%d/%m/%Y') if demande.created_at else '',
-           'heure_prelevement': demande.created_at.strftime('%H:%M') if demande.created_at else '',
+           # ⭐ 2026-10-20 : comptes rendus de biologie de Valeo. Date et heure de prélèvement NON remplies
+           # (patron : « il faut laisser vide et rendre ça obligatoire ») — saisies par le labo, exigées à
+           # l'enregistrement (templates/resultats_analyses.html, prelevementManquant)
            'patient_civilite': demande.patient_nom or ''}
     # ⭐ 2026-10-18 (patron : « ça doit commencer par 1 ») : N° du compte rendu propre à la structure et à
     # la filière (labo / imagerie), compté sur les comptes rendus saisis sur un modèle formulaire
