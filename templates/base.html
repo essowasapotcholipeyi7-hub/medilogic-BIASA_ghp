@@ -4462,7 +4462,7 @@ if ('serviceWorker' in navigator) {
      les appelants font `await` pour garder l'ordre "lire puis continuer". -->
 <!-- ⭐ z-index au-dessus des autres modals (1055) : les messages d'erreur et confirmations
      s'affichaient DERRIÈRE un modal ouvert (ex. nouvelle proforma de chirurgie) — patron, 2026-10-09 -->
-<div class="modal fade" id="dialogueCommun" tabindex="-1" aria-modal="true" role="dialog" data-bs-backdrop="static" data-bs-keyboard="false" style="z-index: 1090;">
+<div class="modal fade" id="dialogueCommun" tabindex="-1" aria-modal="true" role="dialog" data-bs-backdrop="static" data-bs-keyboard="false" style="z-index: 100010;">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header py-2" id="dialogueCommunEntete">
@@ -4510,6 +4510,13 @@ if ('serviceWorker' in navigator) {
     // bloquait la file. On attend donc hidden.bs.modal avant de rouvrir.
     let fermetureEnCours = false;
     el.addEventListener('hidden.bs.modal', function() { fermetureEnCours = false; });
+    // ⭐ (2026-10-20) Toujours AU-DESSUS de la fenêtre ouverte : certaines pages montent leurs
+    // fenêtres à 10000 / 99999 (au-dessus du filigrane) — la boîte « Patient modifié avec
+    // succès » s'ouvrait derrière la fiche patient, invisible : le bouton tournait sans fin.
+    el.addEventListener('shown.bs.modal', function() {
+        const fonds = document.querySelectorAll('.modal-backdrop');
+        if (fonds.length) fonds[fonds.length - 1].style.zIndex = '100005';
+    });
 
     function fermer(valeur) {
         if (!resoudreCourant) return;
