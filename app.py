@@ -18100,7 +18100,9 @@ def annuler_vente(vente_id):
         return jsonify({'success': False, 'error': 'Acces non autorise.'}), 403
 
     data = request.json or {}
-    motif = data.get('motif', 'Annulation manuelle')
+    motif = (data.get('motif') or '').strip()
+    if not motif:   # ⭐ 2026-10-20 : lu par celui qui valide — obligatoire
+        return jsonify({'success': False, 'error': "Écrivez le motif de l'annulation."}), 400
     structure_id = session.get('structure_id')
     user_id = session.get('user_id')
     user_name = session.get('user_name', 'Utilisateur')
@@ -20383,6 +20385,9 @@ def api_liste_validations():
         'date_demande': d.date_demande.strftime('%d/%m/%Y %H:%M') if d.date_demande else '',
         'date_traitement': d.date_traitement.strftime('%d/%m/%Y %H:%M') if d.date_traitement else '',
         'traite_par_nom': d.traite_par_nom,
+        # ⭐ 2026-10-20 (patron : « ce motif n'apparaît pas chez le validateur ») : motif de l'annulation
+        # saisi par le demandeur, gardé dans la demande mais jamais renvoyé jusqu'ici
+        'motif': ((d.payload or {}).get('motif') or '') if d.type_demande == 'annulation_vente' else '',
         # ⭐ paiement déjà en caisse : doublon signalé avant toute validation
         'doublon': (_paiement_deja_enregistre(structure_id, (d.payload or {}).get('reference_paiement'), demandes_en_attente=False)
                     if d.statut == 'en_attente' and d.type_demande == 'depense' else None),

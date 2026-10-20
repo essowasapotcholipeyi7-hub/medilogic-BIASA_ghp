@@ -1581,8 +1581,12 @@ function alternativesAnnulation(venteId) {
 }
 
 async function annulerVente(venteId, type) {
-    var motif = await demanderSaisie("Motif de l'annulation :", "Annulation manuelle");
+    // ⭐ 2026-10-20 (patron) : le motif est lu par celui qui valide — obligatoire, plus de texte pré-rempli
+    // (« Annulation manuelle » était envoyé tel quel la plupart du temps)
+    var motif = await demanderSaisie("Motif de l'annulation (lu par celui qui valide) :", "");
     if (motif === null) return;
+    motif = motif.trim();
+    if (!motif) { await afficherMessage("Écrivez le motif de l'annulation."); return; }
 
     // ⭐ Toute annulation (admin compris) part maintenant en demande — voir
     // annuler_vente() côté serveur.

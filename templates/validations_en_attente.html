@@ -96,6 +96,8 @@ function chargerDemandes() {
         .then(d => { document.getElementById('badgeEnAttente').innerText = d.count || 0; });
 }
 
+function _escMotif(t) { const e = document.createElement('div'); e.textContent = t; return e.innerHTML; }
+
 function afficherDemandes(demandes) {
     const tbody = document.getElementById('demandesBody');
     if (!demandes || demandes.length === 0) {
@@ -124,7 +126,7 @@ function afficherDemandes(demandes) {
 
         return `<tr>
             <td>${TYPE_LABELS[d.type_demande] || d.type_demande}</td>
-            <td>${d.resume || ''}${d.doublon ? `<div class="alert alert-warning py-1 px-2 mt-1 mb-0 small"><i class="fas fa-triangle-exclamation me-1"></i><strong>Doublon</strong> — ${d.doublon} Refusez cette demande.</div>` : ''}</td>
+            <td>${d.resume || ''}${d.motif ? `<div class="small mt-1"><i class="fas fa-comment-dots text-secondary me-1"></i><strong>Motif :</strong> ${_escMotif(d.motif)}</div>` : ''}${d.doublon ? `<div class="alert alert-warning py-1 px-2 mt-1 mb-0 small"><i class="fas fa-triangle-exclamation me-1"></i><strong>Doublon</strong> — ${d.doublon} Refusez cette demande.</div>` : ''}</td>
             <td>${d.demandeur_nom || '-'}</td>
             <td><small>${d.date_demande || ''}</small></td>
             ${colTraitement}
