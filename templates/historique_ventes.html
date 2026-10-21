@@ -1087,10 +1087,9 @@ function afficherPageVentes(page) {
         
         // 🔥 AFFICHAGE AIDE HOSPITALIÈRE
         var aideMontant = v.aide_hospitaliere || 0;
-        var aideTaux = v.taux_aide || 0;
         var aideDisplay = '';
         if (aideMontant > 0) {
-            aideDisplay = '<span class="badge bg-warning text-dark" title="Aide ' + aideTaux + '%">' + Math.round(aideMontant).toLocaleString('fr-FR') + ' F</span>';
+            aideDisplay = '<span class="badge bg-warning text-dark" title="Aide ' + libelleTauxAide(v) + '">' + Math.round(aideMontant).toLocaleString('fr-FR') + ' F</span>';
         } else {
             aideDisplay = '<span class="text-muted">-</span>';
         }
@@ -2109,7 +2108,7 @@ async function imprimerHistorique() {
         // mentionnait nulle part.
         var aideHtml = '';
         if ((v.aide_hospitaliere || 0) > 0) {
-            aideHtml = '<br><span class="badge-aide">Aide ' + (v.taux_aide || 0) + '% : -' +
+            aideHtml = '<br><span class="badge-aide">Aide' + (v.type_aide === 'montant' ? '' : ' ' + libelleTauxAide(v)) + ' : -' +
                 Math.round(v.aide_hospitaliere).toLocaleString('fr-FR') + ' F</span>';
         }
 
@@ -2208,6 +2207,12 @@ function imprimerStats() {
 // ============================================
 // 🔥 NOUVELLE FONCTION IMPRIMER AIDES
 // ============================================
+// ⭐ 2026-10-21 : une aide saisie en MONTANT (type_aide 'montant', taux_aide = le montant) s'affichait
+// « Aide 7500 % » — « montant fixe » ; en pourcentage : « 25 % ».
+function libelleTauxAide(v) {
+    return v.type_aide === 'montant' ? 'montant fixe' : (v.taux_aide || 0) + ' %';
+}
+
 async function imprimerAides() {
     var aides = ventesFiltrees.filter(function(v) {
         return (v.aide_hospitaliere || 0) > 0;
@@ -2282,7 +2287,7 @@ async function imprimerAides() {
         html += '<td>' + dateStr + '</td>';
         html += '<td>' + (v.patient_nom || 'Patient') + '</td>';
         html += '<td>' + typeLabel + '</td>';
-        html += '<td><span class="badge-aide">' + tauxAide + '%</span></td>';
+        html += '<td><span class="badge-aide">' + libelleTauxAide(v) + '</span></td>';
         html += '<td class="text-end">' + Math.round(sousTotal).toLocaleString('fr-FR') + ' F</td>';
         html += '<td class="text-end text-success">' + Math.round(montantAide).toLocaleString('fr-FR') + ' F</td>';
         html += '</tr>';
