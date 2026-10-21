@@ -1117,7 +1117,10 @@ function afficherPageVentes(page) {
         }
         html += '</td>';
         html += '<td>' + construireDetailCellule(v) + '</td>';
-        html += '<td class="text-end fw-bold">' + Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';
+        // ⭐ 2026-10-21 (patron) : avec une aide, montant avant l'aide (au-dessus, en petit) puis le net payé
+        html += '<td class="text-end fw-bold">' + (aideMontant > 0 ? '<small class="text-muted fw-normal" title="Montant avant l\'aide">' +
+            Math.round(netAPayer + aideMontant).toLocaleString('fr-FR') + ' F</small><br>' : '') +
+            Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';
         html += '<td class="text-end" style="color:#28a745;">' + cellulePaye(v) + '</td>';
         html += '<td class="text-end" style="color:#dc3545;">' + Math.round(resteAPayer).toLocaleString('fr-FR') + ' F</td>';
         html += '<td>' + aideDisplay + '</td>';  // 🔥 NOUVELLE COLONNE
