@@ -5,152 +5,196 @@
 
 {% block extra_css %}
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+{# ⭐ 2026-10-21 (patron : « la présentation n'est pas jolie, c'est bleu sombre ») : page claire et accueillante —
+   fond lumineux, en-tête blanc avec le logo, choix en grandes cases à toucher (tablette ou téléphone). #}
 <style>
-    body { background: #f4f6f9; }
-    #accueilCard .form-label { font-weight: 600; font-size: 15px; }
-    #accueilCard .form-control, #accueilCard .form-select {
-        font-size: 16px; padding: 12px 14px;
-    }
-    #accueilCard .btn-envoyer {
-        font-size: 18px; padding: 14px; font-weight: 600;
-    }
+    :root { --acc-bleu: #0B6FAE; --acc-bleu-clair: #e8f3fb; --acc-vert: #0E9D67; --acc-texte: #1f2d3d; }
+    body { background: linear-gradient(180deg, #e9f4fb 0%, #f7fbfd 260px, #ffffff 100%) !important; color: var(--acc-texte); }
+    .acc-page { max-width: 640px; margin: 0 auto; padding: 18px 14px 40px; }
+    .acc-entete { background: #fff; border-radius: 18px; padding: 18px 16px; text-align: center;
+                  box-shadow: 0 6px 24px rgba(11, 111, 174, .10); border-top: 5px solid var(--acc-vert); }
+    .acc-entete img { max-height: 70px; max-width: 160px; }
+    .acc-entete h1 { font-size: 1.35rem; font-weight: 700; color: var(--acc-bleu); margin: 8px 0 2px; }
+    .acc-entete p { margin: 0; color: #5b6b7a; }
+    .acc-bloc { background: #fff; border-radius: 16px; padding: 16px; margin-top: 14px;
+                box-shadow: 0 3px 14px rgba(31, 45, 61, .06); border: 1px solid #edf1f5; }
+    .acc-bloc h2 { font-size: 1.02rem; font-weight: 700; color: var(--acc-bleu); margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+    .acc-bloc h2 .num { background: var(--acc-bleu-clair); color: var(--acc-bleu); border-radius: 50%; width: 26px; height: 26px;
+                        display: inline-flex; align-items: center; justify-content: center; font-size: .85rem; }
+    .acc-bloc .facultatif { font-size: .75rem; font-weight: 600; color: #6c7a89; background: #f1f4f7; border-radius: 20px; padding: 2px 8px; }
+    .acc-bloc .form-label { font-weight: 600; font-size: .95rem; margin-bottom: 4px; }
+    .acc-bloc .form-control, .acc-bloc .form-select { font-size: 16px; padding: 11px 13px; border-radius: 10px; border-color: #d5dde5; }
+    .acc-bloc .form-control:focus, .acc-bloc .form-select:focus { border-color: var(--acc-bleu); box-shadow: 0 0 0 .2rem rgba(11, 111, 174, .15); }
+    .requis { color: #d63384; }
+    .acc-cases { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    @media (min-width: 560px) { .acc-cases { grid-template-columns: repeat(3, 1fr); } .acc-cases.deux { grid-template-columns: 1fr 1fr; } }
+    .acc-cases.deux { grid-template-columns: 1fr 1fr; }
+    .acc-case input { display: none; }
+    .acc-case label { display: flex; align-items: center; justify-content: center; gap: 8px; text-align: center; min-height: 52px; height: 100%;
+                      border: 2px solid #dbe4ec; border-radius: 12px; padding: 8px 10px; cursor: pointer; font-weight: 600;
+                      background: #fbfdfe; transition: all .15s; user-select: none; width: 100%; }
+    .acc-case label i { color: var(--acc-bleu); }
+    .acc-case input:checked + label { border-color: var(--acc-bleu); background: var(--acc-bleu-clair); color: var(--acc-bleu);
+                                      box-shadow: 0 0 0 3px rgba(11, 111, 174, .12); }
+    .acc-envoyer { background: var(--acc-vert); border: none; color: #fff; font-size: 1.15rem; font-weight: 700;
+                   padding: 15px; border-radius: 14px; width: 100%; margin-top: 18px; box-shadow: 0 6px 18px rgba(14, 157, 103, .25); }
+    .acc-envoyer:hover { background: #0b8a5a; color: #fff; }
+    .acc-envoyer:disabled { opacity: .7; }
     #ecranMerci { display: none; }
-    #ecranMerci .numero-ordre {
-        font-size: 64px; font-weight: 700; color: #1d6fa5; line-height: 1;
-    }
+    .acc-merci { background: #fff; border-radius: 20px; padding: 26px 18px; text-align: center; margin-top: 18px;
+                 box-shadow: 0 8px 28px rgba(11, 111, 174, .12); border-top: 5px solid var(--acc-vert); }
+    .acc-merci .file { display: inline-block; background: var(--acc-bleu-clair); color: var(--acc-bleu); font-weight: 700;
+                       border-radius: 30px; padding: 6px 16px; margin-bottom: 8px; }
+    .acc-merci .numero-ordre { font-size: 72px; font-weight: 800; color: var(--acc-bleu); line-height: 1; }
+    .acc-cache { display: none; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-7 col-lg-6">
+<div class="acc-page" data-th-garder>
 
-        <div id="accueilCard" class="card shadow-sm mt-3 mb-5">
-            <div class="card-body" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; border-radius: 6px 6px 0 0; margin: -1px -1px 0 -1px;">
-                <div class="d-flex align-items-center gap-3">
-                    {% if structure.logo_url %}
-                    <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 55px; max-width: 110px; background: white; padding: 4px; border-radius: 6px;">
-                    {% endif %}
-                    <div>
-                        <h5 class="mb-0">{{ structure.nom or "SSoftOne v10" }}</h5>
-                        <p class="mb-0 small opacity-75">Enregistrez-vous avant de passer au guichet</p>
+    <div class="acc-entete">
+        {% if structure.logo_url %}<img src="{{ structure.logo_url }}" alt="Logo">{% endif %}
+        <h1>{{ structure.nom or "SSoftOne v10" }}</h1>
+        <p>Bienvenue ! Enregistrez-vous ici avant de passer au guichet.</p>
+    </div>
+
+    <div id="accueilCard">
+        <div id="accueilMsg" class="mt-3"></div>
+        <form id="formAccueilPatient" onsubmit="envoyerPreinscription(event)" novalidate>
+
+            <div class="acc-bloc">
+                <h2><span class="num">1</span> Vos informations</h2>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label" for="paNom">Nom <span class="requis">*</span></label>
+                        <input type="text" class="form-control" id="paNom" autocomplete="off">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" for="paPrenom">Prénom <span class="requis">*</span></label>
+                        <input type="text" class="form-control" id="paPrenom" autocomplete="off">
+                    </div>
+                </div>
+                <label class="form-label mt-3">Sexe <span class="requis">*</span></label>
+                <div class="acc-cases deux">
+                    <div class="acc-case"><input type="radio" name="paSexe" id="paSexeF" value="F"><label for="paSexeF"><i class="fas fa-venus"></i> Féminin</label></div>
+                    <div class="acc-case"><input type="radio" name="paSexe" id="paSexeM" value="M"><label for="paSexeM"><i class="fas fa-mars"></i> Masculin</label></div>
+                </div>
+                <div class="row g-2 mt-2">
+                    <div class="col-7">
+                        <label class="form-label" for="paDateNaissance">Date de naissance <span class="requis">*</span></label>
+                        <input type="date" class="form-control" id="paDateNaissance" oninput="paAgeOuDate('date')">
+                    </div>
+                    <div class="col-5">
+                        <label class="form-label" for="paAge">ou âge (ans)</label>
+                        <input type="number" class="form-control" id="paAge" min="0" max="120" inputmode="numeric" oninput="paAgeOuDate('age')">
+                    </div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-6">
+                        <label class="form-label" for="paTelephone">Téléphone <span class="requis">*</span></label>
+                        <input type="tel" class="form-control" id="paTelephone" autocomplete="off" inputmode="tel">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" for="paAdresse">Adresse</label>
+                        <input type="text" class="form-control" id="paAdresse" autocomplete="off">
                     </div>
                 </div>
             </div>
 
-            <div class="card-body">
-                <div id="accueilMsg"></div>
+            <div class="acc-bloc">
+                <h2><span class="num">2</span> Vous venez pour</h2>
+                <div class="acc-cases">
+                    <div class="acc-case"><input type="radio" name="paMotif" id="paMotifConsultation" value="consultation" checked onchange="paMotifChange()"><label for="paMotifConsultation"><i class="fas fa-user-doctor"></i> Consultation</label></div>
+                    <div class="acc-case"><input type="radio" name="paMotif" id="paMotifControle" value="controle" onchange="paMotifChange()"><label for="paMotifControle"><i class="fas fa-rotate"></i> Contrôle</label></div>
+                    <div class="acc-case"><input type="radio" name="paMotif" id="paMotifResultat" value="resultat_analyse" onchange="paMotifChange()"><label for="paMotifResultat"><i class="fas fa-file-medical"></i> Résultat d'analyse</label></div>
+                    <div class="acc-case"><input type="radio" name="paMotif" id="paMotifExamen" value="realisation_examen" onchange="paMotifChange()"><label for="paMotifExamen"><i class="fas fa-vial"></i> Réalisation d'examen</label></div>
+                    <div class="acc-case"><input type="radio" name="paMotif" id="paMotifAutre" value="autre" onchange="paMotifChange()"><label for="paMotifAutre"><i class="fas fa-ellipsis"></i> Autre</label></div>
+                </div>
+                <div id="paMotifAutreDiv" class="acc-cache mt-2">
+                    <input type="text" class="form-control" id="paMotifAutreTexte" placeholder="Précisez le motif">
+                </div>
+                {% if services %}
+                <div id="paServiceDiv" class="mt-3">
+                    <label class="form-label">Dans quel service ? <span class="requis">*</span></label>
+                    <div class="acc-cases">
+                        {% for s in services %}
+                        <div class="acc-case"><input type="radio" name="paService" id="paService{{ loop.index }}" value="{{ s }}"><label for="paService{{ loop.index }}">{{ s }}</label></div>
+                        {% endfor %}
+                        <div class="acc-case"><input type="radio" name="paService" id="paServiceAutre" value="Autre / je ne sais pas"><label for="paServiceAutre">Je ne sais pas</label></div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
 
-                <form id="formAccueilPatient" onsubmit="envoyerPreinscription(event)">
-                    <div class="mb-3">
-                        <label class="form-label">Nom *</label>
-                        <input type="text" class="form-control" id="paNom" required autocomplete="off">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Prénom</label>
-                        <input type="text" class="form-control" id="paPrenom" autocomplete="off">
-                    </div>
-                    <div class="row">
-                        <div class="col-6 mb-3">
-                            <label class="form-label">Téléphone</label>
-                            <input type="tel" class="form-control" id="paTelephone" autocomplete="off">
-                        </div>
-                        <div class="col-6 mb-3">
-                            <label class="form-label">Date de naissance</label>
-                            <input type="date" class="form-control" id="paDateNaissance">
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Adresse</label>
-                        <input type="text" class="form-control" id="paAdresse" autocomplete="off">
-                    </div>
+            <div class="acc-bloc">
+                <h2><span class="num">3</span> Assurance</h2>
+                <label class="form-label" for="paTypeAssurance">Assurance principale</label>
+                <select class="form-select" id="paTypeAssurance" onchange="paToggleAssurance()">
+                    <option value="non_assure">Non assuré</option>
+                    <option value="amu_cnss">AMU-CNSS</option>
+                    <option value="amu_inam">AMU-INAM</option>
+                    <option value="amu_tns">AMU-TNS</option>
+                    <option value="autre">Autre assurance</option>
+                </select>
+                <div id="paNumeroAssureDiv" class="acc-cache mt-2">
+                    <input type="text" class="form-control" id="paNumeroAssure" placeholder="N° d'assuré (numéro de la carte) *">
+                </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Motif de la visite</label>
-                        <select class="form-select" id="paMotifVisite" onchange="paToggleMotifAutre()">
-                            <option value="consultation">Consultation</option>
-                            <option value="controle">Contrôle</option>
-                            <option value="resultat_analyse">Résultat d'analyse</option>
-                            <option value="realisation_examen">Réalisation d'examen</option>
-                            <option value="autre">Autre</option>
+                <label class="form-label mt-3" for="paAssurance2">Assurance complémentaire <span class="facultatif">facultatif</span></label>
+                {# ⭐ 2026-10-21 (patron) : les assurances complémentaires de la clinique, à choisir — plus de nom écrit
+                   à la main (mal orthographié) ; « Autre » seulement si elle n'est pas dans la liste #}
+                <select class="form-select" id="paAssurance2" onchange="paToggleAssurance2()">
+                    <option value="">Aucune</option>
+                    {% for c in compagnies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                    <option value="__autre__">Autre (elle n'est pas dans la liste)</option>
+                </select>
+                <div id="paAssurance2AutreDiv" class="acc-cache mt-2">
+                    <input type="text" class="form-control" id="paAssurance2Autre" placeholder="Nom de votre assurance complémentaire">
+                </div>
+                <div id="paAssurance2Details" class="acc-cache mt-2">
+                    <div class="row g-2">
+                        <div class="col-6"><input type="text" class="form-control" id="paNumeroAssure2" placeholder="N° d'assuré (carte)"></div>
+                        <div class="col-6"><input type="text" class="form-control" id="paSocieteAssurance2" placeholder="Votre employeur (société)"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="acc-bloc">
+                <h2><span class="num">4</span> Personne à prévenir <span class="facultatif">facultatif</span></h2>
+                <div class="row g-2">
+                    <div class="col-12 col-sm-5"><input type="text" class="form-control" id="paPersonneNom" placeholder="Nom"></div>
+                    <div class="col-7 col-sm-4"><input type="tel" class="form-control" id="paPersonneTelephone" placeholder="Téléphone"></div>
+                    <div class="col-5 col-sm-3">
+                        <select class="form-select" id="paPersonneRelation">
+                            <option value="">Lien</option>
+                            <option value="Conjoint(e)">Conjoint(e)</option>
+                            <option value="Enfant">Enfant</option>
+                            <option value="Parent">Parent</option>
+                            <option value="Frère/Sœur">Frère/Sœur</option>
+                            <option value="Ami(e)">Ami(e)</option>
+                            <option value="Collègue">Collègue</option>
+                            <option value="Voisin(e)">Voisin(e)</option>
+                            <option value="Autre">Autre</option>
                         </select>
                     </div>
-                    <div class="mb-3" id="paMotifAutreDiv" style="display:none;">
-                        <input type="text" class="form-control" id="paMotifAutre" placeholder="Précisez le motif">
-                    </div>
-
-                    <div class="card mb-3">
-                        <div class="card-header bg-light">
-                            <strong>Assurance principale</strong>
-                        </div>
-                        <div class="card-body">
-                            <select class="form-select mb-2" id="paTypeAssurance" onchange="paToggleAssurance()">
-                                <option value="non_assure">Non assuré</option>
-                                <option value="amu_cnss">AMU-CNSS</option>
-                                <option value="amu_inam">AMU-INAM</option>
-                                <option value="amu_tns">AMU-TNS</option>
-                                <option value="autre">Autre assurance</option>
-                            </select>
-                            <div id="paNumeroAssureDiv" style="display:none;">
-                                <input type="text" class="form-control" id="paNumeroAssure" placeholder="N° Assuré (numéro de carte)">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="card mb-3">
-                        <div class="card-header bg-light">
-                            <strong>Assurance complémentaire</strong>
-                            <span class="badge bg-secondary ms-1">Facultatif</span>
-                        </div>
-                        <div class="card-body">
-                            <input type="text" class="form-control mb-2" id="paAssurance2Nom" placeholder="Nom de l'assurance (ex: GTA, SUNU, NSIA...)">
-                            <input type="text" class="form-control mb-2" id="paNumeroAssure2" placeholder="N° Assuré (carte CAC)">
-                            <input type="text" class="form-control" id="paSocieteAssurance2" placeholder="Société qui a souscrit (votre employeur)">
-                        </div>
-                    </div>
-
-                    <hr>
-                    <p class="text-muted small mb-2">En cas d'urgence, personne à prévenir (facultatif)</p>
-                    <div class="row">
-                        <div class="col-5 mb-3">
-                            <input type="text" class="form-control" id="paPersonneNom" placeholder="Nom">
-                        </div>
-                        <div class="col-4 mb-3">
-                            <input type="tel" class="form-control" id="paPersonneTelephone" placeholder="Téléphone">
-                        </div>
-                        <div class="col-3 mb-3">
-                            <select class="form-select" id="paPersonneRelation">
-                                <option value="">Lien</option>
-                                <option value="Conjoint(e)">Conjoint(e)</option>
-                                <option value="Enfant">Enfant</option>
-                                <option value="Parent">Parent</option>
-                                <option value="Frère/Sœur">Frère/Sœur</option>
-                                <option value="Ami(e)">Ami(e)</option>
-                                <option value="Collègue">Collègue</option>
-                                <option value="Voisin(e)">Voisin(e)</option>
-                                <option value="Autre">Autre</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Email <span class="text-muted fw-normal">(pour recevoir vos résultats)</span></label>
-                        <input type="email" class="form-control" id="paEmail" autocomplete="off">
-                    </div>
-
-                    <button type="submit" class="btn btn-primary btn-envoyer w-100" id="paBtnEnvoyer">
-                        <i class="fas fa-paper-plane me-1"></i> Envoyer
-                    </button>
-                </form>
+                </div>
+                <label class="form-label mt-3" for="paEmail">Email <span class="facultatif">pour recevoir vos résultats</span></label>
+                <input type="email" class="form-control" id="paEmail" autocomplete="off">
             </div>
-        </div>
 
-        <div id="ecranMerci" class="text-center mt-5">
-            <div class="mb-3">
-                <i class="fas fa-check-circle text-success" style="font-size: 56px;"></i>
-            </div>
-            <h3>Merci !</h3>
+            <button type="submit" class="btn acc-envoyer" id="paBtnEnvoyer">
+                <i class="fas fa-paper-plane me-1"></i> Envoyer
+            </button>
+        </form>
+    </div>
+
+    <div id="ecranMerci">
+        <div class="acc-merci">
+            <i class="fas fa-circle-check" style="font-size: 54px; color: var(--acc-vert);"></i>
+            <h3 class="mt-2 mb-1">Merci !</h3>
             <p class="text-muted mb-3">Vos informations ont bien été transmises.</p>
+            <div class="file" id="merciFile"></div>
             <p class="text-muted small mb-1">Votre numéro de passage</p>
             <div class="numero-ordre mb-3" id="merciNumeroOrdre">-</div>
             <a href="#" target="_blank" class="btn btn-outline-primary" id="merciBtnImprimer">
@@ -159,103 +203,110 @@
             <button type="button" class="btn btn-secondary" onclick="reinitialiserFormulaire()">
                 <i class="fas fa-check me-1"></i> Fermer
             </button>
-            <p class="text-muted small mt-2">
-                Pas d'imprimante ? Prenez le numéro correspondant parmi les tickets
-                de la structure et appuyez sur "Fermer".
-            </p>
-            <p class="text-muted small mt-3">Présentez-vous au guichet quand votre numéro est appelé.</p>
+            <p class="text-muted small mt-3 mb-0">Présentez-vous au guichet quand votre numéro est appelé.</p>
         </div>
-
     </div>
 </div>
 
 <script>
-function paToggleAssurance() {
-    const type = document.getElementById('paTypeAssurance').value;
-    document.getElementById('paNumeroAssureDiv').style.display = (type === 'non_assure') ? 'none' : 'block';
-}
+function _val(id) { return (document.getElementById(id).value || '').trim(); }
+function _coche(nom) { const c = document.querySelector(`input[name="${nom}"]:checked`); return c ? c.value : ''; }
+function _montrer(id, oui) { const e = document.getElementById(id); if (e) e.style.display = oui ? 'block' : 'none'; }
 
-function paToggleMotifAutre() {
-    const motif = document.getElementById('paMotifVisite').value;
-    document.getElementById('paMotifAutreDiv').style.display = (motif === 'autre') ? 'block' : 'none';
+function paAgeOuDate(source) {
+    // date de naissance OU âge (comme sur la fiche du caissier) : l'un efface l'autre
+    if (source === 'date' && _val('paDateNaissance')) document.getElementById('paAge').value = '';
+    if (source === 'age' && _val('paAge')) document.getElementById('paDateNaissance').value = '';
+}
+function paToggleAssurance() {
+    _montrer('paNumeroAssureDiv', _val('paTypeAssurance') !== 'non_assure');
+}
+function paToggleAssurance2() {
+    const v = _val('paAssurance2');
+    _montrer('paAssurance2AutreDiv', v === '__autre__');
+    _montrer('paAssurance2Details', v !== '');
+}
+function paMotifChange() {
+    const motif = _coche('paMotif');
+    _montrer('paMotifAutreDiv', motif === 'autre');
+    _montrer('paServiceDiv', motif === 'consultation' || motif === 'controle');
 }
 
 function reinitialiserFormulaire() {
     document.getElementById('formAccueilPatient').reset();
-    paToggleAssurance();
-    paToggleMotifAutre();
+    paToggleAssurance(); paToggleAssurance2(); paMotifChange();
     document.getElementById('accueilMsg').innerHTML = '';
     document.getElementById('ecranMerci').style.display = 'none';
     document.getElementById('accueilCard').style.display = 'block';
+    window.scrollTo(0, 0);
+}
+
+function _erreur(texte) {
+    document.getElementById('accueilMsg').innerHTML = `<div class="alert alert-danger mb-0"><i class="fas fa-circle-exclamation me-1"></i>${texte}</div>`;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 async function envoyerPreinscription(evenement) {
     evenement.preventDefault();
     const bouton = document.getElementById('paBtnEnvoyer');
-    const msg = document.getElementById('accueilMsg');
-    msg.innerHTML = '';
+    document.getElementById('accueilMsg').innerHTML = '';
 
-    const nom = document.getElementById('paNom').value.trim();
-    if (!nom) {
-        msg.innerHTML = '<div class="alert alert-danger">Le nom est obligatoire.</div>';
-        return;
-    }
-    const typeAssurance = document.getElementById('paTypeAssurance').value;
-    const numeroAssure = document.getElementById('paNumeroAssure').value.trim();
-    if (typeAssurance !== 'non_assure' && !numeroAssure) {
-        msg.innerHTML = '<div class="alert alert-danger">Le numéro d\'assuré est obligatoire pour l\'assurance sélectionnée.</div>';
-        return;
-    }
+    const motif = _coche('paMotif');
+    const avecService = !!document.getElementById('paServiceDiv') && (motif === 'consultation' || motif === 'controle');
+    const assurance2 = _val('paAssurance2') === '__autre__' ? _val('paAssurance2Autre') : _val('paAssurance2');
+    const manque = [];
+    if (!_val('paNom')) manque.push('votre nom');
+    if (!_val('paPrenom')) manque.push('votre prénom');
+    if (!_coche('paSexe')) manque.push('votre sexe');
+    if (!_val('paDateNaissance') && !_val('paAge')) manque.push('votre date de naissance ou votre âge');
+    if (!_val('paTelephone')) manque.push('votre téléphone');
+    if (avecService && !_coche('paService')) manque.push('le service');
+    if (motif === 'autre' && !_val('paMotifAutreTexte')) manque.push('le motif de votre visite');
+    if (_val('paTypeAssurance') !== 'non_assure' && !_val('paNumeroAssure')) manque.push("votre numéro d'assuré");
+    if (_val('paAssurance2') === '__autre__' && !assurance2) manque.push("le nom de l'assurance complémentaire");
+    if (manque.length) { _erreur('Merci de renseigner ' + manque.join(', ') + '.'); return; }
 
     bouton.disabled = true;
     bouton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Envoi...';
-
     try {
         const reponse = await fetch("{{ url_for('api_accueil_patient', structure_id=structure_id) }}", {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                nom: nom,
-                prenom: document.getElementById('paPrenom').value.trim(),
-                telephone: document.getElementById('paTelephone').value.trim(),
-                date_naissance: document.getElementById('paDateNaissance').value,
-                adresse: document.getElementById('paAdresse').value.trim(),
-                motif_visite: document.getElementById('paMotifVisite').value,
-                motif_visite_autre: document.getElementById('paMotifAutre').value.trim(),
-                type_assurance: typeAssurance,
-                numero_assure: numeroAssure,
-                assurance2_nom: document.getElementById('paAssurance2Nom').value.trim(),
-                numero_assure2: document.getElementById('paNumeroAssure2').value.trim(),
-                societe_assurance2: document.getElementById('paSocieteAssurance2').value.trim(),
-                personne_a_prevenir_nom: document.getElementById('paPersonneNom').value.trim(),
-                personne_a_prevenir_telephone: document.getElementById('paPersonneTelephone').value.trim(),
-                personne_a_prevenir_relation: document.getElementById('paPersonneRelation').value,
-                email: document.getElementById('paEmail').value.trim()
+                nom: _val('paNom'), prenom: _val('paPrenom'), sexe: _coche('paSexe'),
+                telephone: _val('paTelephone'), date_naissance: _val('paDateNaissance'), age: _val('paAge'),
+                adresse: _val('paAdresse'),
+                motif_visite: motif, motif_visite_autre: _val('paMotifAutreTexte'),
+                service_visite: avecService ? _coche('paService') : '',
+                type_assurance: _val('paTypeAssurance'), numero_assure: _val('paNumeroAssure'),
+                assurance2_nom: assurance2, numero_assure2: assurance2 ? _val('paNumeroAssure2') : '',
+                societe_assurance2: assurance2 ? _val('paSocieteAssurance2') : '',
+                personne_a_prevenir_nom: _val('paPersonneNom'), personne_a_prevenir_telephone: _val('paPersonneTelephone'),
+                personne_a_prevenir_relation: _val('paPersonneRelation'), email: _val('paEmail')
             })
         });
         const resultat = await reponse.json();
         if (resultat.success) {
             document.getElementById('accueilCard').style.display = 'none';
             document.getElementById('ecranMerci').style.display = 'block';
+            document.getElementById('merciFile').textContent = resultat.file_attente || '';
+            document.getElementById('merciFile').style.display = resultat.file_attente ? 'inline-block' : 'none';
             document.getElementById('merciNumeroOrdre').textContent = 'N° ' + resultat.numero_ordre;
             document.getElementById('merciBtnImprimer').href =
                 `{{ url_for('page_accueil_patient', structure_id=structure_id) }}/ticket/${resultat.preinscription_id}`;
-            // ⭐ Réinitialisation automatique — pensé pour une tablette
-            // laissée en continu à l'accueil : le patient suivant retrouve
-            // un formulaire vide sans intervention du personnel. Délai
-            // généreux pour laisser le temps d'imprimer le ticket avant
-            // que ça reparte. Sans effet gênant sur le téléphone du
-            // patient (il aura simplement refermé l'onglet avant).
+            window.scrollTo(0, 0);
+            // ⭐ tablette laissée à l'accueil : formulaire vide pour le patient suivant
             setTimeout(reinitialiserFormulaire, 20000);
         } else {
-            msg.innerHTML = `<div class="alert alert-danger">${resultat.error || 'Erreur lors de l\'envoi'}</div>`;
+            _erreur(resultat.error || "Erreur lors de l'envoi");
         }
     } catch (e) {
-        msg.innerHTML = '<div class="alert alert-danger">Connexion impossible. Réessayez.</div>';
+        _erreur('Connexion impossible. Réessayez.');
     } finally {
         bouton.disabled = false;
         bouton.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Envoyer';
     }
 }
+paToggleAssurance(); paToggleAssurance2(); paMotifChange();
 </script>
 {% endblock %}

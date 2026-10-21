@@ -16329,7 +16329,37 @@ def page_accueil_patient(structure_id):
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), None)
     if not structure_info or structure_info.get('statut') != 'active':
         return "Structure introuvable ou inactive.", 404
-    return render_template('accueil_patient.html', structure=structure_info, structure_id=structure_id)
+    services, compagnies = _choix_accueil_patient(structure_id)
+    return render_template('accueil_patient.html', structure=structure_info, structure_id=structure_id,
+                           services=services, compagnies=compagnies)
+
+
+def _choix_accueil_patient(structure_id):
+    """⭐ 2026-10-21 (patron) : ce que le patient choisit au lieu de l'écrire — services de la structure (tirés
+    des actes de consultation de son catalogue, voir services/accueil_service.py) et assurances
+    complémentaires déjà connues de la clinique (même liste que la fiche du caissier)."""
+    from services.accueil_service import services_de_consultation
+    services, compagnies = [], []
+    try:
+        lignes = db.session.execute(db.text(
+            "SELECT valeurs FROM feuilles_neon_lignes WHERE feuille = :f ORDER BY rang"),
+            {'f': f'struct_{int(structure_id)}_actes'}).fetchall()
+        noms = [v[1] for (v,) in lignes[1:] if isinstance(v, list) and len(v) > 1 and v[1]]
+        services = services_de_consultation(noms)
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ Services de l'accueil (structure {structure_id}) : {e}")
+    try:
+        vus = set()
+        for c in CompagnieComplementaire.query.filter_by(structure_id=structure_id).order_by(CompagnieComplementaire.nom).all():
+            nom = ' '.join((c.nom or '').split())
+            if nom and nom.upper() not in vus:   # « GTA » et « Gta » : une seule fois
+                vus.add(nom.upper())
+                compagnies.append(nom)
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ Assurances complémentaires de l'accueil (structure {structure_id}) : {e}")
+    return services, compagnies
 
 
 @app.route('/api/accueil-patient/<int:structure_id>', methods=['POST'])
@@ -16343,31 +16373,62 @@ def api_accueil_patient(structure_id):
     nom = (data.get('nom') or '').strip()
     if not nom:
         return jsonify({'success': False, 'error': 'Le nom est obligatoire'}), 400
+    # ⭐ 2026-10-21 (patron) : mêmes informations obligatoires que sur la fiche du caissier
+    prenom = (data.get('prenom') or '').strip()
+    telephone = (data.get('telephone') or '').strip()
+    sexe = data.get('sexe') if data.get('sexe') in ('M', 'F') else None
+    try:
+        age = int(data.get('age')) if str(data.get('age') or '').strip() else None
+    except (TypeError, ValueError):
+        age = None
+    if age is not None and not (0 <= age <= 120):
+        return jsonify({'success': False, 'error': "L'âge doit être compris entre 0 et 120 ans."}), 400
+    manque = [lib for lib, ok in (('le prénom', prenom), ('le téléphone', telephone), ('le sexe', sexe),
+                                  ('la date de naissance ou l\'âge', data.get('date_naissance') or age is not None)) if not ok]
+    if manque:
+        return jsonify({'success': False, 'error': 'Merci de renseigner ' + ', '.join(manque) + '.'}), 400
 
     type_assurance = data.get('type_assurance') or 'non_assure'
     numero_assure = (data.get('numero_assure') or '').strip()
     if type_assurance != 'non_assure' and not numero_assure:
         return jsonify({'success': False, 'error': "Le numéro d'assuré est obligatoire pour l'assurance sélectionnée."}), 400
 
-    motif_visite = (data.get('motif_visite') or '').strip()
-    if motif_visite == 'autre':
+    from services.accueil_service import file_attente as _file_attente, MOTIFS_AVEC_SERVICE, AUTRE_SERVICE
+    code_motif = (data.get('motif_visite') or '').strip()
+    motif_visite = code_motif
+    if code_motif == 'autre':
         motif_visite = (data.get('motif_visite_autre') or '').strip()
+    service_visite = (data.get('service_visite') or '').strip() or None
+    if code_motif in MOTIFS_AVEC_SERVICE and not service_visite:
+        services_proposes, _ = _choix_accueil_patient(structure_id)
+        if services_proposes:
+            return jsonify({'success': False, 'error': 'Choisissez le service.'}), 400
+    if code_motif not in MOTIFS_AVEC_SERVICE:
+        service_visite = None
+    file_visite = _file_attente(code_motif, service_visite if service_visite != AUTRE_SERVICE else None)
+    if service_visite == AUTRE_SERVICE:
+        file_visite = _file_attente(code_motif) + ' — ' + AUTRE_SERVICE
 
-    # ⭐ Numéro de passage : compté parmi les préinscriptions déjà reçues
-    # AUJOURD'HUI pour cette structure — remis à zéro chaque jour, comme un
-    # vrai ticket de file d'attente physique. Imprimé sur le reçu remis au
-    # patient juste après (voir page_ticket_accueil_patient).
-    debut_journee = datetime.combine(date.today(), datetime.min.time())
+    # ⭐ Numéro de passage, remis à zéro chaque jour. ⭐ 2026-10-21 (patron) : compté PAR FILE (motif, et service
+    # pour une consultation ou un contrôle) — Contrôle — Cardiologie n° 1, Contrôle — Rhumatologie n° 1,
+    # Contrôle — Cardiologie n° 2... Indicatif seulement (ticket, accueil), jamais repris dans les ventes.
+    # Jour compté en heure du Togo (UTC) : created_at est en UTC (datetime.utcnow).
+    debut_journee = datetime.combine(datetime.utcnow().date(), datetime.min.time())
     numero_ordre = PreinscriptionPatient.query.filter(
         PreinscriptionPatient.structure_id == structure_id,
-        PreinscriptionPatient.created_at >= debut_journee
+        PreinscriptionPatient.created_at >= debut_journee,
+        PreinscriptionPatient.file_attente == file_visite,
     ).count() + 1
 
     preinscription = PreinscriptionPatient(
         structure_id=structure_id,
         nom=nom,
-        prenom=(data.get('prenom') or '').strip(),
-        telephone=(data.get('telephone') or '').strip(),
+        prenom=prenom,
+        telephone=telephone,
+        sexe=sexe,
+        age=age if not data.get('date_naissance') else None,
+        service_visite=service_visite,
+        file_attente=file_visite,
         date_naissance=data.get('date_naissance') or None,
         adresse=(data.get('adresse') or '').strip(),
         type_assurance=type_assurance,
@@ -16384,7 +16445,8 @@ def api_accueil_patient(structure_id):
     )
     db.session.add(preinscription)
     db.session.commit()
-    return jsonify({'success': True, 'preinscription_id': preinscription.id, 'numero_ordre': numero_ordre})
+    return jsonify({'success': True, 'preinscription_id': preinscription.id, 'numero_ordre': numero_ordre,
+                    'file_attente': file_visite})
 
 
 @app.route('/accueil-patient/<int:structure_id>/ticket/<int:preinscription_id>')

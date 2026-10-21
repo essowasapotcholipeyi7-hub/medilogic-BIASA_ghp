@@ -45,17 +45,19 @@
         {% for p in preinscriptions %}
         <div class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2" id="preinscriptionLigne{{ p.id }}">
             <div>
-                <span class="badge bg-secondary me-1">N°{{ p.numero_ordre or '?' }}</span>
+                <span class="badge bg-secondary me-1">{% if p.file_attente %}{{ p.file_attente }} — {% endif %}N°{{ p.numero_ordre or '?' }}</span>
                 <strong><span class="notranslate">{{ p.nom }} {{ p.prenom or '' }}</span></strong>
                 {% if p.telephone %}<span class="text-muted small ms-2"><i class="fas fa-phone-alt me-1"></i>{{ p.telephone }}</span>{% endif %}
                 {% if p.type_assurance and p.type_assurance != 'non_assure' %}<span class="badge bg-info ms-2">{{ p.type_assurance }}</span>{% endif %}
-                {% if p.motif_visite %}<span class="badge bg-light text-dark border ms-2">{{ p.motif_visite }}</span>{% endif %}
+                {% if p.sexe %}<span class="text-muted small ms-2">{{ 'Féminin' if p.sexe == 'F' else 'Masculin' }}</span>{% endif %}
+                {% if p.motif_visite and not p.file_attente %}<span class="badge bg-light text-dark border ms-2">{{ p.motif_visite }}</span>{% endif %}
+                {% if p.assurance2_nom %}<span class="badge bg-success bg-opacity-75 ms-2">+ {{ p.assurance2_nom }}</span>{% endif %}
                 <span class="text-muted small ms-2">{{ p.created_at.strftime('%H:%M') if p.created_at else '' }}</span>
             </div>
             <div>
                 <button class="btn btn-sm btn-success" onclick='preRemplirDepuisPreinscription({{ {
                     "id": p.id, "nom": p.nom, "prenom": p.prenom, "telephone": p.telephone,
-                    "adresse": p.adresse,
+                    "adresse": p.adresse, "sexe": p.sexe or "", "age": p.age,
                     "date_naissance": p.date_naissance.strftime('%Y-%m-%d') if p.date_naissance else "",
                     "type_assurance": p.type_assurance, "numero_assure": p.numero_assure,
                     "assurance2_nom": p.assurance2_nom, "numero_assure2": p.numero_assure2,
@@ -1935,7 +1937,12 @@ function preRemplirDepuisPreinscription(preinscription) {
     if (preinscription.date_naissance) {
         document.getElementById('date_naissance').value = preinscription.date_naissance;
         updateAgeFromDate();
+    } else if (preinscription.age !== null && preinscription.age !== undefined && preinscription.age !== '') {
+        // ⭐ 2026-10-21 : le patient a donné son âge (pas sa date de naissance), comme sur la fiche du caissier
+        document.getElementById('age').value = preinscription.age;
+        updateDateFromAge();
     }
+    if (preinscription.sexe) document.getElementById('sexe').value = preinscription.sexe;
     document.getElementById('personne_prevenir_nom').value = preinscription.personne_a_prevenir_nom || '';
     document.getElementById('personne_prevenir_telephone').value = preinscription.personne_a_prevenir_telephone || '';
     document.getElementById('personne_prevenir_relation').value = preinscription.personne_a_prevenir_relation || '';

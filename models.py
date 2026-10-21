@@ -138,6 +138,14 @@ class PreinscriptionPatient(db.Model):
     # 'realisation_examen' | texte libre (si "Autre" choisi côté formulaire)
     motif_visite = db.Column(db.String(100))
 
+    # ⭐ 2026-10-21 (patron) : mêmes informations que la fiche du caissier (sexe ; âge si la date de naissance
+    # n'est pas connue) ; service choisi pour une consultation ou un contrôle (Cardiologie...) ; file
+    # d'attente du ticket (« Contrôle — Cardiologie ») : le numéro d'ordre est compté PAR file, chaque jour
+    sexe = db.Column(db.String(1))
+    age = db.Column(db.Integer)
+    service_visite = db.Column(db.String(100))
+    file_attente = db.Column(db.String(150))
+
     # Numéro de passage dans la file d'attente du jour — imprimé sur le
     # ticket remis au patient juste après l'enregistrement (voir
     # api_accueil_patient, app.py). Remis à zéro chaque jour (compté parmi
