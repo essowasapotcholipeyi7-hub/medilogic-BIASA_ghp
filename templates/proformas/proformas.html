@@ -117,9 +117,12 @@
                                 </td>
                                 <td>
                                     <div class="btn-group btn-group-sm">
-                                        {# ⭐ 2026-10-15 (patron) : proforma imprimée en A4 uniquement (plus de ticket 80 mm) #}
+                                        {# ⭐ 2026-10-21 (patron) : A4, ou ticket 80 mm pour les structures qui le veulent #}
                                         <a href="{{ url_for('proforma_print', proforma_id=p.id) }}?format=A4" target="_blank" class="btn btn-info" title="Imprimer la proforma (A4){{ ' — déjà facturée' if p.statut == 'converti_en_vente' else '' }}">
                                             <i class="fas fa-file-pdf"></i>
+                                        </a>
+                                        <a href="{{ url_for('proforma_print', proforma_id=p.id) }}?format=80mm" target="_blank" class="btn btn-outline-info fw-bold" title="Imprimer la proforma en ticket 80 mm{{ ' — déjà facturée' if p.statut == 'converti_en_vente' else '' }}">
+                                            <i class="fas fa-receipt me-1"></i>80
                                         </a>
                                         {% if p.statut == 'converti_en_vente' and p.vente_id %}
                                         {# ⭐ réimpression des documents de la vente (80 mm / A4), comme dans Historique #}
@@ -2067,7 +2070,9 @@ async function sauvegarderProforma() {
             await afficherMessage(msg);
             
             if (await demanderConfirmation('Imprimer la proforma ?')) {
-                window.open(`/proforma/${data.id}/print?format=A4`, '_blank');
+                let formatProforma = 'A4';   // dernier format choisi sur ce poste (fenêtre d'impression)
+                try { formatProforma = localStorage.getItem('formatProforma') === '80mm' ? '80mm' : 'A4'; } catch (e) {}
+                window.open(`/proforma/${data.id}/print?format=${formatProforma}`, '_blank');
             }
             
             bootstrap.Modal.getInstance(document.getElementById('proformaModal')).hide();

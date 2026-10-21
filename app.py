@@ -21389,8 +21389,10 @@ def proforma_print(proforma_id):
             assurances_print = {}
     pas_arrondi_print = float(((assurances_print or {}).get('arrondi') or {}).get('pas') or 0)
 
-    return render_template('proformas/proforma_print.html', vente_facturee=vente_facturee, 
+    return render_template('proformas/proforma_print.html', vente_facturee=vente_facturee,
                          pas_arrondi=pas_arrondi_print,
+                         # ⭐ 2026-10-21 (patron) : A4 par défaut, ticket 80 mm au choix
+                         format='80mm' if request.args.get('format') == '80mm' else 'A4',
                          proforma=proforma,
                          structure=structure_info,  # ⭐ Adresse formatée
                          logo_url=logo_url,

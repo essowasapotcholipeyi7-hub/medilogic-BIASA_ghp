@@ -576,8 +576,68 @@
             -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
     </style>
+    {# ⭐ 2026-10-21 (patron : « certaines structures veulent la proforma en 80 mm ») : même contenu, mis en
+       ticket — une colonne, en-tête centré sans fond, traits pointillés ; colonnes N°, Type et PBR retirées
+       (la base de remboursement reste dans les totaux). Aperçu à l'écran = ticket, comme à l'impression. #}
+    {% if format == '80mm' %}
+    <style>
+        body.ticket-80 { padding: 14px; background: #eef1f4; }
+        .ticket-80 .proforma-container { max-width: 80mm; border-radius: 0; box-shadow: 0 4px 16px rgba(0,0,0,.14); }
+        .ticket-80 .proforma-header { background: none !important; color: #000; padding: 8px 8px 6px; text-align: center; border-bottom: 1.5px dashed #000; }
+        .ticket-80 .proforma-header .top-row { flex-direction: column; align-items: center !important; gap: 4px; }
+        .ticket-80 .proforma-header .logo-area { flex-direction: column; gap: 4px; }
+        .ticket-80 .proforma-header .logo-area img { max-height: 42px; max-width: 50mm; }
+        .ticket-80 .proforma-header .logo-area h1 { font-size: 13px; }
+        .ticket-80 .proforma-header .badge-proforma { align-self: center !important; background: none; border: 1.5px solid #000;
+                                                      border-radius: 4px; padding: 2px 10px; font-size: 10px; font-weight: 700; }
+        .ticket-80 .proforma-header .badge-proforma .numero { font-size: 13px; }
+        .ticket-80 .proforma-header .sub-info { flex-direction: column; align-items: center; gap: 1px; font-size: 9px; opacity: 1; margin-top: 4px; }
+        .ticket-80 .structure-info { background: none; flex-direction: column; align-items: center !important; gap: 2px;
+                                     padding: 5px 8px; border-bottom: 1.5px dashed #000; }
+        .ticket-80 .structure-info .nom { color: #000; font-size: 12px; }
+        .ticket-80 .structure-info .details { flex-direction: row !important; justify-content: center; gap: 2px 8px; font-size: 9px; color: #000; }
+        .ticket-80 .proforma-body { padding: 4px 8px 6px; }
+        .ticket-80 .section-title { font-size: 9px; color: #000; margin: 6px 0 4px; border-bottom: 1px solid #000; padding-bottom: 2px; }
+        .ticket-80 .patient-info { grid-template-columns: 1fr !important; gap: 3px; background: none; border-radius: 0; padding: 0; margin-bottom: 4px; }
+        .ticket-80 .patient-info .info-item { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; }
+        .ticket-80 .patient-info .info-item .label { font-size: 8px; color: #000; min-width: 24mm; }
+        .ticket-80 .patient-info .info-item .value { font-size: 10px; margin-top: 0; }
+        .ticket-80 .table-container { margin-top: 2px; overflow: visible; }
+        .ticket-80 th { background: none; padding: 3px 2px; font-size: 8px; letter-spacing: 0; border-bottom: 1px solid #000; }
+        .ticket-80 td { padding: 3px 2px; font-size: 9.5px; border-bottom: 1px dashed #999; vertical-align: top; }
+        .ticket-80 td.text-end { white-space: nowrap; }
+        .ticket-80 .badge-prise-en-charge { font-size: 7px; padding: 0 3px; margin-left: 2px; border: 1px solid #000; border-radius: 3px; background: none; color: #000; }
+        .ticket-80 .totaux { display: block; margin-top: 6px; padding-top: 4px; border-top: 1.5px solid #000; }
+        .ticket-80 .totaux .totaux-box { width: 100%; }
+        .ticket-80 .totaux .ligne { gap: 6px; padding: 2px 0; font-size: 10px; }
+        .ticket-80 .totaux .ligne span:last-child { white-space: nowrap; }
+        .ticket-80 .totaux .ligne.total { font-size: 13px; color: #000; border-top: 2px solid #000; padding-top: 4px; }
+        .ticket-80 .notes, .ticket-80 .conditions { margin-top: 6px; padding: 4px 5px; background: none; border: 1px dashed #000;
+                                                    border-radius: 0; font-size: 9px; color: #000; }
+        .ticket-80 .proforma-footer { background: none; flex-direction: column; align-items: center; text-align: center;
+                                      padding: 6px 8px 12px; border-top: 1.5px dashed #000; }
+        .ticket-80 .proforma-footer .signature { justify-content: center; gap: 16px; }
+        .ticket-80 .proforma-footer .signature .sig-item .line { width: 26mm; margin-top: 22px; border-top-color: #000; }
+        .ticket-80 .proforma-footer .signature .sig-item .label,
+        .ticket-80 .proforma-footer .right, .ticket-80 .proforma-footer .right .mention { color: #000; text-align: center; }
+        .ticket-80 .filigrane-facturee { display: none; }
+        .ticket-80 .bandeau-facturee { margin: 6px 8px; padding: 4px; font-size: 10px; border-radius: 0; }
+        @media print {
+            @page { size: 80mm auto; margin: 2mm 3mm; }
+            body.ticket-80 { padding: 0; background: #fff; }
+            .ticket-80 .proforma-container { max-width: 100%; box-shadow: none; }
+        }
+    </style>
+    {% include 'partials/ticket_80mm_lisible.html' %}
+    {% endif %}
+    {# choix du format, à côté de « Imprimer » #}
+    <style>
+        .choix-format { display: inline-flex; border-radius: 6px; overflow: hidden; border: 1px solid #1a2a6c; }
+        .choix-format a { padding: 7px 12px; font-size: 12px; font-weight: 600; color: #1a2a6c; background: #fff; text-decoration: none; }
+        .choix-format a.actif { background: #1a2a6c; color: #fff; }
+    </style>
 </head>
-<body>
+<body{% if format == '80mm' %} class="ticket-80"{% endif %}>
     {% if vente_facturee %}<div class="filigrane-facturee">PROFORMA DÉJÀ FACTURÉE</div>{% endif %}
     <div class="proforma-container">
         <!-- ===== EN-TÊTE ===== -->
@@ -668,6 +728,14 @@
             <div class="table-container">
                 <table>
                     <thead>
+                        {% if format == '80mm' %}
+                        <tr>
+                            <th>Désignation</th>
+                            <th style="text-align:center;">Qté</th>
+                            <th style="text-align:right;">P.U.</th>
+                            <th style="text-align:right;">Total</th>
+                        </tr>
+                        {% else %}
                         <tr>
                             <th style="width:5%;">N°</th>
                             <th style="width:{{ '32%' if est_assure else '38%' }};">Désignation</th>
@@ -679,11 +747,12 @@
                             {% endif %}
                             <th style="width:20%; text-align:right;">Total</th>
                         </tr>
+                        {% endif %}
                     </thead>
                     <tbody>
                         {% for article in proforma.articles %}
                         <tr>
-                            <td>{{ loop.index }}</td>
+                            {% if format != '80mm' %}<td>{{ loop.index }}</td>{% endif %}
                             <td>
                                 {{ article.nom|sans_code }}
                                 {% if article.prise_en_charge_amu == false and article.prise_en_charge_cac == false %}
@@ -694,11 +763,13 @@
                                     <span class="badge-prise-en-charge amu-zero">AMU=0</span>
                                 {% endif %}
                             </td>
+                            {% if format != '80mm' %}
                             <td>
                                 <span class="type-badge {% if article.type == 'acte' %}acte{% else %}produit{% endif %}">
                                     {{ 'Acte' if article.type == 'acte' else 'Produit' }}
                                 </span>
                             </td>
+                            {% endif %}
                             {# ⭐ FIX : article.prix_unitaire plante l'impression
                                (500 : "Undefined doesn't define __round__") dès
                                qu'un article n'a que `prix` (api_creer_proforma()
@@ -709,7 +780,7 @@
                             {% set prix_unitaire_affiche = article.prix_unitaire|default(article.prix, true)|default(0, true) %}
                             <td class="text-center">{{ article.quantite }}</td>
                             <td class="text-end">{{ prix_unitaire_affiche|round(0)|int }} F</td>
-                            {% if est_assure %}
+                            {% if est_assure and format != '80mm' %}
                             <td class="text-end">
                                 {% if article.pbr and article.pbr != prix_unitaire_affiche %}
                                     {{ article.pbr|round(0)|int }} F
@@ -841,6 +912,10 @@
 
     <!-- ===== BOUTONS ===== -->
     <div class="no-print">
+        <div class="choix-format" title="Format d'impression">
+            <a href="?format=A4" class="{{ 'actif' if format != '80mm' else '' }}" onclick="retenirFormatProforma('A4')">A4</a>
+            <a href="?format=80mm" class="{{ 'actif' if format == '80mm' else '' }}" onclick="retenirFormatProforma('80mm')">Ticket 80 mm</a>
+        </div>
         <button class="btn-print" onclick="imprimerProforma()">
             <i class="fas fa-print"></i> Imprimer
         </button>
@@ -855,10 +930,14 @@
         // ============================================================
         
         let impressionLancee = false;
+
+        // format retenu sur ce poste : repris par « Imprimer la proforma ? » après la création (proformas.html)
+        function retenirFormatProforma(f) { try { localStorage.setItem('formatProforma', f); } catch (e) {} }
         
         function imprimerProforma() {
             if (!impressionLancee) {
                 impressionLancee = true;
+                retenirFormatProforma('{{ format }}');
                 window.print();
             }
         }
