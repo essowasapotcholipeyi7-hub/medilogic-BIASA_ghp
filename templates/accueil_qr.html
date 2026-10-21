@@ -5,9 +5,28 @@
 {% block extra_css %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
+    /* ⭐ 2026-10-21 (patron : « le bleu sombre n'est pas joli ; vert, mais qui suive le thème choisi ») : couleur du
+       thème de la structure (--th-primaire), vert par défaut ; QR code sur fond blanc, grand, avec une marge
+       blanche autour (lisible par tous les téléphones, même en thème sombre) */
+    .qr-carte { border: 0; border-radius: 18px; overflow: hidden; box-shadow: 0 8px 28px rgba(0, 0, 0, .08); }
+    .qr-entete { background: linear-gradient(135deg, var(--th-primaire, #0E9D67) 0%, var(--th-primaire-fonce, #0B7A50) 100%);
+                 color: #fff; padding: 18px 20px; display: flex; align-items: center; gap: 14px; text-align: left; }
+    .qr-entete img { max-height: 56px; max-width: 110px; background: #fff; padding: 4px; border-radius: 8px; }
+    .qr-entete h5 { margin: 0; font-weight: 700; }
+    .qr-entete p { margin: 2px 0 0; font-size: 12px; opacity: .92; }
+    .qr-cadre { display: inline-block; background: #fff; padding: 18px; border-radius: 16px;
+                border: 3px solid var(--th-primaire, #0E9D67); box-shadow: 0 4px 16px rgba(0, 0, 0, .06); }
+    .qr-etapes { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 14px; }
+    .qr-etapes span { background: rgba(14, 157, 103, .08); background: color-mix(in srgb, var(--th-primaire, #0E9D67) 10%, transparent);
+                      color: var(--th-primaire-fonce, #0B7A50); border-radius: 20px; padding: 5px 12px; font-size: 13px; font-weight: 600; }
+    [data-bs-theme="dark"] .qr-etapes span { color: #fff; }
+    .qr-lien { font-size: 12px; word-break: break-all; }
     @media print {
         @page { size: A4; margin: 12mm; }
         .no-print { display: none !important; }
+        .qr-carte { box-shadow: none; border: 1px solid #ccc; }
+        .qr-entete, .qr-cadre, .qr-etapes span { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        #qrcode img, #qrcode canvas { width: 300px !important; height: 300px !important; }
     }
 </style>
 {% endblock %}
@@ -15,32 +34,24 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-6">
-        <div class="card" id="qrContenu">
-            <div class="card-body text-center" style="font-family: 'Segoe UI', Arial, sans-serif;">
-
-                <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
-                    <div class="col-12 d-flex align-items-center gap-3 text-start">
-                        {% if structure.logo_url %}
-                        <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 55px; max-width: 110px; background: white; padding: 4px; border-radius: 6px;">
-                        {% endif %}
-                        <div>
-                            <h5 style="margin: 0;">{{ structure.nom or "SSoftOne v10" }}</h5>
-                            <p style="margin: 3px 0 0 0; font-size: 11px; opacity: 0.9;">Préinscription à l'accueil</p>
-                        </div>
-                    </div>
+        <div class="card qr-carte" id="qrContenu">
+            <div class="qr-entete">
+                {% if structure.logo_url %}<img src="{{ structure.logo_url }}" alt="Logo">{% endif %}
+                <div>
+                    <h5>{{ structure.nom or "SSoftOne v10" }}</h5>
+                    <p>Enregistrement à l'accueil</p>
                 </div>
-
-                <h5 class="mb-1">Scannez pour vous faire enregistrer</h5>
-                <p class="text-muted small mb-3">
-                    Scannez ce code avec l'appareil photo de votre téléphone, puis remplissez vos
-                    informations. Présentez-vous ensuite au guichet.
-                </p>
-
-                <div id="qrcode" class="d-flex justify-content-center mb-3"></div>
-
-                <p class="text-muted small mb-0">
-                    À imprimer et afficher à l'accueil.
-                </p>
+            </div>
+            <div class="card-body text-center" style="font-family: 'Segoe UI', Arial, sans-serif;">
+                <h4 class="mb-2 fw-bold">Scannez pour vous enregistrer</h4>
+                <div class="qr-etapes">
+                    <span>1. Ouvrez l'appareil photo</span>
+                    <span>2. Visez le code</span>
+                    <span>3. Remplissez vos informations</span>
+                </div>
+                <div class="qr-cadre mb-3" data-th-garder><div id="qrcode"></div></div>
+                <p class="text-muted small mb-1">Présentez-vous ensuite au guichet avec votre numéro de passage.</p>
+                <p class="text-muted qr-lien mb-0">{{ accueil_url }}</p>
             </div>
         </div>
 
@@ -85,8 +96,10 @@
 <script>
 new QRCode(document.getElementById("qrcode"), {
     text: {{ accueil_url|tojson }},
-    width: 200,
-    height: 200,
+    width: 260,
+    height: 260,
+    colorDark: '#000000',
+    colorLight: '#ffffff',
     correctLevel: QRCode.CorrectLevel.M
 });
 

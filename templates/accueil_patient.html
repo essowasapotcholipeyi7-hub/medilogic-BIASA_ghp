@@ -11,11 +11,19 @@
     :root { --acc-bleu: #0B6FAE; --acc-bleu-clair: #e8f3fb; --acc-vert: #0E9D67; --acc-texte: #1f2d3d; }
     body { background: linear-gradient(180deg, #e9f4fb 0%, #f7fbfd 260px, #ffffff 100%) !important; color: var(--acc-texte); }
     .acc-page { max-width: 640px; margin: 0 auto; padding: 18px 14px 40px; }
-    .acc-entete { background: #fff; border-radius: 18px; padding: 18px 16px; text-align: center;
+    /* ⭐ carte d'accueil : gris doux (patron : « la carte blanche, une meilleure couleur, peut-être grise ») */
+    .acc-entete { background: linear-gradient(160deg, #f4f6f8 0%, #e6ebef 100%); border-radius: 18px; padding: 18px 16px; text-align: center;
+                  border: 1px solid #dde3e8;
                   box-shadow: 0 6px 24px rgba(11, 111, 174, .10); border-top: 5px solid var(--acc-vert); }
     .acc-entete img { max-height: 70px; max-width: 160px; }
     .acc-entete h1 { font-size: 1.35rem; font-weight: 700; color: var(--acc-bleu); margin: 8px 0 2px; }
-    .acc-entete p { margin: 0; color: #5b6b7a; }
+    .acc-entete p { margin: 0; color: #4f5d6b; font-weight: 500; }
+    .acc-entete img { background: #fff; border-radius: 12px; padding: 6px; }
+    /* ⭐ motif choisi : les autres motifs s'effacent, place aux services ; « Changer » pour revenir */
+    .acc-motifs.choisi .acc-case { display: none; }
+    .acc-motifs.choisi .acc-case.actif { display: block; grid-column: 1 / -1; }
+    .acc-changer { display: none; margin-top: 8px; background: none; border: 0; color: var(--acc-bleu); font-weight: 600; padding: 4px 0; }
+    .acc-motifs.choisi + .acc-changer { display: inline-flex; align-items: center; gap: 6px; }
     .acc-bloc { background: #fff; border-radius: 16px; padding: 16px; margin-top: 14px;
                 box-shadow: 0 3px 14px rgba(31, 45, 61, .06); border: 1px solid #edf1f5; }
     .acc-bloc h2 { font-size: 1.02rem; font-weight: 700; color: var(--acc-bleu); margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
@@ -104,13 +112,14 @@
 
             <div class="acc-bloc">
                 <h2><span class="num">2</span> Vous venez pour</h2>
-                <div class="acc-cases">
-                    <div class="acc-case"><input type="radio" name="paMotif" id="paMotifConsultation" value="consultation" checked onchange="paMotifChange()"><label for="paMotifConsultation"><i class="fas fa-user-doctor"></i> Consultation</label></div>
+                <div class="acc-cases acc-motifs" id="paMotifs">
+                    <div class="acc-case"><input type="radio" name="paMotif" id="paMotifConsultation" value="consultation" onchange="paMotifChange()"><label for="paMotifConsultation"><i class="fas fa-user-doctor"></i> Consultation</label></div>
                     <div class="acc-case"><input type="radio" name="paMotif" id="paMotifControle" value="controle" onchange="paMotifChange()"><label for="paMotifControle"><i class="fas fa-rotate"></i> Contrôle</label></div>
                     <div class="acc-case"><input type="radio" name="paMotif" id="paMotifResultat" value="resultat_analyse" onchange="paMotifChange()"><label for="paMotifResultat"><i class="fas fa-file-medical"></i> Résultat d'analyse</label></div>
                     <div class="acc-case"><input type="radio" name="paMotif" id="paMotifExamen" value="realisation_examen" onchange="paMotifChange()"><label for="paMotifExamen"><i class="fas fa-vial"></i> Réalisation d'examen</label></div>
                     <div class="acc-case"><input type="radio" name="paMotif" id="paMotifAutre" value="autre" onchange="paMotifChange()"><label for="paMotifAutre"><i class="fas fa-ellipsis"></i> Autre</label></div>
                 </div>
+                <button type="button" class="acc-changer" onclick="paChangerMotif()"><i class="fas fa-arrow-left"></i> Changer de motif</button>
                 <div id="paMotifAutreDiv" class="acc-cache mt-2">
                     <input type="text" class="form-control" id="paMotifAutreTexte" placeholder="Précisez le motif">
                 </div>
@@ -213,10 +222,20 @@ function _val(id) { return (document.getElementById(id).value || '').trim(); }
 function _coche(nom) { const c = document.querySelector(`input[name="${nom}"]:checked`); return c ? c.value : ''; }
 function _montrer(id, oui) { const e = document.getElementById(id); if (e) e.style.display = oui ? 'block' : 'none'; }
 
+// ⭐ 2026-10-21 (patron) : comme sur la fiche du caissier — la date de naissance donne l'âge, l'âge donne une date
+// de naissance (1er janvier de l'année)
 function paAgeOuDate(source) {
-    // date de naissance OU âge (comme sur la fiche du caissier) : l'un efface l'autre
-    if (source === 'date' && _val('paDateNaissance')) document.getElementById('paAge').value = '';
-    if (source === 'age' && _val('paAge')) document.getElementById('paDateNaissance').value = '';
+    const champDate = document.getElementById('paDateNaissance'), champAge = document.getElementById('paAge');
+    if (source === 'date') {
+        if (!champDate.value) { champAge.value = ''; return; }
+        const n = new Date(champDate.value + 'T00:00:00'), a = new Date();
+        let age = a.getFullYear() - n.getFullYear();
+        if (a.getMonth() < n.getMonth() || (a.getMonth() === n.getMonth() && a.getDate() < n.getDate())) age--;
+        champAge.value = age >= 0 && age <= 120 ? age : '';
+    } else {
+        const age = parseInt(champAge.value, 10);
+        champDate.value = (!isNaN(age) && age >= 0 && age <= 120) ? `${new Date().getFullYear() - age}-01-01` : '';
+    }
 }
 function paToggleAssurance() {
     _montrer('paNumeroAssureDiv', _val('paTypeAssurance') !== 'non_assure');
@@ -228,8 +247,16 @@ function paToggleAssurance2() {
 }
 function paMotifChange() {
     const motif = _coche('paMotif');
+    const bloc = document.getElementById('paMotifs');
+    bloc.classList.toggle('choisi', !!motif);
+    bloc.querySelectorAll('.acc-case').forEach(c => c.classList.toggle('actif', !!c.querySelector('input:checked')));
     _montrer('paMotifAutreDiv', motif === 'autre');
     _montrer('paServiceDiv', motif === 'consultation' || motif === 'controle');
+}
+function paChangerMotif() {
+    document.querySelectorAll('input[name="paMotif"], input[name="paService"]').forEach(i => { i.checked = false; });
+    document.getElementById('paMotifAutreTexte').value = '';
+    paMotifChange();
 }
 
 function reinitialiserFormulaire() {
@@ -260,6 +287,7 @@ async function envoyerPreinscription(evenement) {
     if (!_coche('paSexe')) manque.push('votre sexe');
     if (!_val('paDateNaissance') && !_val('paAge')) manque.push('votre date de naissance ou votre âge');
     if (!_val('paTelephone')) manque.push('votre téléphone');
+    if (!motif) manque.push('le motif de votre visite');
     if (avecService && !_coche('paService')) manque.push('le service');
     if (motif === 'autre' && !_val('paMotifAutreTexte')) manque.push('le motif de votre visite');
     if (_val('paTypeAssurance') !== 'non_assure' && !_val('paNumeroAssure')) manque.push("votre numéro d'assuré");
