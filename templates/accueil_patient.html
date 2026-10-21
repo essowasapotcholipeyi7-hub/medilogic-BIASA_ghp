@@ -21,9 +21,7 @@
     .acc-entete img { background: #fff; border-radius: 12px; padding: 6px; }
     /* ⭐ motif choisi : les autres motifs s'effacent, place aux services ; « Changer » pour revenir */
     .acc-motifs.choisi .acc-case { display: none; }
-    .acc-motifs.choisi .acc-case.actif { display: block; grid-column: 1 / -1; }
-    .acc-changer { display: none; margin-top: 8px; background: none; border: 0; color: var(--acc-bleu); font-weight: 600; padding: 4px 0; }
-    .acc-motifs.choisi + .acc-changer { display: inline-flex; align-items: center; gap: 6px; }
+    .acc-motifs.choisi + .acc-choix-fait { display: flex; }
     /* ⭐ même chose pour le service : le service choisi seul, en clair, avec « Changer de service » */
     .acc-services.choisi .acc-case { display: none; }
     .acc-choix-fait { display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
@@ -128,7 +126,10 @@
                     <div class="acc-case"><input type="radio" name="paMotif" id="paMotifExamen" value="realisation_examen" onchange="paMotifChange()"><label for="paMotifExamen"><i class="fas fa-vial"></i> Réalisation d'examen</label></div>
                     <div class="acc-case"><input type="radio" name="paMotif" id="paMotifAutre" value="autre" onchange="paMotifChange()"><label for="paMotifAutre"><i class="fas fa-ellipsis"></i> Autre</label></div>
                 </div>
-                <button type="button" class="acc-changer" onclick="paChangerMotif()"><i class="fas fa-arrow-left"></i> Changer de motif</button>
+                <div class="acc-choix-fait">
+                    <span class="texte"><i class="fas fa-circle-check"></i>Vous venez pour : <span id="paMotifChoisi"></span></span>
+                    <button type="button" onclick="paChangerMotif()"><i class="fas fa-arrow-left me-1"></i>Changer de motif</button>
+                </div>
                 <div id="paMotifAutreDiv" class="acc-cache mt-2">
                     <input type="text" class="form-control" id="paMotifAutreTexte" placeholder="Précisez le motif">
                 </div>
@@ -262,7 +263,8 @@ function paMotifChange() {
     const motif = _coche('paMotif');
     const bloc = document.getElementById('paMotifs');
     bloc.classList.toggle('choisi', !!motif);
-    bloc.querySelectorAll('.acc-case').forEach(c => c.classList.toggle('actif', !!c.querySelector('input:checked')));
+    const coche = bloc.querySelector('input:checked');
+    document.getElementById('paMotifChoisi').textContent = coche ? coche.nextElementSibling.textContent.trim() : '';
     _montrer('paMotifAutreDiv', motif === 'autre');
     _montrer('paServiceDiv', motif === 'consultation' || motif === 'controle');
 }
