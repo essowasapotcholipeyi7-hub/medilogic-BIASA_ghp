@@ -201,8 +201,8 @@ function afficherFormulaire(html) {
     basculerFormulaire(true);
     fusionnerPrescripteursModele(zone);
     if (prescripteurChoisi()) appliquerPrescripteur();
-    // identité du patient (nom, prénom, sexe, âge, téléphone, dates)
-    fetch('/api/resultats-analyses/' + demandeChoisie + '/identite').then(r => r.json()).then(d => {
+    // identité du patient (nom, prénom, sexe, âge, téléphone, dates) — demandée dès l'ouverture de la fenêtre
+    identiteDemande(demandeChoisie).then(d => {
         if (!d.success) return;
         choisirNormes(zone, d.sexe_code || '', d.age_jours);
         zone.dataset.sexe = d.sexe_code || '';
@@ -608,9 +608,20 @@ function filtrerModeles(q) {
 }
 
 // ⭐ 2026-10-18 : modèle proposé pour l'acte (dernier utilisé pour cet acte, sinon d'après les noms)
-function proposerModele(demandeId) {
+// ⭐ 2026-10-21 (patron : « l'onglet résultats ne passe pas vite ») : à l'ouverture de la fenêtre, la liste des
+// modèles, le modèle proposé et l'identité du patient sont demandés EN MÊME TEMPS (avant : l'un après l'autre)
+let _identiteEnCours = null;
+function identiteDemande(demandeId) {
+    if (!_identiteEnCours || _identiteEnCours.demande !== demandeId) {
+        _identiteEnCours = { demande: demandeId, promesse: fetch('/api/resultats-analyses/' + demandeId + '/identite')
+            .then(r => r.json()).catch(() => ({ success: false })) };
+    }
+    return _identiteEnCours.promesse;
+}
+
+function proposerModele(demandeId, promesse) {
     document.getElementById('modeleProposeInfo').textContent = '';
-    fetch('/api/resultats-analyses/' + demandeId + '/modele-propose').then(r => r.json()).then(d => {
+    (promesse || fetch('/api/resultats-analyses/' + demandeId + '/modele-propose').then(r => r.json())).then(d => {
         if (!d.success || !d.modele_id || demandeChoisie !== demandeId) return;
         const sel = document.getElementById('resultatModeleSelect');
         if (sel.value || ![...sel.options].some(o => o.value == d.modele_id)) return;
@@ -817,12 +828,15 @@ function ouvrirModalResultat(demandeId, patientNom, acteNom, typePrestation) {
 
     const selectModele = document.getElementById('resultatModeleSelect');
     selectModele.innerHTML = '<option value="">-- Partir d\'une page vierge --</option>';
+    _identiteEnCours = null;
+    identiteDemande(demandeId);   // part tout de suite, servie au chargement du modèle
+    const propose = fetch('/api/resultats-analyses/' + demandeId + '/modele-propose').then(r => r.json()).catch(() => ({ success: false }));
     fetch(`/api/modeles-resultats?type_prestation=${typePrestation}`).then(r => r.json()).then(lignes => {
-        lignes.forEach(m => {
+        selectModele.innerHTML += lignes.map(m => {
             const label = m.formulaire ? `${m.nom} — formulaire` : (m.a_contenu_html ? m.nom : `${m.nom} (Word/Excel — converti à l'ouverture)`);
-            selectModele.innerHTML += `<option value="${m.id}">${label}</option>`;
-        });
-        if (lignes.length) proposerModele(demandeId);
+            return `<option value="${m.id}">${_esc(label)}</option>`;
+        }).join('');
+        if (lignes.length) proposerModele(demandeId, propose);
     });
 
     const boite = document.getElementById('resultatSignataires');

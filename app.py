@@ -9481,6 +9481,10 @@ def api_structure_infos():
     structure_id = session.get('structure_id')
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if s.get('ID') == structure_id), {})
+    # ⭐ 2026-10-21 : logo changé depuis la connexion -> la session suit (sinon la carte du haut affichait
+    # l'ancien logo puis le remplaçait à chaque page)
+    if structure_info.get('logo_url') and session.get('structure_logo') != structure_info.get('logo_url'):
+        session['structure_logo'] = structure_info.get('logo_url')
     return jsonify({
         'nom': structure_info.get('nom', ''),
         'adresse': structure_info.get('adresse', ''),  # ← AJOUT
@@ -15187,7 +15191,9 @@ def api_convertir_modele_html(modele_id):
     modifie rien en base tant que l'utilisateur n'enregistre pas
     explicitement (voir api_definir_contenu_modele ci-dessous)."""
     structure_id = session.get('structure_id')
-    modele = ModeleResultat.query.filter_by(id=modele_id, structure_id=structure_id).first()
+    # ⭐ 2026-10-21 : la copie Word du modèle (fichier_data, ~60 Ko) n'est lue que s'il faut la convertir
+    modele = ModeleResultat.query.options(db.defer(ModeleResultat.fichier_data))\
+        .filter_by(id=modele_id, structure_id=structure_id).first()
     if not modele:
         return jsonify({'success': False, 'error': 'Introuvable'}), 404
     if modele.contenu_html:
@@ -15668,10 +15674,10 @@ def api_identite_resultat(demande_id):
            'patient_civilite': demande.patient_nom or ''}
     # ⭐ 2026-10-18 (patron : « ça doit commencer par 1 ») : N° du compte rendu propre à la structure et à
     # la filière (labo / imagerie), compté sur les comptes rendus saisis sur un modèle formulaire
-    deja = db.session.query(db.func.count(ResultatExamen.id)).join(DemandeExamen, DemandeExamen.id == ResultatExamen.demande_id)        .filter(ResultatExamen.structure_id == structure_id, DemandeExamen.type_prestation == demande.type_prestation,
-                ResultatExamen.contenu_html.like('%mf-identite%')).scalar() or 0
-    existant = ResultatExamen.query.filter_by(demande_id=demande.id, structure_id=structure_id).first()
-    res['numero'] = '' if existant else str(deja + 1)
+    # ⭐ 2026-10-21 (patron : « l'onglet résultats est très lent ») : n° du compte rendu et n° de dossier
+    # comptés ensemble (_compteurs_resultat, 2 requêtes au lieu de 4)
+    compteurs = _compteurs_resultat(demande)
+    res['numero'] = '' if compteurs['existe'] else str(compteurs['deja'] + 1)
     p = Patient.query.get(demande.patient_id) if demande.patient_id else None
     if p and str(p.structure_id) == str(structure_id):
         dechiffrer_patients_orm([p])
@@ -15690,7 +15696,7 @@ def api_identite_resultat(demande_id):
                 res['age'] = f"{jours // 30} mois"
             elif jours >= 0:
                 res['age'] = f"{jours} jour{'s' if jours > 1 else ''}"
-    res['dossier'] = _numero_dossier_resultat(demande)
+    res['dossier'] = compteurs['dossier']
     # ⭐ 2026-10-20 : garde-fous des dates du compte rendu (prélèvement, date du compte rendu) — pas avant la demande
     res['date_demande'] = demande.created_at.strftime('%Y-%m-%d') if demande.created_at else ''
     # « Mme ABDO Chinwa », « Enfant AYIKA Rayan », « Nné AHOTCHEME » (comme les Word de Valeo)
@@ -15699,6 +15705,37 @@ def api_identite_resultat(demande_id):
                 else {'F': 'Mme', 'M': 'M.'}.get(res['sexe_code'], ''))
     res['patient_civilite'] = f"{civilite} {res['patient']}".strip()
     return jsonify({'success': True, **res})
+
+
+def _compteurs_resultat(demande):
+    """⭐ 2026-10-21 : en 2 requêtes — le compte rendu existe-t-il déjà, combien de comptes rendus sur modèle
+    formulaire dans la filière (« N° » des labos, structure 7), et le n° de dossier de l'année (voir
+    _numero_dossier_resultat, même règle)."""
+    from sqlalchemy import text as _text
+    res = {'existe': False, 'deja': 0, 'dossier': ''}
+    try:
+        premier = db.session.execute(_text(
+            "SELECT id, created_at FROM resultats_examens WHERE demande_id = :d ORDER BY id LIMIT 1"),
+            {'d': demande.id}).first()
+        res['existe'] = premier is not None
+        annee = (premier.created_at if premier and premier.created_at else datetime.now()).year
+        ligne = db.session.execute(_text("""
+            SELECT COUNT(*) FILTER (WHERE r.contenu_html LIKE '%mf-identite%') AS deja,
+                   COUNT(DISTINCT r.demande_id) FILTER (
+                       WHERE r.demande_id <> :dem AND r.created_at >= :debut AND r.created_at < :fin
+                         AND (CAST(:premier AS INTEGER) IS NULL OR r.id < :premier)) AS avant
+            FROM resultats_examens r JOIN demandes_examens d ON d.id = r.demande_id
+            WHERE d.structure_id = :s AND r.structure_id = :s AND d.type_prestation = :t"""),
+            {'s': demande.structure_id, 't': demande.type_prestation, 'dem': demande.id,
+             'debut': datetime(annee, 1, 1), 'fin': datetime(annee + 1, 1, 1),
+             'premier': premier.id if premier else None}).first()
+        res['deja'] = int(ligne.deja or 0)
+        res['dossier'] = f"{int(ligne.avant or 0) + 1:04d}/{annee}"
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ Compteurs du compte rendu {demande.id} : {e}")
+        res['dossier'] = _numero_dossier_resultat(demande)
+    return res
 
 
 def _numero_dossier_resultat(demande):
@@ -15753,11 +15790,19 @@ def api_modele_propose_resultat(demande_id):
             memoire = mid
             break
     candidats = []
+    # ⭐ 2026-10-21 (patron : « l'onglet résultats est très lent ») : les modèles pas encore en cache sont lus
+    # en UNE requête (avant : une requête par modèle — 49 pour la structure 1)
+    manquants = [mid for mid, nom, longueur, debut in lignes
+                 if est_formulaire(debut) and (mid, nom, longueur) not in _CACHE_MOTS_MODELES]
+    if manquants:
+        for mid, nom, html in db.session.query(ModeleResultat.id, ModeleResultat.nom, ModeleResultat.contenu_html)\
+                .filter(ModeleResultat.id.in_(manquants)).all():
+            _CACHE_MOTS_MODELES[(mid, nom, len(html or ''))] = mots_modele(nom, html)
     for mid, nom, longueur, debut in lignes:
         if not est_formulaire(debut):
             continue
         cle = (mid, nom, longueur)
-        if cle not in _CACHE_MOTS_MODELES:
+        if cle not in _CACHE_MOTS_MODELES:   # (longueur comptée autrement par la base : relu tel quel)
             html = db.session.query(ModeleResultat.contenu_html).filter(ModeleResultat.id == mid).scalar()
             _CACHE_MOTS_MODELES[cle] = mots_modele(nom, html)
         candidats.append((mid, _CACHE_MOTS_MODELES[cle]))
