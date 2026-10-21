@@ -1,0 +1,152 @@
+{# ⭐ 2026-10-21 (patron : « depuis les pages vente, qu'on puisse rechercher directement un patient, comme aux
+   rendez-vous, avec la possibilité de retourner à la liste des patients ») — vente d'actes et vente pharmacie.
+   On tape nom, prénom ou téléphone, on choisit : le patient est mémorisé exactement comme depuis la page Patients
+   (mêmes clés sessionStorage que memoriserPatient, patients.html) et la page de vente se recharge avec lui.
+   « Changer » (bandeau du patient) ouvre cette recherche au lieu de partir sur la liste des patients. #}
+<style>
+    .rpv-carte { border: 2px solid var(--bs-primary, #0B6FAE); border-radius: 14px; background: var(--bs-body-bg, #fff); }
+    .rpv-carte .rpv-titre { font-weight: 700; font-size: 1.02rem; color: var(--bs-primary, #0B6FAE); }
+    .rpv-carte .rpv-champ { font-size: 1.05rem; padding: 11px 14px 11px 42px; border-radius: 10px; }
+    .rpv-carte .rpv-loupe { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #7a8b96; }
+    .rpv-resultats { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 1050; max-height: 340px; overflow-y: auto;
+                     border-radius: 10px; box-shadow: 0 12px 28px rgba(0, 0, 0, .18); }
+    .rpv-resultats { background: #fff; border: 1px solid #d5dde5; }
+    .rpv-resultats .list-group-item { cursor: pointer; background: #fff; color: #1f2d3d; border-color: #eef1f4; }
+    .rpv-resultats .list-group-item:hover, .rpv-resultats .list-group-item.actif { background: #eaf3fb; }
+    [data-bs-theme="dark"] .rpv-resultats, [data-bs-theme="dark"] .rpv-resultats .list-group-item { background: #1f262d; color: #e8e8e8; border-color: rgba(255,255,255,.12); }
+    [data-bs-theme="dark"] .rpv-resultats .list-group-item:hover, [data-bs-theme="dark"] .rpv-resultats .list-group-item.actif { background: #2b3a48; }
+    .rpv-resultats small { color: #6b7c86; }
+</style>
+<div class="card rpv-carte mb-3" id="recherchePatientVente" style="display:none;">
+    <div class="card-body py-3">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <span class="rpv-titre"><i class="fas fa-user me-1"></i> Choisir le patient</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="rpvFermer" style="display:none;" onclick="fermerRecherchePatientVente()">
+                <i class="fas fa-times me-1"></i>Garder le patient actuel
+            </button>
+        </div>
+        <div class="position-relative">
+            <i class="fas fa-magnifying-glass rpv-loupe"></i>
+            <input type="search" class="form-control rpv-champ" id="rpvSaisie" autocomplete="off" spellcheck="false"
+                   placeholder="Tapez le nom, le prénom ou le téléphone du patient…"
+                   oninput="rechercherPatientVente()" onfocus="rechercherPatientVente()" onkeydown="clavierPatientVente(event)">
+            <div class="list-group rpv-resultats" id="rpvResultats" style="display:none;" data-th-garder></div>
+        </div>
+        <div class="small text-muted mt-2">
+            ou <a href="{{ url_for('patients') }}"><i class="fas fa-list me-1"></i>choisir dans la liste des patients</a>
+            · <a href="{{ url_for('patients') }}"><i class="fas fa-user-plus me-1"></i>enregistrer un nouveau patient</a>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    let patients = null, chargement = null, choix = [], indexActif = -1;
+    const norm = t => (t || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const esc = t => { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; };
+
+    function charger() {
+        if (patients) return Promise.resolve(patients);
+        if (!chargement) {
+            chargement = fetch('/api/patients/liste').then(r => r.json())
+                .then(d => { patients = (d && d.success) ? d.data : []; return patients; })
+                .catch(() => { chargement = null; return []; });
+        }
+        return chargement;
+    }
+    function patientDejaChoisi() {
+        const id = sessionStorage.getItem('selectedPatientId') || localStorage.getItem('selectedPatientId');
+        return id && id !== 'null' && id !== 'undefined';
+    }
+
+    window.ouvrirRecherchePatientVente = function () {
+        const carte = document.getElementById('recherchePatientVente');
+        carte.style.display = '';
+        document.getElementById('rpvFermer').style.display = patientDejaChoisi() ? '' : 'none';
+        const champ = document.getElementById('rpvSaisie');
+        champ.value = '';
+        carte.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setTimeout(() => champ.focus(), 150);
+        charger();
+    };
+    window.fermerRecherchePatientVente = function () {
+        document.getElementById('recherchePatientVente').style.display = 'none';
+        document.getElementById('rpvResultats').style.display = 'none';
+    };
+
+    window.rechercherPatientVente = function () {
+        const saisie = norm(document.getElementById('rpvSaisie').value).trim();
+        const boite = document.getElementById('rpvResultats');
+        if (!saisie) { boite.style.display = 'none'; return; }
+        charger().then(liste => {
+            if (norm(document.getElementById('rpvSaisie').value).trim() !== saisie) return;   // saisie changée entre-temps
+            const mots = saisie.split(/\s+/);
+            choix = liste.filter(p => {
+                const t = norm(`${p.nom} ${p.prenom} ${p.telephone}`) + ' ' + (p.telephone || '').replace(/\s/g, '');
+                return mots.every(m => t.includes(m));
+            }).slice(0, 12);
+            indexActif = choix.length ? 0 : -1;
+            boite.innerHTML = choix.length
+                ? choix.map((p, i) => `<div class="list-group-item list-group-item-action${i === 0 ? ' actif' : ''}" data-i="${i}">
+                        <strong class="notranslate">${esc(p.nom)} ${esc(p.prenom)}</strong>
+                        ${p.telephone ? `<small class="ms-2"><i class="fas fa-phone-alt me-1"></i>${esc(p.telephone)}</small>` : ''}</div>`).join('')
+                : `<div class="list-group-item text-muted">Aucun patient trouvé — <a href="{{ url_for('patients') }}">enregistrer un nouveau patient</a></div>`;
+            boite.querySelectorAll('[data-i]').forEach(e => e.addEventListener('mousedown', ev => { ev.preventDefault(); choisir(choix[+e.dataset.i]); }));
+            boite.style.display = 'block';
+        });
+    };
+    window.clavierPatientVente = function (e) {
+        const boite = document.getElementById('rpvResultats');
+        const items = [...boite.querySelectorAll('[data-i]')];
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            if (!items.length) return;
+            e.preventDefault();
+            indexActif = (indexActif + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+            items.forEach((it, i) => it.classList.toggle('actif', i === indexActif));
+            items[indexActif].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (indexActif >= 0 && choix[indexActif]) choisir(choix[indexActif]);
+        } else if (e.key === 'Escape') {
+            boite.style.display = 'none';
+        }
+    };
+
+    async function choisir(p) {
+        document.getElementById('rpvResultats').style.display = 'none';
+        const idActuel = sessionStorage.getItem('selectedPatientId');
+        const panierEnCours = typeof panier !== 'undefined' && Array.isArray(panier) && panier.length > 0;
+        if (panierEnCours && String(idActuel) !== String(p.id)) {
+            const ok = await demanderConfirmation(`Changer de patient vide le panier en cours (${panier.length} article(s)). Continuer avec ${p.nom} ${p.prenom || ''} ?`);
+            if (!ok) return;
+        }
+        let fiche = null;
+        try { fiche = await (await fetch('/api/patients/' + p.id)).json(); } catch (e) { fiche = null; }
+        if (!fiche || !fiche.id) { await afficherMessage("Impossible de charger la fiche de ce patient. Réessayez.", { type: 'danger' }); return; }
+        // mêmes clés que memoriserPatient (patients.html) : lues par les pages de vente
+        sessionStorage.setItem('selectedPatientId', String(fiche.id));
+        sessionStorage.setItem('selectedPatientName', `${fiche.nom || ''} ${fiche.prenom || ''}`.trim());
+        sessionStorage.setItem('selectedPatientPrenom', '');
+        sessionStorage.setItem('selectedPatientAssurance', fiche.type_assurance || 'non_assure');
+        sessionStorage.setItem('selectedPatientTaux', String(fiche.taux_prise_charge || 0));
+        sessionStorage.setItem('selectedPatientNumero', '');
+        sessionStorage.setItem('selectedPatientAssurance2', fiche.assurance2_nom || '');
+        sessionStorage.setItem('selectedPatientTaux2', String(fiche.taux_assurance2 || 0));
+        sessionStorage.setItem('selectedPatientNumero2', '');
+        sessionStorage.setItem('selectedPatientSocieteAssurance2', fiche.societe_assurance2 || '');
+        window.location.reload();
+    }
+
+    document.addEventListener('click', e => {
+        const carte = document.getElementById('recherchePatientVente');
+        if (carte && !carte.contains(e.target)) document.getElementById('rpvResultats').style.display = 'none';
+    });
+    document.addEventListener('DOMContentLoaded', () => {
+        // « Changer » du bandeau patient : ouvre la recherche (la liste des patients reste à un clic dedans)
+        window.changePatient = window.ouvrirRecherchePatientVente;
+        if (!patientDejaChoisi()) {
+            document.getElementById('recherchePatientVente').style.display = '';
+            charger();
+        }
+    });
+})();
+</script>

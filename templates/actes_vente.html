@@ -36,10 +36,11 @@
         </div>
     </div>
 </div>
+        {% include 'partials/recherche_patient_vente.html' %}
         <!-- Message si aucun patient sélectionné -->
         <div class="alert alert-warning" id="noPatientAlert">
             <i class="fas fa-exclamation-triangle"></i>
-            Veuillez d'abord sélectionner un patient dans la <a href="{{ url_for('patients') }}">liste des patients</a>
+            Choisissez d'abord le patient : recherchez-le ci-dessus, ou dans la <a href="{{ url_for('patients') }}">liste des patients</a>
         </div>
 
         {% if tarif_nuit_actif and catalogue_a_tarif_nuit %}

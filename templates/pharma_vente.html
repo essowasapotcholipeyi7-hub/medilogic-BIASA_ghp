@@ -36,9 +36,10 @@
         </div>
         
         <!-- Message si aucun patient sélectionné -->
+        {% include 'partials/recherche_patient_vente.html' %}
         <div class="alert alert-warning" id="noPatientAlert">
             <i class="fas fa-exclamation-triangle"></i> 
-            Veuillez d'abord sélectionner un patient dans la <a href="{{ url_for('patients') }}">liste des patients</a>
+            Choisissez d'abord le patient : recherchez-le ci-dessus, ou dans la <a href="{{ url_for('patients') }}">liste des patients</a>
         </div>
 
         <!-- ⭐ Suivi des stocks réduit à une ligne (patron, 2026-10-12 : « il y a tellement de

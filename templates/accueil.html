@@ -42,6 +42,17 @@
     .hub-resultats small { display: block; color: #6b7c86; font-size: 12px; }
     .hub-resultats .vide { padding: 12px 14px; color: #6b7c86; font-size: 13px; }
 
+    /* ⭐ 2026-10-21 (patron : « quelqu'un qui ne maîtrise pas l'application ne voit pas où faire la vente ») :
+       accès direct, bien visible, juste sous la recherche */
+    .hub-vente { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 14px;
+                 background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.28); border-radius: 14px; padding: 10px 12px; }
+    .hub-vente .titre { font-weight: 700; font-size: 15px; color: #fff; margin-right: 4px; display: inline-flex; align-items: center; gap: 8px; }
+    .hub-vente a { flex: 1 1 200px; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+                   padding: 13px 16px; border-radius: 12px; background: #fff; color: #0A3D5C; text-decoration: none;
+                   font-weight: 700; font-size: 16px; box-shadow: 0 6px 16px rgba(4,36,56,.22); transition: transform .12s, box-shadow .12s; }
+    .hub-vente a:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(4,36,56,.28); color: #0A3D5C; }
+    .hub-vente a i { font-size: 20px; color: #0E9D67; }
+    .hub-vente a .fleche { font-size: 14px; color: #8aa0ad; }
     .hub-a-traiter { display: flex; gap: 8px; flex-wrap: wrap; }
     .hub-a-traiter a {
         display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
@@ -154,6 +165,15 @@
                aria-label="Rechercher un onglet" aria-controls="hubResultats" aria-expanded="false">
         <div class="hub-resultats" id="hubResultats" role="listbox" hidden></div>
     </div>
+
+    {% set _ids_visibles = [] %}{% for d in _nav.domaines %}{% for o in d.onglets %}{% set _ = _ids_visibles.append(o.id) %}{% endfor %}{% endfor %}
+    {% if 'actes_vente' in _ids_visibles or 'pharma_vente' in _ids_visibles %}
+    <div class="hub-vente">
+        <span class="titre"><i class="fas fa-cash-register" aria-hidden="true"></i> Faire une vente</span>
+        {% if 'actes_vente' in _ids_visibles %}<a href="{{ url_for('actes_vente') }}"><i class="fas fa-stethoscope" aria-hidden="true"></i> Vente d'actes <i class="fas fa-arrow-right fleche" aria-hidden="true"></i></a>{% endif %}
+        {% if 'pharma_vente' in _ids_visibles %}<a href="{{ url_for('pharma_vente') }}"><i class="fas fa-pills" aria-hidden="true"></i> Vente pharmacie <i class="fas fa-arrow-right fleche" aria-hidden="true"></i></a>{% endif %}
+    </div>
+    {% endif %}
 
     <div class="hub-a-traiter">
         {% for t in a_traiter %}
