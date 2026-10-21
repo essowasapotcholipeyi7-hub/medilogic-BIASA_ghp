@@ -29,6 +29,7 @@
     .acc-choix-fait .texte { font-weight: 700; color: var(--acc-bleu); }
     .acc-choix-fait .texte i { color: var(--acc-vert); margin-right: 6px; }
     .acc-services.choisi + .acc-choix-fait { display: flex; }
+    .acc-retour { margin-top: 8px; background: none; border: 0; color: var(--acc-bleu); font-weight: 600; padding: 4px 0; }
     .acc-choix-fait button { background: #fff; border: 1px solid var(--acc-bleu); color: var(--acc-bleu); border-radius: 20px;
                              padding: 4px 12px; font-weight: 600; font-size: .9rem; }
     .acc-bloc { background: #fff; border-radius: 16px; padding: 16px; margin-top: 14px;
@@ -152,33 +153,60 @@
 
             <div class="acc-bloc">
                 <h2><span class="num">3</span> Assurance</h2>
-                <label class="form-label" for="paTypeAssurance">Assurance principale</label>
-                <select class="form-select" id="paTypeAssurance" onchange="paToggleAssurance()">
-                    <option value="non_assure">Non assuré</option>
-                    <option value="amu_cnss">AMU-CNSS</option>
-                    <option value="amu_inam">AMU-INAM</option>
-                    <option value="amu_tns">AMU-TNS</option>
-                    <option value="autre">Autre assurance</option>
-                </select>
+                {# ⭐ 2026-10-21 (patron) : assurances en cases à toucher — d'abord Non assuré / Assuré, puis les assurances ;
+                   une fois choisie, la liste s'efface : « Vous avez choisi : AMU-CNSS — Changer » (même chose pour la
+                   complémentaire). Les valeurs envoyées restent dans les champs cachés paTypeAssurance / paAssurance2. #}
+                <label class="form-label">Assurance principale <span class="requis">*</span></label>
+                <input type="hidden" id="paTypeAssurance" value="">
+                <div class="acc-cases deux" id="paAssEtape1">
+                    <div class="acc-case"><input type="radio" name="paAssure" id="paAssureNon" value="non" onchange="paAssuranceMaj()"><label for="paAssureNon"><i class="fas fa-user"></i> Non assuré</label></div>
+                    <div class="acc-case"><input type="radio" name="paAssure" id="paAssureOui" value="oui" onchange="paAssuranceMaj()"><label for="paAssureOui"><i class="fas fa-shield-heart"></i> Assuré</label></div>
+                </div>
+                <div id="paAssListeBloc" style="display:none;">
+                    <p class="small text-muted mb-2">Choisissez votre assurance :</p>
+                    <div class="acc-cases">
+                    <div class="acc-case"><input type="radio" name="paAssType" id="paAssTypeCnss" value="amu_cnss" onchange="paAssuranceMaj()"><label for="paAssTypeCnss">AMU-CNSS</label></div>
+                    <div class="acc-case"><input type="radio" name="paAssType" id="paAssTypeInam" value="amu_inam" onchange="paAssuranceMaj()"><label for="paAssTypeInam">AMU-INAM</label></div>
+                    <div class="acc-case"><input type="radio" name="paAssType" id="paAssTypeTns" value="amu_tns" onchange="paAssuranceMaj()"><label for="paAssTypeTns">AMU-TNS</label></div>
+                    <div class="acc-case"><input type="radio" name="paAssType" id="paAssTypeAutre" value="autre" onchange="paAssuranceMaj()"><label for="paAssTypeAutre">Autre assurance</label></div>
+                    </div>
+                    <button type="button" class="acc-retour" onclick="paChangerAssurance()"><i class="fas fa-arrow-left me-1"></i>Retour</button>
+                </div>
+                <div class="acc-choix-fait" id="paAssChoix" style="display:none;">
+                    <span class="texte"><i class="fas fa-circle-check"></i>Vous avez choisi : <span id="paAssChoisi"></span></span>
+                    <button type="button" onclick="paChangerAssurance()"><i class="fas fa-arrow-left me-1"></i>Changer</button>
+                </div>
                 <div id="paNumeroAssureDiv" class="acc-cache mt-2">
                     <input type="text" class="form-control" id="paNumeroAssure" placeholder="N° d'assuré (numéro de la carte) *">
                 </div>
 
-                <label class="form-label mt-3" for="paAssurance2">Assurance complémentaire <span class="facultatif">facultatif</span></label>
-                {# ⭐ 2026-10-21 (patron) : les assurances complémentaires de la clinique, à choisir — plus de nom écrit
-                   à la main (mal orthographié) ; « Autre » seulement si elle n'est pas dans la liste #}
-                <select class="form-select" id="paAssurance2" onchange="paToggleAssurance2()">
-                    <option value="">Aucune</option>
-                    {% for c in compagnies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
-                    <option value="__autre__">Autre (elle n'est pas dans la liste)</option>
-                </select>
+                <label class="form-label mt-3">Assurance complémentaire <span class="facultatif">facultatif</span></label>
+                <input type="hidden" id="paAssurance2" value="">
+                <div class="acc-cases deux" id="paAss2Etape1">
+                    <div class="acc-case"><input type="radio" name="paAss2Statut" id="paAss2Non" value="non" onchange="paAssurance2Maj()"><label for="paAss2Non">Je n'en ai pas</label></div>
+                    <div class="acc-case"><input type="radio" name="paAss2Statut" id="paAss2Oui" value="oui" onchange="paAssurance2Maj()"><label for="paAss2Oui"><i class="fas fa-plus-circle"></i> J'en ai une</label></div>
+                </div>
+                <div id="paAss2ListeBloc" style="display:none;">
+                    <p class="small text-muted mb-2">Choisissez votre assurance complémentaire :</p>
+                    <div class="acc-cases">
+                        {% for c in compagnies %}
+                        <div class="acc-case"><input type="radio" name="paAss2Nom" id="paAss2Nom{{ loop.index }}" value="{{ c }}" onchange="paAssurance2Maj()"><label for="paAss2Nom{{ loop.index }}">{{ c }}</label></div>
+                        {% endfor %}
+                        <div class="acc-case"><input type="radio" name="paAss2Nom" id="paAss2NomAutre" value="__autre__" onchange="paAssurance2Maj()"><label for="paAss2NomAutre">Elle n'est pas dans la liste</label></div>
+                    </div>
+                    <button type="button" class="acc-retour" onclick="paChangerAssurance2()"><i class="fas fa-arrow-left me-1"></i>Retour</button>
+                </div>
+                <div class="acc-choix-fait" id="paAss2Choix" style="display:none;">
+                    <span class="texte"><i class="fas fa-circle-check"></i><span id="paAss2Choisi"></span></span>
+                    <button type="button" onclick="paChangerAssurance2()"><i class="fas fa-arrow-left me-1"></i>Changer</button>
+                </div>
                 <div id="paAssurance2AutreDiv" class="acc-cache mt-2">
                     <input type="text" class="form-control" id="paAssurance2Autre" placeholder="Nom de votre assurance complémentaire">
                 </div>
                 <div id="paAssurance2Details" class="acc-cache mt-2">
                     <div class="row g-2">
-                        <div class="col-6"><input type="text" class="form-control" id="paNumeroAssure2" placeholder="N° d'assuré (carte)"></div>
-                        <div class="col-6"><input type="text" class="form-control" id="paSocieteAssurance2" placeholder="Votre employeur (société)"></div>
+                        <div class="col-12 col-sm-6"><input type="text" class="form-control" id="paNumeroAssure2" placeholder="N° d'assuré (carte complémentaire)"></div>
+                        <div class="col-12 col-sm-6"><input type="text" class="form-control" id="paSocieteAssurance2" placeholder="Votre employeur (société)"></div>
                     </div>
                 </div>
             </div>
@@ -251,14 +279,42 @@ function paAgeOuDate(source) {
         champDate.value = (!isNaN(age) && age >= 0 && age <= 120) ? `${new Date().getFullYear() - age}-01-01` : '';
     }
 }
-function paToggleAssurance() {
-    _montrer('paNumeroAssureDiv', _val('paTypeAssurance') !== 'non_assure');
+function _afficher(id, mode) { const e = document.getElementById(id); if (e) e.style.display = mode || 'none'; }
+const _LIB_ASSURANCE = { non_assure: 'Non assuré', amu_cnss: 'AMU-CNSS', amu_inam: 'AMU-INAM', amu_tns: 'AMU-TNS', autre: 'Autre assurance' };
+// assurance principale : Non assuré / Assuré, puis l'assurance ; le choix fait s'affiche seul avec « Changer »
+function paAssuranceMaj() {
+    const statut = _coche('paAssure'), type = _coche('paAssType');
+    const valeur = statut === 'non' ? 'non_assure' : (statut === 'oui' && type ? type : '');
+    document.getElementById('paTypeAssurance').value = valeur;
+    _afficher('paAssEtape1', statut ? 'none' : 'grid');
+    _afficher('paAssListeBloc', statut === 'oui' && !type ? 'block' : 'none');
+    _afficher('paAssChoix', valeur ? 'flex' : 'none');
+    document.getElementById('paAssChoisi').textContent = _LIB_ASSURANCE[valeur] || '';
+    _afficher('paNumeroAssureDiv', valeur && valeur !== 'non_assure' ? 'block' : 'none');
 }
-function paToggleAssurance2() {
-    const v = _val('paAssurance2');
-    _montrer('paAssurance2AutreDiv', v === '__autre__');
-    _montrer('paAssurance2Details', v !== '');
+function paChangerAssurance() {
+    document.querySelectorAll('input[name="paAssure"], input[name="paAssType"]').forEach(i => { i.checked = false; });
+    paAssuranceMaj();
 }
+// assurance complémentaire : « Je n'en ai pas » / « J'en ai une », puis la compagnie de la clinique
+function paAssurance2Maj() {
+    const statut = _coche('paAss2Statut'), nom = _coche('paAss2Nom');
+    document.getElementById('paAssurance2').value = statut === 'oui' ? nom : '';
+    _afficher('paAss2Etape1', statut ? 'none' : 'grid');
+    _afficher('paAss2ListeBloc', statut === 'oui' && !nom ? 'block' : 'none');
+    _afficher('paAss2Choix', statut === 'non' || nom ? 'flex' : 'none');
+    document.getElementById('paAss2Choisi').textContent = statut === 'non' ? "Pas d'assurance complémentaire"
+        : 'Vous avez choisi : ' + (nom === '__autre__' ? 'une autre assurance' : nom);
+    _afficher('paAssurance2AutreDiv', nom === '__autre__' ? 'block' : 'none');
+    _afficher('paAssurance2Details', statut === 'oui' && nom ? 'block' : 'none');
+}
+function paChangerAssurance2() {
+    document.querySelectorAll('input[name="paAss2Statut"], input[name="paAss2Nom"]').forEach(i => { i.checked = false; });
+    document.getElementById('paAssurance2Autre').value = '';
+    paAssurance2Maj();
+}
+function paToggleAssurance() { paAssuranceMaj(); }
+function paToggleAssurance2() { paAssurance2Maj(); }
 function paMotifChange() {
     const motif = _coche('paMotif');
     const bloc = document.getElementById('paMotifs');
@@ -317,7 +373,8 @@ async function envoyerPreinscription(evenement) {
     if (!motif) manque.push('le motif de votre visite');
     if (avecService && !_coche('paService')) manque.push('le service');
     if (motif === 'autre' && !_val('paMotifAutreTexte')) manque.push('le motif de votre visite');
-    if (_val('paTypeAssurance') !== 'non_assure' && !_val('paNumeroAssure')) manque.push("votre numéro d'assuré");
+    if (!_val('paTypeAssurance')) manque.push('si vous êtes assuré (et votre assurance)');
+    else if (_val('paTypeAssurance') !== 'non_assure' && !_val('paNumeroAssure')) manque.push("votre numéro d'assuré");
     if (_val('paAssurance2') === '__autre__' && !assurance2) manque.push("le nom de l'assurance complémentaire");
     if (manque.length) { _erreur('Merci de renseigner ' + manque.join(', ') + '.'); return; }
 
