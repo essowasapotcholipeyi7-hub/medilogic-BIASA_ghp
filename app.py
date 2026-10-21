@@ -3982,6 +3982,7 @@ def api_add_patient():
         erreur = _erreur_age_sexe(data) or (erreur_pbr_variante_patient(structure_id, data) if 'pbr_variante' in data else None)
         if erreur:
             return jsonify({'success': False, 'error': erreur}), 400
+        _ranger_assurance_privee_en_complementaire(data)
 
         # 🔥 Ajouter les colonnes de la personne à prévenir
         # ⭐ created_at fixé explicitement à NOW() — ne pas compter sur un
@@ -4103,6 +4104,24 @@ def _erreur_age_sexe(data):
     if d > date.today() or d.year < date.today().year - 130:
         return 'Date de naissance invalide.'
     return None
+
+
+def _ranger_assurance_privee_en_complementaire(data):
+    """⭐ 2026-10-21 (patron : « oui corrige ») : une assurance PRIVÉE choisie comme assurance principale
+    (NSIA, SUNU, GTA…) n'était jamais prise en charge à la vente — la part privée (et son PBR, CAT / ONMT)
+    ne se calcule que sur l'assurance complémentaire. Sans complémentaire déjà renseignée, elle y est rangée
+    avec son taux et son numéro ; l'assurance principale redevient « non assuré ». Modifie `data` sur place."""
+    t = str(data.get('type_assurance') or '').strip()
+    if not t or t.lower() in ('non_assure', 'non assuré', 'autre') or t.lower().startswith('amu'):
+        return
+    if str(data.get('assurance2_nom') or '').strip():
+        return   # deux assurances privées : laissé tel quel (à revoir à la main)
+    data['assurance2_nom'] = t
+    data['taux_assurance2'] = data.get('taux_prise_charge') or 0
+    data['numero_assure2'] = data.get('numero_assure') or None
+    data['type_assurance'] = 'non_assure'
+    data['taux_prise_charge'] = 0
+    data['numero_assure'] = None
 
 
 @app.route('/api/patients/<int:id>', methods=['GET'])
@@ -10060,6 +10079,7 @@ def api_update_patient(patient_id):
         erreur = _erreur_age_sexe(data) or (erreur_pbr_variante_patient(structure_id, data) if 'pbr_variante' in data else None)
         if erreur:
             return jsonify({'success': False, 'error': erreur}), 400
+        _ranger_assurance_privee_en_complementaire(data)
         # 🔥 Ajouter les colonnes de la personne à prévenir
         db.execute_query("""
             UPDATE patients
