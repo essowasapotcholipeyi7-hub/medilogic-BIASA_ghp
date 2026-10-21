@@ -577,17 +577,16 @@ async function ajouterManuel(type) {
 }
 
 async function ajouterLigne(ligne) {
-    const estInam = document.getElementById('typeAmu').value === 'amu_inam';
     const maxActes = 3;
-    const maxProduits = estInam ? 3 : 4;
+    const maxProduits = 4;   // CNSS/TNS et INAM (nouvelle fiche INAM du 21/10/2026 : 4 lignes)
     if (ligne.type === 'acte') {
-        if (lignesActes.length >= maxActes) { await afficherMessage('Maximum ' + maxActes + 'actes sur cette fiche.'); return; }
+        if (lignesActes.length >= maxActes) { await afficherMessage('Maximum ' + maxActes + ' actes sur cette fiche.'); return; }
         lignesActes.push({...ligne, motif: ''});
         document.getElementById('acteSearch').value = '';
         document.getElementById('acteResultats').style.display = 'none';
         rendreLignes('acte');
     } else {
-        if (lignesProduits.length >= maxProduits) { await afficherMessage('Maximum ' + maxProduits + 'produits sur cette fiche.'); return; }
+        if (lignesProduits.length >= maxProduits) { await afficherMessage('Maximum ' + maxProduits + ' produits sur cette fiche.'); return; }
         lignesProduits.push({...ligne, motif: ''});
         document.getElementById('produitSearch').value = '';
         document.getElementById('produitResultats').style.display = 'none';

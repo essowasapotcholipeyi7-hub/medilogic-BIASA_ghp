@@ -1414,10 +1414,10 @@ def _valider_champs_ep(data, structure_id):
 
     # ⭐ Jamais plus de lignes que ce que la fiche physique peut accueillir
     # (patron : "ne jamais modifier la structure des fiches") — 3 actes +
-    # 4 médicaments pour le gabarit CNSS/TNS, 3 + 3 pour l'INAM.
+    # 4 médicaments (CNSS/TNS, et INAM depuis sa nouvelle fiche du 21/10/2026).
     lignes_motif = data.get('lignes_motif') or []
     max_actes = 3
-    max_produits = 4 if type_amu != 'amu_inam' else 3
+    max_produits = 4
     actes = [l for l in lignes_motif if l.get('type') == 'acte'][:max_actes] if inclure_actes else []
     produits = [l for l in lignes_motif if l.get('type') == 'produit'][:max_produits] if inclure_produits else []
     if inclure_actes and not actes:

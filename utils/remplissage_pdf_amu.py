@@ -236,7 +236,7 @@ def _texte_cases(c, hauteur, top, cases, valeur, taille=10):
     c.setFont(FONT, FONT_SIZE)
 
 
-def _texte_precision_inam(c, hauteur, valeur, taille=9):
+def _texte_precision_inam(c, hauteur, valeur, taille=9, ligne_courte=(372, 725, 100), ligne_longue=(321, 739, 150)):
     """Champ "Si non, catégorie attribuée (préciser) :" du gabarit INAM —
     DEUX lignes de pointillés disponibles : une courte juste après le
     label, sur la MÊME ligne que lui (x=372-472, y=717-727) et une
@@ -251,8 +251,6 @@ def _texte_precision_inam(c, hauteur, valeur, taille=9):
     reposer dessus)."""
     if not valeur:
         return
-    ligne_longue = (321, 739, 150)
-    ligne_courte = (372, 725, 100)
     tient, _taille = _ajuster_pour_largeur(valeur, ligne_courte[2], taille)
     if tient == valeur:
         _texte(c, hauteur, ligne_courte[0], ligne_courte[1], valeur, taille=taille, largeur_max=ligne_courte[2])
@@ -269,6 +267,36 @@ def _texte_precision_inam(c, hauteur, valeur, taille=9):
     reste = ' '.join(mots[i:])
     _texte(c, hauteur, ligne_courte[0], ligne_courte[1], ligne1, taille=taille, largeur_max=ligne_courte[2])
     _texte(c, hauteur, ligne_longue[0], ligne_longue[1], reste, taille=taille, largeur_max=ligne_longue[2])
+
+
+def _texte_cellule(c, hauteur, x, top, valeur, largeur, lignes_max=2, depuis_le_haut=False, taille=FONT_SIZE_TABLE):
+    """⭐ 2026-10-21 : cellule de tableau assez haute (nouvelle fiche INAM) — un libellé trop long passe à la
+    ligne (jusqu'à `lignes_max` lignes, police réduite au besoin jusqu'à 8 pt) au lieu de rétrécir jusqu'à
+    devenir illisible. Centré verticalement sur `top` (ligne de base d'une ligne seule), ou à partir de `top`
+    vers le bas si `depuis_le_haut`. En dernier recours : _texte (rétrécit puis tronque)."""
+    if not valeur:
+        return
+    valeur = str(valeur)
+    if stringWidth(valeur, FONT, taille) <= largeur:
+        _texte(c, hauteur, x, top, valeur, taille=taille, largeur_max=largeur)
+        return
+    for t in (taille, taille - 1, 8):
+        lignes, courante = [], ''
+        for mot in valeur.split():
+            essai = (courante + ' ' + mot).strip()
+            if stringWidth(essai, FONT, t) <= largeur or not courante:
+                courante = essai
+            else:
+                lignes.append(courante)
+                courante = mot
+        lignes.append(courante)
+        if len(lignes) <= lignes_max and all(stringWidth(l, FONT, t) <= largeur for l in lignes):
+            interligne = t + 1.5
+            for i, l in enumerate(lignes):
+                decalage = i * interligne if depuis_le_haut else (i - (len(lignes) - 1) / 2) * interligne
+                _texte(c, hauteur, x, top + decalage, l, taille=t, largeur_max=largeur)
+            return
+    _texte(c, hauteur, x, top, valeur, taille=taille, largeur_max=largeur)
 
 
 def _coche(c, hauteur, x0, x1, top0, top1):
@@ -382,60 +410,66 @@ def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire, signatu
 
 
 def remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire, signature=None):
-    """Même principe que remplir_ep_cnss, pour le gabarit INAM (1 page,
-    libellés et pointillés sur deux lignes distinctes — voir calibrage)."""
+    """Même principe que remplir_ep_cnss, pour le gabarit INAM.
+
+    ⭐ 2026-10-21 (patron) : nouvelle fiche INAM « Dernière version : 18/04/2012 » (FICHE DE DEMANDE
+    EP_ACTUALISEE INAM.pdf) — page 555,6 x 777,1 pt, entièrement en image (aucun texte à repérer) :
+    calibrage mesuré sur l'image (traits des tableaux, fins des libellés). Valeurs écrites juste après
+    les « : », sur la même ligne. 4 lignes de produits (l'ancienne fiche en avait 3)."""
     reader = PdfReader(AMU_INAM_PDF)
     page1 = reader.pages[0]
     largeur, hauteur = float(page1.mediabox.width), float(page1.mediabox.height)
 
     actes = _lignes_par_type(demande.lignes_motif, 'acte')[:3]
-    produits = _lignes_par_type(demande.lignes_motif, 'produit')[:3]
+    produits = _lignes_par_type(demande.lignes_motif, 'produit')[:4]
 
-    # ⭐ Patron : le texte saisi doit commencer à la suite des ":" sur la
-    # MÊME ligne que le label (et non sur la ligne de pointillés séparée
-    # juste en dessous, qui reste alors vide/non utilisée).
     def dessiner(c, h):
-        _texte(c, h, 72, 149.5, patient.nom or '', largeur_max=220)
-        _texte(c, h, 90, 186, patient.prenom or '', largeur_max=200)
-        _texte(c, h, 124, 223, patient.numero_assure or '', largeur_max=165)
-        _texte(c, h, 137, 260, demande.numero_feuille_soins or '', largeur_max=150)
+        # Cadre BENEFICIAIRE (x 19,6-253,6) / PRESCRIPTEUR (x 253,6-537,1) — lignes de base 125,5 / 145 / 164,5 / 184
+        _texte(c, h, 60, 125.5, patient.nom or '', largeur_max=192)
+        _texte(c, h, 79, 145, patient.prenom or '', largeur_max=173)
+        _texte(c, h, 116, 164.5, patient.numero_assure or '', largeur_max=136)
+        _texte(c, h, 134, 184, demande.numero_feuille_soins or '', largeur_max=117)
 
-        _texte(c, h, 446, 149.5, code_formation_sanitaire or '', largeur_max=95)
-        _texte(c, h, 414, 186, medecin.code_prescripteur or '', largeur_max=125)
-        _texte(c, h, 414, 223, medecin.telephone or '', largeur_max=125)
+        _texte(c, h, 398, 125.5, code_formation_sanitaire or '', largeur_max=138)
+        _texte(c, h, 361, 145, medecin.code_prescripteur or '', largeur_max=175)
+        _texte(c, h, 361, 164.5, medecin.telephone or '', largeur_max=175)
         d = demande.date_prescription or date.today()
-        _texte(c, h, 437, 260, d.strftime('%d/%m/%Y'), largeur_max=100)
+        _texte(c, h, 387, 184, d.strftime('%d/%m/%Y'), largeur_max=150)
 
-        # Tableau "Actes" — N°(35.3-63.6) | Actes(63.6-311.7) | Motifs(311.7-559.8)
+        # Tableau "Actes" — N°(19,6-47,8) | Actes(47,8-253,6) | Motifs(253,6-537,1) ; lignes 230-273-316-359
         if demande.inclure_actes:
-            y_rows = [333, 365, 396]
+            y_rows = [255, 298, 341]
             for ligne, y in zip(actes, y_rows):
-                _texte(c, h, 68, y, _ligne_nom(ligne), taille=FONT_SIZE_TABLE, largeur_max=235)
-                _texte(c, h, 316, y, _ligne_motif(ligne), taille=FONT_SIZE_TABLE, largeur_max=235)
+                _texte_cellule(c, h, 52, y, _ligne_nom(ligne), 197)
+                _texte_cellule(c, h, 258, y, _ligne_motif(ligne), 275)
 
-        # Tableau "Produits pharmaceutiques" — mêmes colonnes que Actes
+        # Tableau "Produits pharmaceutiques et assimilés" — mêmes colonnes ; 4 lignes 409-450-490-530-570
         if demande.inclure_produits:
-            y_rows = [477, 508, 539]
+            y_rows = [433.5, 473.5, 513.5, 553.5]
             for ligne, y in zip(produits, y_rows):
-                _texte(c, h, 68, y, _ligne_nom(ligne), taille=FONT_SIZE_TABLE, largeur_max=235)
-                _texte(c, h, 316, y, _ligne_motif(ligne), taille=FONT_SIZE_TABLE, largeur_max=235)
+                _texte_cellule(c, h, 52, y, _ligne_nom(ligne), 197)
+                _texte_cellule(c, h, 258, y, _ligne_motif(ligne), 275)
 
-        # Tableau "Hospitalisation" — Date admission(35.3-113.3) |
-        # Motifs(113.3-297.6) | Catégorie de salle(297.6-481.9, checkboxes
-        # Oui/Non) | Durée séjour(481.9-559.8)
+        # Tableau "Hospitalisation" — Date d'admission(19,6-98,1) | Motifs(98,1-253,6) |
+        # Catégorie de salle(253,6-438,4, cases Oui/Non) | Durée probable(438,4-537,1) ; corps 630,6-735,9
         if demande.inclure_hospitalisation:
             if demande.hospit_date_admission:
-                _texte(c, h, 38, 650, demande.hospit_date_admission.strftime('%d/%m/%Y'), taille=FONT_SIZE_TABLE, largeur_max=72)
-            _texte(c, h, 118, 650, demande.hospit_motif or '', taille=FONT_SIZE_TABLE, largeur_max=175)
-            _texte(c, h, 487, 650, demande.hospit_duree_sejour or '', taille=FONT_SIZE_TABLE, largeur_max=68)
+                _texte(c, h, 23, 648, demande.hospit_date_admission.strftime('%d/%m/%Y'), taille=FONT_SIZE_TABLE, largeur_max=72)
+            _texte_cellule(c, h, 102, 648, demande.hospit_motif or '', 148, lignes_max=4, depuis_le_haut=True)
+            _texte(c, h, 442, 648, demande.hospit_duree_sejour or '', taille=FONT_SIZE_TABLE, largeur_max=92)
             if demande.hospit_categorie_salle == 'cabine_ventilee':
-                _coche(c, h, 344.9, 357.9, 678.6, 688.4)  # case "Oui"
+                _coche(c, h, 298.0, 308.3, 665.6, 676.0)  # case "Oui"
             elif demande.hospit_categorie_salle == 'autre':
-                _coche(c, h, 396.2, 409.2, 679.7, 689.5)  # case "Non"
-                _texte_precision_inam(c, h, demande.hospit_categorie_autre_precision or '')
+                _coche(c, h, 343.7, 354.0, 665.6, 676.0)  # case "Non"
+                _texte_precision_inam(c, h, demande.hospit_categorie_autre_precision or '',
+                                      ligne_courte=(340, 707.5, 94), ligne_longue=(278, 725.5, 156))
 
-        # Signature du prescripteur : sous « Signature et cachet du prescripteur » (bas droit)
-        _signature(c, h, 372, 565, 772, 838, signature, _nom_medecin(medecin))
+        # Signature : sous « Signature et cachet du prescripteur » (x 320-506, bas à 752) il ne reste que
+        # ~25 pt jusqu'au bord de la page — image à gauche, nom du médecin à sa droite.
+        _signature(c, h, 318, 418, 753, 776, signature)
+        nom = _nom_medecin(medecin)
+        if signature and nom:
+            _texte(c, h, 421, 767, nom, taille=8, largeur_max=130)
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
 
