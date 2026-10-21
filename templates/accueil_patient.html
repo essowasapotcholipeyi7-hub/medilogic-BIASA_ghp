@@ -24,6 +24,15 @@
     .acc-motifs.choisi .acc-case.actif { display: block; grid-column: 1 / -1; }
     .acc-changer { display: none; margin-top: 8px; background: none; border: 0; color: var(--acc-bleu); font-weight: 600; padding: 4px 0; }
     .acc-motifs.choisi + .acc-changer { display: inline-flex; align-items: center; gap: 6px; }
+    /* ⭐ même chose pour le service : le service choisi seul, en clair, avec « Changer de service » */
+    .acc-services.choisi .acc-case { display: none; }
+    .acc-choix-fait { display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+                      background: var(--acc-bleu-clair); border: 2px solid var(--acc-bleu); border-radius: 12px; padding: 10px 14px; }
+    .acc-choix-fait .texte { font-weight: 700; color: var(--acc-bleu); }
+    .acc-choix-fait .texte i { color: var(--acc-vert); margin-right: 6px; }
+    .acc-services.choisi + .acc-choix-fait { display: flex; }
+    .acc-choix-fait button { background: #fff; border: 1px solid var(--acc-bleu); color: var(--acc-bleu); border-radius: 20px;
+                             padding: 4px 12px; font-weight: 600; font-size: .9rem; }
     .acc-bloc { background: #fff; border-radius: 16px; padding: 16px; margin-top: 14px;
                 box-shadow: 0 3px 14px rgba(31, 45, 61, .06); border: 1px solid #edf1f5; }
     .acc-bloc h2 { font-size: 1.02rem; font-weight: 700; color: var(--acc-bleu); margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
@@ -126,11 +135,15 @@
                 {% if services %}
                 <div id="paServiceDiv" class="mt-3">
                     <label class="form-label">Dans quel service ? <span class="requis">*</span></label>
-                    <div class="acc-cases">
+                    <div class="acc-cases acc-services" id="paServices">
                         {% for s in services %}
-                        <div class="acc-case"><input type="radio" name="paService" id="paService{{ loop.index }}" value="{{ s }}"><label for="paService{{ loop.index }}">{{ s }}</label></div>
+                        <div class="acc-case"><input type="radio" name="paService" id="paService{{ loop.index }}" value="{{ s }}" onchange="paServiceChange()"><label for="paService{{ loop.index }}">{{ s }}</label></div>
                         {% endfor %}
-                        <div class="acc-case"><input type="radio" name="paService" id="paServiceAutre" value="Autre / je ne sais pas"><label for="paServiceAutre">Je ne sais pas</label></div>
+                        <div class="acc-case"><input type="radio" name="paService" id="paServiceAutre" value="Autre / je ne sais pas" onchange="paServiceChange()"><label for="paServiceAutre">Je ne sais pas</label></div>
+                    </div>
+                    <div class="acc-choix-fait">
+                        <span class="texte"><i class="fas fa-circle-check"></i>Vous avez choisi : <span id="paServiceChoisi"></span></span>
+                        <button type="button" onclick="paChangerService()"><i class="fas fa-arrow-left me-1"></i>Changer de service</button>
                     </div>
                 </div>
                 {% endif %}
@@ -257,11 +270,23 @@ function paChangerMotif() {
     document.querySelectorAll('input[name="paMotif"], input[name="paService"]').forEach(i => { i.checked = false; });
     document.getElementById('paMotifAutreTexte').value = '';
     paMotifChange();
+    paServiceChange();
+}
+function paServiceChange() {
+    const bloc = document.getElementById('paServices');
+    if (!bloc) return;
+    const service = _coche('paService');
+    bloc.classList.toggle('choisi', !!service);
+    document.getElementById('paServiceChoisi').textContent = service === 'Autre / je ne sais pas' ? 'je ne sais pas encore' : service;
+}
+function paChangerService() {
+    document.querySelectorAll('input[name="paService"]').forEach(i => { i.checked = false; });
+    paServiceChange();
 }
 
 function reinitialiserFormulaire() {
     document.getElementById('formAccueilPatient').reset();
-    paToggleAssurance(); paToggleAssurance2(); paMotifChange();
+    paToggleAssurance(); paToggleAssurance2(); paMotifChange(); paServiceChange();
     document.getElementById('accueilMsg').innerHTML = '';
     document.getElementById('ecranMerci').style.display = 'none';
     document.getElementById('accueilCard').style.display = 'block';
