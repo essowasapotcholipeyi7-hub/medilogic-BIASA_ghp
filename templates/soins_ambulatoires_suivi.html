@@ -55,8 +55,8 @@
                 <select class="form-select form-select-sm" style="width:auto;" id="selectPbrCacVariante"
                         {% if episode.statut == 'facturee' %}disabled{% endif %}
                         onchange="toggleAssuranceEpisode('pbr_cac_variante', this.value)">
-                    <option value="defaut" {% if episode.pbr_cac_variante != 'alternatif' %}selected{% endif %}>PBR habituel{% if montant_pbr_defaut is not none %} ({{ '{:,.0f}'.format(montant_pbr_defaut).replace(',', ' ') }} F){% endif %}</option>
-                    <option value="alternatif" {% if episode.pbr_cac_variante == 'alternatif' %}selected{% endif %}>PBR alternatif{% if montant_pbr_alternatif is not none %} ({{ '{:,.0f}'.format(montant_pbr_alternatif).replace(',', ' ') }} F){% endif %}</option>
+                    <option value="defaut" {% if episode.pbr_cac_variante != 'alternatif' %}selected{% endif %}>{{ libelles_pbr_structure().defaut }}{% if montant_pbr_defaut is not none %} ({{ '{:,.0f}'.format(montant_pbr_defaut).replace(',', ' ') }} F){% endif %}</option>
+                    <option value="alternatif" {% if episode.pbr_cac_variante == 'alternatif' %}selected{% endif %}>{{ libelles_pbr_structure().alternatif }}{% if montant_pbr_alternatif is not none %} ({{ '{:,.0f}'.format(montant_pbr_alternatif).replace(',', ' ') }} F){% endif %}</option>
                 </select>
                 {% endif %}
             </div>

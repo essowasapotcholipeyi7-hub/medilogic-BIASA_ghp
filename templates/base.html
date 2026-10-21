@@ -2083,6 +2083,10 @@ window.sondagePeriodique = function (fn, ms) {
     return setInterval(tour, ms);
 };
 </script>
+<script>
+// ⭐ 2026-10-21 : noms des deux PBR d'une compagnie (Valeo : PBR CAT / PBR ONMT ; sinon habituel / alternatif)
+window.LIBELLES_PBR = {{ (libelles_pbr_structure() if session.get('structure_id') else {'defaut': 'PBR habituel', 'alternatif': 'PBR alternatif', 'carte': False}) | tojson }};
+</script>
 </head>
 <body>
 

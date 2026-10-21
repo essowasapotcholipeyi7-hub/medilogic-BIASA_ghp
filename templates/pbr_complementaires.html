@@ -93,11 +93,11 @@
                 </div>
                 <div class="row">
                     <div class="col-md-6 mb-2">
-                        <label class="form-label mb-1">PBR habituel (FCFA) <span class="text-muted">— vide = pas de PBR</span></label>
+                        <label class="form-label mb-1">{{ libelles_pbr_structure().defaut }} (FCFA) <span class="text-muted">— vide = pas de PBR</span></label>
                         <input type="number" class="form-control" id="pbrValeur1" min="0" step="1" placeholder="Appliqué par défaut">
                     </div>
                     <div class="col-md-6 mb-2">
-                        <label class="form-label mb-1">PBR alternatif (FCFA) <span class="text-muted">— optionnel</span></label>
+                        <label class="form-label mb-1">{{ libelles_pbr_structure().alternatif }} (FCFA) <span class="text-muted">— optionnel</span></label>
                         <input type="number" class="form-control" id="pbrValeur2" min="0" step="1" placeholder="Autre contrat, si différent">
                     </div>
                 </div>
@@ -247,9 +247,9 @@ async function enregistrerPbr() {
     if (!pbrChoisi) { await afficherMessage('Choisissez un acte ou un médicament dans la liste.'); return; }
     if (!compagnies.length) { await afficherMessage('Cochez au moins une compagnie complémentaire.'); return; }
     if (tarifPrive !== null && (isNaN(tarifPrive) || tarifPrive <= 0)) { await afficherMessage('Tarif privé invalide.'); return; }
-    if (pbr1 !== null && (isNaN(pbr1) || pbr1 < 0)) { await afficherMessage('PBR habituel invalide.'); return; }
-    if (pbr1 === null && tarifPrive === null) { await afficherMessage('Indiquez au moins un tarif privé ou un PBR habituel.'); return; }
-    if (pbr2 !== null && (isNaN(pbr2) || pbr2 < 0)) { await afficherMessage('PBR alternatif invalide.'); return; }
+    if (pbr1 !== null && (isNaN(pbr1) || pbr1 < 0)) { await afficherMessage(LIBELLES_PBR.defaut + ' invalide.'); return; }
+    if (pbr1 === null && tarifPrive === null) { await afficherMessage('Indiquez au moins un tarif privé ou un ' + LIBELLES_PBR.defaut + '.'); return; }
+    if (pbr2 !== null && (isNaN(pbr2) || pbr2 < 0)) { await afficherMessage(LIBELLES_PBR.alternatif + ' invalide.'); return; }
 
     fetch('/api/pbr-complementaires', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -309,8 +309,8 @@ function chargerPbrComplementaires() {
                             <tr class="small text-muted">
                                 <th></th><th>Acte / médicament</th>
                                 <th class="text-end">Tarif privé</th>
-                                <th class="text-end">PBR habituel</th>
-                                <th class="text-end">PBR alternatif</th>
+                                <th class="text-end">{{ libelles_pbr_structure().defaut }}</th>
+                                <th class="text-end">{{ libelles_pbr_structure().alternatif }}</th>
                                 <th></th>
                             </tr>
                         </thead>

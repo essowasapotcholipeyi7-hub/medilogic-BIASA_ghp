@@ -230,6 +230,9 @@
                             {% if listes_patients and listes_patients.get(patient.ID|string) %}
                                 <span class="badge bg-warning text-dark" title="Liste de prix appliquée à la vente">{{ listes_patients.get(patient.ID|string)|replace('Liste ', '') }}</span>
                             {% endif %}
+                            {% if pbr_patients and pbr_patients.get(patient.ID|string) %}{% set _lpb = libelles_pbr_structure() %}
+                                <span class="badge bg-info text-dark" title="Base de remboursement de la carte">{{ _lpb[pbr_patients.get(patient.ID|string)]|replace('PBR ', '') }}</span>
+                            {% endif %}
                             {% if patient.assurance2_nom %}
                                 <span class="badge bg-success">{{ patient.assurance2_nom }}</span>
                                 <span class="taux-assurance">{{ '%g'|format((patient.taux_assurance2 or 0)|float) }}%</span>
@@ -577,6 +580,22 @@
                                 </div>
                             </div>
                             {% endif %}
+                            {% set _lp = libelles_pbr_structure() %}
+                            {% if _lp.carte %}
+                            <!-- ⭐ 2026-10-21 (Clinique Valeo) : base de remboursement inscrite sur la carte d'assurance,
+                                 obligatoire si le patient a une assurance privée ; appliquée seule à la vente -->
+                            <div class="row">
+                                <div class="col-md-12 mb-2">
+                                    <label class="form-label" for="pbr_variante_patient"><i class="fas fa-id-card"></i> Base de remboursement (carte d'assurance) <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="pbr_variante_patient">
+                                        <option value="">— Voir la carte du patient —</option>
+                                        <option value="defaut">{{ _lp.defaut }}</option>
+                                        <option value="alternatif">{{ _lp.alternatif }}</option>
+                                    </select>
+                                    <small class="text-muted">Obligatoire dès que le patient a une assurance privée (principale ou complémentaire). Appliquée automatiquement à la vente, en proforma et à l'hospitalisation.</small>
+                                </div>
+                            </div>
+                            {% endif %}
                             <div class="row">
                                 <div class="col-md-12">
                                     <small class="text-muted">
@@ -774,6 +793,22 @@
                                         {% endfor %}
                                     </select>
                                     <small class="text-muted">Appliquée automatiquement à la vente, en proforma et à l'hospitalisation. Expatrié assuré : renseignez son assurance étrangère et son taux dans « Assurance complémentaire ».</small>
+                                </div>
+                            </div>
+                            {% endif %}
+                            {% set _lp = libelles_pbr_structure() %}
+                            {% if _lp.carte %}
+                            <!-- ⭐ 2026-10-21 (Clinique Valeo) : base de remboursement inscrite sur la carte d'assurance,
+                                 obligatoire si le patient a une assurance privée ; appliquée seule à la vente -->
+                            <div class="row">
+                                <div class="col-md-12 mb-2">
+                                    <label class="form-label" for="editPbrVariantePatient"><i class="fas fa-id-card"></i> Base de remboursement (carte d'assurance) <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="editPbrVariantePatient">
+                                        <option value="">— Voir la carte du patient —</option>
+                                        <option value="defaut">{{ _lp.defaut }}</option>
+                                        <option value="alternatif">{{ _lp.alternatif }}</option>
+                                    </select>
+                                    <small class="text-muted">Obligatoire dès que le patient a une assurance privée (principale ou complémentaire). Appliquée automatiquement à la vente, en proforma et à l'hospitalisation.</small>
                                 </div>
                             </div>
                             {% endif %}
@@ -2165,7 +2200,9 @@ async function savePatient() {
         preinscription_id: preinscriptionIdCourante,
         email: preinscriptionEmailCourante,
         // ⭐ 2026-10-19 : liste de prix (Valeo) — absente ailleurs
-        liste_tarif: document.getElementById('liste_tarif_patient') ? document.getElementById('liste_tarif_patient').value : undefined
+        liste_tarif: document.getElementById('liste_tarif_patient') ? document.getElementById('liste_tarif_patient').value : undefined,
+        // ⭐ 2026-10-21 : base de remboursement de la carte (Valeo : PBR CAT / ONMT) — absente ailleurs
+        pbr_variante: document.getElementById('pbr_variante_patient') ? document.getElementById('pbr_variante_patient').value : undefined
     };
 
     if (!patient.nom || !patient.telephone) {
@@ -2183,6 +2220,7 @@ async function savePatient() {
         document.getElementById('age').focus();
         return;
     }
+    if (!await verifierBasePbrCarte(patient, 'pbr_variante_patient')) return;
 
     // ⭐ Numéro d'assuré obligatoire dès qu'une assurance principale est
     // sélectionnée (non_assure exclu) — évite des dossiers d'assurance
@@ -2324,6 +2362,7 @@ async function editPatient(id) {
             document.getElementById('editNumeroAssure2').value = patient.numero_assure2 || '';
             document.getElementById('editSocieteAssurance2').value = patient.societe_assurance2 || '';
             if (document.getElementById('editListeTarifPatient')) document.getElementById('editListeTarifPatient').value = patient.liste_tarif || '';
+            if (document.getElementById('editPbrVariantePatient')) document.getElementById('editPbrVariantePatient').value = patient.pbr_variante || '';
 
             document.getElementById('editPersonnePrevenirNom').value = patient.personne_a_prevenir_nom || '';
             document.getElementById('editPersonnePrevenirTelephone').value = patient.personne_a_prevenir_telephone || '';
@@ -2374,6 +2413,23 @@ async function editPatient(id) {
         });
 }
 
+// ⭐ 2026-10-21 (Valeo) : base de remboursement de la carte obligatoire pour un patient avec assurance privée
+// (principale ou complémentaire) — même règle que le serveur (erreur_pbr_variante_patient).
+function aAssurancePrivee(typeAssurance, assurance2Nom) {
+    const t = String(typeAssurance || '').trim().toLowerCase();
+    const principale = !!t && !['non_assure', 'non assuré', 'aucune'].includes(t) && !t.startsWith('amu');
+    const complementaire = !['', 'aucune', 'none'].includes(String(assurance2Nom || '').trim().toLowerCase());
+    return principale || complementaire;
+}
+async function verifierBasePbrCarte(patient, idSelect) {
+    const sel = document.getElementById(idSelect);
+    if (!sel || !aAssurancePrivee(patient.type_assurance, patient.assurance2_nom) || sel.value) return true;
+    await afficherMessage("Choisissez la base de remboursement inscrite sur la carte d'assurance du patient (" +
+        sel.options[1].text + ' ou ' + sel.options[2].text + ').');
+    sel.focus();
+    return false;
+}
+
 async function saveEditPatient() {
     const id = document.getElementById('editId').value;
     let typeAssurance = document.getElementById('editAssurance').value;
@@ -2414,7 +2470,8 @@ async function saveEditPatient() {
         personne_a_prevenir_telephone: personnePrevenirTelephone || null,
         personne_a_prevenir_relation: personnePrevenirRelation || null,
         // ⭐ 2026-10-19 : liste de prix (Valeo) — absente ailleurs
-        liste_tarif: document.getElementById('editListeTarifPatient') ? document.getElementById('editListeTarifPatient').value : undefined
+        liste_tarif: document.getElementById('editListeTarifPatient') ? document.getElementById('editListeTarifPatient').value : undefined,
+        pbr_variante: document.getElementById('editPbrVariantePatient') ? document.getElementById('editPbrVariantePatient').value : undefined
     };
 
     if (!patient.nom || !patient.telephone) {
@@ -2432,6 +2489,7 @@ async function saveEditPatient() {
         document.getElementById('editAge').focus();
         return;
     }
+    if (!await verifierBasePbrCarte(patient, 'editPbrVariantePatient')) return;
 
     // ⭐ Numéro d'assuré obligatoire dès qu'une assurance principale est
     // sélectionnée (non_assure exclu) — même règle qu'à l'ajout.

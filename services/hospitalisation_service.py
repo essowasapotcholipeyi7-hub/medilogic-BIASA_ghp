@@ -425,6 +425,100 @@ def enregistrer_liste_tarif_patient(structure_id, patient_id, liste):
     db.session.commit()
 
 
+# ⭐ 2026-10-21 (patron, Clinique Valeo) : « sur la carte de l'assuré c'est mis prix base de remboursement
+# CAT ou ONMT » (Convention CAT / ONMT) — les deux PBR d'une compagnie (pbr_1 / pbr_2) portent alors ces
+# noms, et la base de la carte est choisie OBLIGATOIREMENT sur la fiche du patient (comme sa liste de prix) :
+# vente, proforma, hospitalisation et soins ambulatoires la prennent toute seule. Ailleurs : « PBR habituel »
+# / « PBR alternatif », rien d'obligatoire. Libellés : parametrage_tarification.libelle_pbr_1 / libelle_pbr_2,
+# choix du patient : patients_liste_tarif.pbr_variante (migrate_pbr_carte.py) — lus via to_jsonb, sans
+# effet tant que les colonnes n'existent pas.
+VARIANTES_PBR = ('defaut', 'alternatif')
+
+
+def libelles_pbr(structure_id):
+    """{'defaut': libellé de pbr_1, 'alternatif': libellé de pbr_2, 'carte': bool (choix obligatoire sur la fiche)}."""
+    from models import db
+    from sqlalchemy import text
+    j = {}
+    try:
+        with db.session.begin_nested():
+            r = db.session.execute(text("SELECT to_jsonb(p) FROM parametrage_tarification p WHERE structure_id = :s"),
+                                   {'s': structure_id}).fetchone()
+        j = (r[0] if r else None) or {}
+    except Exception:
+        j = {}
+    l1, l2 = (j.get('libelle_pbr_1') or '').strip(), (j.get('libelle_pbr_2') or '').strip()
+    if l1 and l2:
+        return {'defaut': l1, 'alternatif': l2, 'carte': True}
+    return {'defaut': 'PBR habituel', 'alternatif': 'PBR alternatif', 'carte': False}
+
+
+def a_assurance_privee(type_assurance, assurance2_nom):
+    """Le patient a-t-il une assurance privée (principale ou complémentaire) ?"""
+    t = str(type_assurance or '').strip()
+    principale = bool(t) and t.lower() not in ('non_assure', 'non assuré', 'aucune') and not t.lower().startswith('amu')
+    complementaire = str(assurance2_nom or '').strip().lower() not in ('', 'aucune', 'none')
+    return principale or complementaire
+
+
+def pbr_variante_patient(structure_id, patient_id):
+    """Base de remboursement de la carte enregistrée sur la fiche ('defaut' | 'alternatif') ou None."""
+    from models import db
+    from sqlalchemy import text
+    if not patient_id:
+        return None
+    try:
+        with db.session.begin_nested():
+            r = db.session.execute(text(
+                "SELECT to_jsonb(t)->>'pbr_variante' FROM patients_liste_tarif t WHERE structure_id = :s AND patient_id = :p"),
+                {'s': structure_id, 'p': int(patient_id)}).fetchone()
+    except Exception:
+        return None
+    return r[0] if r and r[0] in VARIANTES_PBR else None
+
+
+def pbr_variantes_patients(structure_id):
+    """{patient_id: variante} pour la liste des patients (badge) ; colonne absente = {}."""
+    from models import db
+    from sqlalchemy import text
+    try:
+        with db.session.begin_nested():
+            return {r[0]: r[1] for r in db.session.execute(text(
+                "SELECT patient_id, to_jsonb(t)->>'pbr_variante' FROM patients_liste_tarif t WHERE structure_id = :s"),
+                {'s': structure_id}).fetchall() if r[1] in VARIANTES_PBR}
+    except Exception:
+        return {}
+
+
+def erreur_pbr_variante_patient(structure_id, data):
+    """Message si la base de la carte est obligatoire (structure avec PBR CAT / ONMT, patient avec assurance
+    privée) et n'est pas choisie ; None sinon."""
+    if not libelles_pbr(structure_id)['carte'] or not a_assurance_privee(data.get('type_assurance'), data.get('assurance2_nom')):
+        return None
+    if data.get('pbr_variante') in VARIANTES_PBR:
+        return None
+    lib = libelles_pbr(structure_id)
+    return (f"Choisissez la base de remboursement indiquée sur la carte d'assurance du patient "
+            f"({lib['defaut']} ou {lib['alternatif']}).")
+
+
+def enregistrer_pbr_variante_patient(structure_id, patient_id, variante):
+    """Pose la base de remboursement de la carte sur la fiche (vide = aucune). Ne touche pas à la liste de prix."""
+    from models import db
+    from sqlalchemy import text
+    variante = variante if variante in VARIANTES_PBR else None
+    try:
+        with db.session.begin_nested():   # colonne absente (avant migrate_pbr_carte.py) : sans effet, jamais bloquant
+            db.session.execute(text("""
+                INSERT INTO patients_liste_tarif (structure_id, patient_id, pbr_variante, updated_at) VALUES (:s, :p, :v, NOW())
+                ON CONFLICT (patient_id) DO UPDATE SET pbr_variante = EXCLUDED.pbr_variante, structure_id = EXCLUDED.structure_id,
+                    updated_at = NOW()"""), {'s': structure_id, 'p': int(patient_id), 'v': variante})
+    except Exception as e:
+        print(f"⚠️ base de remboursement de la carte non enregistrée (patient {patient_id}) : {e}")
+        return
+    db.session.commit()
+
+
 def type_sejour(sejour):
     """'hospitalisation' | 'ambulatoire' (épisode de soins ambulatoires)."""
     return 'hospitalisation' if sejour.__class__.__name__ == 'Hospitalisation' else 'ambulatoire'

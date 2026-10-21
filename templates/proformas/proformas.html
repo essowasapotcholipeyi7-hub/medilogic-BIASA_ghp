@@ -762,7 +762,7 @@ function repartirLigneProforma(item, ctx, carte) {
         const reste = Math.max(total - partAMU, 0);
         const e = entreeLigne;
         const pbrPrive = (e && e.pbr_1 !== null && e.pbr_1 !== undefined && e.pbr_1 > 0) ? e.pbr_1 : null;
-        partPrivee = pbrPrive !== null ? Math.min(pbrPrive * q * ctx.tauxPrivee / 100, reste) : reste * ctx.tauxPrivee / 100;
+        partPrivee = pbrPrive !== null ? Math.min(Math.min(pbrPrive, tarif) * q * ctx.tauxPrivee / 100, reste) : reste * ctx.tauxPrivee / 100;
     }
     const reductionListe = (source === 'base' && ctx.liste) ? reductionApresAMU(item, ctx.liste, amuLigne, total, partAMU, partPrivee) : 0;
     return {tarif: tarif, source: source, total: total, partAMU: partAMU, partPrivee: partPrivee, reductionListe: reductionListe,
@@ -2554,8 +2554,8 @@ function afficherModalConversion(data) {
                              PbrComplementaire (pbr_1/pbr_2, models.py).
                              Sans effet si l'acte n'a pas de second tarif. -->
                         <select class="form-select form-select-sm" style="width:auto;" id="convertPbrCacVariante" onchange="mettreAJourTotauxConversion()">
-                            <option value="defaut" ${data.pbr_cac_variante !== 'alternatif' ? 'selected' : ''}>PBR habituel</option>
-                            <option value="alternatif" ${data.pbr_cac_variante === 'alternatif' ? 'selected' : ''}>PBR alternatif</option>
+                            <option value="defaut" ${data.pbr_cac_variante !== 'alternatif' ? 'selected' : ''}>${LIBELLES_PBR.defaut}</option>
+                            <option value="alternatif" ${data.pbr_cac_variante === 'alternatif' ? 'selected' : ''}>${LIBELLES_PBR.alternatif}</option>
                         </select>
                     </div>
                 </div>
@@ -3189,8 +3189,8 @@ function mettreAJourLabelsPbrCacVarianteConversion() {
     const montantAlt = calculePriseEnCharge2ConversionPourVariante('alternatif');
     const optDefaut = select.querySelector('option[value="defaut"]');
     const optAlt = select.querySelector('option[value="alternatif"]');
-    if (optDefaut) optDefaut.textContent = 'PBR habituel (' + Math.round(montantDefaut).toLocaleString('fr-FR') + ' F)';
-    if (optAlt) optAlt.textContent = 'PBR alternatif (' + Math.round(montantAlt).toLocaleString('fr-FR') + ' F)';
+    if (optDefaut) optDefaut.textContent = LIBELLES_PBR.defaut + ' (' + Math.round(montantDefaut).toLocaleString('fr-FR') + ' F)';
+    if (optAlt) optAlt.textContent = LIBELLES_PBR.alternatif + ' (' + Math.round(montantAlt).toLocaleString('fr-FR') + ' F)';
 }
 
 function modifierArticleConversion(index, champ, valeur) {

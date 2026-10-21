@@ -485,8 +485,8 @@
                  différer de l'habituel — voir PbrComplementaire (pbr_1/pbr_2,
                  models.py). Sans effet si l'acte n'a pas de second tarif. -->
             <select class="form-select form-select-sm" style="width:auto;" id="selectPbrCacVarianteActes" onchange="calculerTotal(); calculerRendu();">
-                <option value="defaut" selected>PBR habituel</option>
-                <option value="alternatif">PBR alternatif</option>
+                <option value="defaut" selected>{{ libelles_pbr_structure().defaut }}</option>
+                <option value="alternatif">{{ libelles_pbr_structure().alternatif }}</option>
             </select>
         </div>
     </div>
@@ -796,6 +796,21 @@ async function appliquerListePatientActes() {
     if (info) info.innerHTML += ' <span class="badge bg-warning text-dark">liste du patient</span>';
 }
 document.addEventListener('DOMContentLoaded', () => setTimeout(appliquerListePatientActes, 300));
+// ⭐ 2026-10-21 (Valeo) : base de remboursement inscrite sur la carte du patient (PBR CAT / ONMT), choisie sur
+// sa fiche — appliquée toute seule ; reste modifiable ici.
+async function appliquerPbrCartePatient() {
+    if (!LIBELLES_PBR.carte) return;
+    const id = sessionStorage.getItem('selectedPatientId') || localStorage.getItem('selectedPatientId');
+    const sel = document.getElementById('selectPbrCacVarianteActes');
+    if (!sel || !id || id === 'null') return;
+    const fiche = await fetch('/api/patients/' + encodeURIComponent(id)).then(r => r.json()).catch(() => null);
+    if (!fiche || !['defaut', 'alternatif'].includes(fiche.pbr_variante)) return;
+    sel.value = fiche.pbr_variante;
+    sel.title = 'Base de la carte du patient : ' + LIBELLES_PBR[fiche.pbr_variante];
+    if (typeof afficherPanier === 'function') afficherPanier(); calculerTotal(); calculerRendu();
+}
+document.addEventListener('DOMContentLoaded', () => setTimeout(appliquerPbrCartePatient, 350));
+
 function changerVarianteListeLigne(index, cle) { panier[index].liste_tarif = cle || null; afficherPanier(); }
 function arrondirPartPatientActes(montant, pas) { return arrondirPartPatient(montant, pas); }
 // ⭐ prix clinique d'où part la réduction d'une liste « remise » (SMA = prix social, c.-à-d. prix non assuré)
@@ -899,7 +914,7 @@ function repartirLigneActes(item, ctx) {
         const pbrPrive = pbrManuel > 0 ? pbrManuel
             : (ctx.appliquePbrPrive ? pbrCacVarianteValeurActes(entreePriveeActes(item, ctx), varianteLigne, item.nuit) : null);
         if (pbrPrive !== null && pbrPrive !== undefined) {
-            basePrivee = pbrPrive * quantite;
+            basePrivee = Math.min(pbrPrive, tarif) * quantite;   // ⭐ PBR ramené au prix (comme le serveur)
             partPrivee = Math.min(basePrivee * ctx.tauxPrivee / 100, reste);
         } else {
             basePrivee = reste;
@@ -1953,8 +1968,8 @@ function afficherPanier() {
         if (entreePbr && entreePbr.pbr_2 !== null && entreePbr.pbr_2 !== undefined && entreePbr.pbr_1 !== null && entreePbr.pbr_1 !== undefined) {
             const varianteActive = item.pbr_variante || ctxPanier.variante;
             selectVariante = '<select class="form-select form-select-sm mt-1" style="width: 150px; margin: 0 auto;" onchange="changerVariantePbrLigne(' + index + ', this.value)">' +
-                '<option value="defaut"' + (varianteActive !== 'alternatif' ? ' selected' : '') + '>PBR habituel (' + Math.round(entreePbr.pbr_1).toLocaleString('fr-FR') + ' F)</option>' +
-                '<option value="alternatif"' + (varianteActive === 'alternatif' ? ' selected' : '') + '>PBR alternatif (' + Math.round(entreePbr.pbr_2).toLocaleString('fr-FR') + ' F)</option>' +
+                '<option value="defaut"' + (varianteActive !== 'alternatif' ? ' selected' : '') + '>' + LIBELLES_PBR.defaut + ' (' + Math.round(entreePbr.pbr_1).toLocaleString('fr-FR') + ' F)</option>' +
+                '<option value="alternatif"' + (varianteActive === 'alternatif' ? ' selected' : '') + '>' + LIBELLES_PBR.alternatif + ' (' + Math.round(entreePbr.pbr_2).toLocaleString('fr-FR') + ' F)</option>' +
                 '</select>';
         }
         if (ctxPanier.liste && ligneDoitChoisirTaux(item, ctxPanier.liste)) selectVariante += selectVarianteListe(item, index, ctxPanier.liste, 'changerVarianteListeLigne');
@@ -2230,8 +2245,8 @@ function mettreAJourLabelsPbrCacVarianteActes() {
     const montantAlt = calculerCACPourVarianteActes('alternatif');
     const optDefaut = select.querySelector('option[value="defaut"]');
     const optAlt = select.querySelector('option[value="alternatif"]');
-    if (optDefaut) optDefaut.textContent = 'PBR habituel (' + Math.round(montantDefaut).toLocaleString('fr-FR') + ' F)';
-    if (optAlt) optAlt.textContent = 'PBR alternatif (' + Math.round(montantAlt).toLocaleString('fr-FR') + ' F)';
+    if (optDefaut) optDefaut.textContent = LIBELLES_PBR.defaut + ' (' + Math.round(montantDefaut).toLocaleString('fr-FR') + ' F)';
+    if (optAlt) optAlt.textContent = LIBELLES_PBR.alternatif + ' (' + Math.round(montantAlt).toLocaleString('fr-FR') + ' F)';
 }
 
 // ============================================

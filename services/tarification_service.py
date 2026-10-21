@@ -281,8 +281,10 @@ def repartir_ligne(article, contexte):
             pbr_prive = pbr_prive_valeur(entree, variante, bool(article.get('nuit'))) if contexte.get('applique_pbr_prive', True) else None
         if pbr_prive is not None:
             # Part privée = taux x PBR privé (pas réduite par l'AMU), la PART
-            # restant plafonnée à ce qui reste après l'AMU (patient >= 0)
-            base_privee = pbr_prive * quantite
+            # restant plafonnée à ce qui reste après l'AMU (patient >= 0).
+            # ⭐ 2026-10-21 : un PBR plus haut que le prix est ramené au prix (comme l'AMU) — l'assureur ne
+            # rembourse jamais plus que son taux du prix réel (ex. PBR ONMT de biologie au-dessus du prix Valeo)
+            base_privee = min(pbr_prive, tarif) * quantite
             part_privee = min(base_privee * taux_privee / 100, reste)
         else:
             base_privee = reste

@@ -432,3 +432,26 @@ def test_chambre_non_prise_par_amu_jamais_decoupee():
     lignes = construire_lignes_chambre({'nom': 'P160 Hospitalisation Cabine climatisee avec 1 lit', 'id': '152', 'prix': 15000.0, 'pbr': 15000.0},
                                        16, date(2026, 10, 1), catalogue, True, niveau_soins='2', type_prestataire='cabinet_prive')
     assert [l['quantite'] for l in lignes] == [7, 7, 2]
+
+
+def test_pbr_prive_plus_haut_que_le_prix_ramene_au_prix():
+    """2026-10-21 (Convention CAT / ONMT) : PBR ONMT de biologie (B35 x 250 = 8 750) au-dessus du prix privé Valeo
+    (8 050) — l'assureur à 80 % paie 80 % du prix (6 440), jamais 80 % du PBR (7 000)."""
+    ctx = {'amu': False, 'privee': True, 'taux_privee': 80, 'variante': 'alternatif',
+           'pbr_prive_par_acte': {'R607 NFS': {'pbr_1': 8050, 'pbr_2': 8750, 'tarif_prive': 8050}}}
+    ligne = repartir_ligne({'nom': 'R607 NFS', 'prix': 6000, 'pbr': 3850, 'quantite': 1}, ctx)
+    assert round(ligne['part_privee']) == 6440 and round(ligne['part_patient']) == 1610
+    ctx['variante'] = 'defaut'
+    assert round(repartir_ligne({'nom': 'R607 NFS', 'prix': 6000, 'pbr': 3850, 'quantite': 1}, ctx)['part_privee']) == 6440
+    # radio : PBR CAT 10 800 / ONMT 12 000, prix 12 000
+    ctx = {'amu': False, 'privee': True, 'taux_privee': 80, 'variante': 'alternatif',
+           'pbr_prive_par_acte': {'Q100 doigt': {'pbr_1': 10800, 'pbr_2': 12000, 'tarif_prive': 12000}}}
+    assert round(repartir_ligne({'nom': 'Q100 doigt', 'prix': 9000, 'pbr': 6630, 'quantite': 1}, ctx)['part_privee']) == 9600
+    ctx['variante'] = 'defaut'
+    assert round(repartir_ligne({'nom': 'Q100 doigt', 'prix': 9000, 'pbr': 6630, 'quantite': 1}, ctx)['part_privee']) == 8640
+
+
+def test_assurance_privee_pour_base_de_la_carte():
+    from services.hospitalisation_service import a_assurance_privee
+    assert a_assurance_privee('NSIA', '') and a_assurance_privee('amu_cnss', 'SUNU') and a_assurance_privee('non_assure', 'SUNU')
+    assert not a_assurance_privee('amu_cnss', '') and not a_assurance_privee('non_assure', None) and not a_assurance_privee('amu_inam', 'Aucune')

@@ -25,7 +25,7 @@ from services import theme_service
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, remise_pct_listes, pas_arrondi_structure, appliquer_liste_tarif, lignes_sans_taux_liste, contexte_tarif_sejour, liste_tarif_patient, listes_tarif_patients, enregistrer_liste_tarif_patient, article_tarif_soin, soins_a_taux_liste, type_sejour
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, remise_pct_listes, pas_arrondi_structure, appliquer_liste_tarif, lignes_sans_taux_liste, contexte_tarif_sejour, liste_tarif_patient, listes_tarif_patients, enregistrer_liste_tarif_patient, article_tarif_soin, soins_a_taux_liste, type_sejour, libelles_pbr, pbr_variante_patient, pbr_variantes_patients, erreur_pbr_variante_patient, enregistrer_pbr_variante_patient
 from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu, arrondir_part_patient, ligne_remise
 from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
@@ -368,6 +368,18 @@ def _navigation_session():
     return g._navigation_cache
 
 app.jinja_env.globals['navigation'] = _navigation_session
+
+
+def _libelles_pbr_session():
+    """⭐ 2026-10-21 : noms des deux PBR d'une compagnie pour la structure connectée (Valeo : PBR CAT /
+    PBR ONMT, sinon PBR habituel / alternatif) — voir services/hospitalisation_service.libelles_pbr."""
+    from flask import g
+    if not hasattr(g, '_libelles_pbr'):
+        g._libelles_pbr = libelles_pbr(session.get('structure_id')) if session.get('structure_id') else \
+            {'defaut': 'PBR habituel', 'alternatif': 'PBR alternatif', 'carte': False}
+    return g._libelles_pbr
+
+app.jinja_env.globals['libelles_pbr_structure'] = _libelles_pbr_session
 app.jinja_env.globals['ABONNEMENT_WHATSAPP_NUMERO'] = ABONNEMENT_WHATSAPP_NUMERO
 # ⭐ Variante prenant un structure_id explicite — pour admin_global.html
 # (session super-admin, pas de session structure) : un badge de statut par
@@ -3662,7 +3674,8 @@ def patients():
 
         return render_template('patients.html', patients=patients_list, preinscriptions=preinscriptions,
                                listes_tarifs=listes_tarifs(structure_id),
-                               listes_patients={str(k): v for k, v in listes_tarif_patients(structure_id).items()})
+                               listes_patients={str(k): v for k, v in listes_tarif_patients(structure_id).items()},
+                               pbr_patients={str(k): v for k, v in pbr_variantes_patients(structure_id).items()})
 
     except Exception as e:
         print(f"❌ Erreur: {e}")
@@ -3964,7 +3977,9 @@ def api_add_patient():
         type_assurance = data.get('type_assurance', 'non_assure')
         if type_assurance and type_assurance != 'non_assure' and not (data.get('numero_assure') or '').strip():
             return jsonify({'success': False, 'error': "Le numéro d'assuré est obligatoire pour l'assurance sélectionnée."}), 400
-        erreur = _erreur_age_sexe(data)
+        # ⭐ 2026-10-21 : base de remboursement de la carte obligatoire (Valeo, patient avec assurance privée) —
+        # vérifiée quand le formulaire la propose (champ envoyé), pas pour les autres créations (QR, synchro)
+        erreur = _erreur_age_sexe(data) or (erreur_pbr_variante_patient(structure_id, data) if 'pbr_variante' in data else None)
         if erreur:
             return jsonify({'success': False, 'error': erreur}), 400
 
@@ -4020,6 +4035,9 @@ def api_add_patient():
             # ⭐ 2026-10-19 : liste de prix de la fiche (Valeo : SMA, Expatriés), appliquée seule à la vente
             if data.get('liste_tarif'):
                 enregistrer_liste_tarif_patient(structure_id, result[0]['id'], data.get('liste_tarif'))
+            # ⭐ 2026-10-21 : base de remboursement de la carte (Valeo : PBR CAT / ONMT)
+            if data.get('pbr_variante'):
+                enregistrer_pbr_variante_patient(structure_id, result[0]['id'], data.get('pbr_variante'))
 
             # ⭐ Patient créé à partir d'une préinscription (tablette d'accueil
             # ou QR code) : on marque la préinscription validée plutôt que de
@@ -4141,6 +4159,8 @@ def api_get_patient(id):
                 'created_at': created_at_formatted,
                 # ⭐ 2026-10-19 : liste de prix de la fiche (Valeo : SMA, Expatriés) ou null (grande liste)
                 'liste_tarif': liste_tarif_patient(session.get('structure_id'), row.get('id')),
+                # ⭐ 2026-10-21 : base de remboursement de la carte ('defaut' | 'alternatif') ou null
+                'pbr_variante': pbr_variante_patient(session.get('structure_id'), row.get('id')),
             })
         
         # Si c'est un tuple
@@ -10035,7 +10055,9 @@ def api_update_patient(patient_id):
         if type_assurance and type_assurance != 'non_assure' and not (data.get('numero_assure') or '').strip():
             return jsonify({'success': False, 'error': "Le numéro d'assuré est obligatoire pour l'assurance sélectionnée."}), 400
 
-        erreur = _erreur_age_sexe(data)
+        # ⭐ 2026-10-21 : base de remboursement de la carte obligatoire (Valeo, patient avec assurance privée) —
+        # vérifiée quand le formulaire la propose (champ envoyé), pas pour les autres créations (QR, synchro)
+        erreur = _erreur_age_sexe(data) or (erreur_pbr_variante_patient(structure_id, data) if 'pbr_variante' in data else None)
         if erreur:
             return jsonify({'success': False, 'error': erreur}), 400
         # 🔥 Ajouter les colonnes de la personne à prévenir
@@ -10075,6 +10097,8 @@ def api_update_patient(patient_id):
         # la structure a des listes
         if 'liste_tarif' in data:
             enregistrer_liste_tarif_patient(structure_id, patient_id, data.get('liste_tarif'))
+        if 'pbr_variante' in data:
+            enregistrer_pbr_variante_patient(structure_id, patient_id, data.get('pbr_variante'))
         # ⭐ envoi direct à gestion_patients (services/sync_patients_gp.py)
         from services.sync_patients_gp import pousser_patients_gp
         pousser_patients_gp(structure_id, [patient_id])
@@ -20866,7 +20890,8 @@ def api_creer_proforma():
         # acte, un autre patient peut ne pas avoir ce PBR sur son contrat).
         assurance2_nom_pour_pbr = data.get('assurance2_nom', '')
         applique_pbr_cac = data.get('applique_pbr_cac', True)
-        pbr_cac_variante = data.get('pbr_cac_variante') or 'defaut'
+        # ⭐ 2026-10-21 : sans choix explicite, la base de remboursement de la carte du patient (Valeo : CAT / ONMT)
+        pbr_cac_variante = data.get('pbr_cac_variante') or pbr_variante_patient(structure_id, data.get('patient_id')) or 'defaut'
         pbr_cac_par_acte = charger_pbr_complementaires(structure_id, assurance2_nom_pour_pbr) if (data.get('assurance2_active', False) and applique_pbr_cac) else {}
 
         # ⭐ Règles centralisées (services/tarification_service.py, patron
@@ -22403,6 +22428,8 @@ def api_creer_hospitalisation():
             assurance2_nom=patient.assurance2_nom,
             taux_assurance2=patient.taux_assurance2 or 0,
             societe_assurance2=patient.societe_assurance2,
+            # ⭐ 2026-10-21 : base de remboursement de la carte du patient (Valeo : PBR CAT / ONMT)
+            pbr_cac_variante=pbr_variante_patient(structure_id, patient.id) or 'defaut',
             statut='en_cours',
             created_by=user_name,
         )
@@ -23472,6 +23499,7 @@ def api_creer_soins_ambulatoires():
             assurance2_nom=patient.assurance2_nom,
             taux_assurance2=patient.taux_assurance2 or 0,
             societe_assurance2=patient.societe_assurance2,
+            pbr_cac_variante=pbr_variante_patient(structure_id, patient.id) or 'defaut',   # ⭐ base de la carte
             statut='en_cours',
             created_by=user_name,
             service_id=service_id,
