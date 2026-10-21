@@ -21,6 +21,16 @@
         color: #0a3d91;
     }
     [data-bs-theme="dark"] .zone-periode { background: rgba(110, 168, 254, 0.08); }
+    /* ⭐ 2026-10-21 (patron) : bilan des ventes du jour, bien encadré */
+    .bilan-jour { border: 3px solid #198754; border-radius: 10px; padding: 12px 14px; background: rgba(25, 135, 84, 0.06); }
+    .bilan-jour .bilan-titre { font-size: 1.15rem; font-weight: 700; color: #146c43; margin-bottom: 10px; }
+    .bilan-jour .bilan-case { border: 1px solid rgba(0, 0, 0, .15); border-radius: 8px; padding: 10px 6px; background: #fff; height: 100%; }
+    .bilan-jour .bilan-case h3 { margin: 4px 0 0; font-weight: 700; }
+    .bilan-jour .bilan-case.bilan-ca { background: #146c43; color: #fff; border-color: #146c43; }
+    .bilan-jour .bilan-case.bilan-ca small { color: rgba(255, 255, 255, .85) !important; }
+    [data-bs-theme="dark"] .bilan-jour { background: rgba(25, 135, 84, 0.12); }
+    [data-bs-theme="dark"] .bilan-jour .bilan-titre { color: #75b798; }
+    [data-bs-theme="dark"] .bilan-jour .bilan-case:not(.bilan-ca) { background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .15); }
     [data-bs-theme="dark"] .resume-periode { color: #9ec5fe; }
 </style>
 {% endblock %}
@@ -67,6 +77,44 @@
                         <i class="fas fa-arrow-right"></i> <span id="periodeStatsLabel">Toutes les dates</span>
                     </div>
                 </div>
+
+                {% if session.is_admin %}
+                {# ⭐ 2026-10-21 (patron) : pour les ventes DU JOUR seulement — ce qu'on a vendu, ce qu'on a réellement
+                   encaissé, ce que les assurances doivent et le chiffre d'affaires. Une autre période : rien de changé. #}
+                <div id="bilanJour" class="bilan-jour mb-3" style="display:none;" data-th-garder>
+                    <div class="bilan-titre"><i class="fas fa-cash-register me-1"></i> Ventes du jour — <span id="bilanJourDate"></span></div>
+                    <div class="row g-2 text-center">
+                        <div class="col-6 col-md-3">
+                            <div class="bilan-case">
+                                <small class="text-muted">Vendu (part des patients)</small>
+                                <h3 class="text-primary" id="bilanVendu">0 F</h3>
+                                <small class="text-muted"><span id="bilanNbVentes">0</span> vente(s)</small>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="bilan-case">
+                                <small class="text-muted">Réellement encaissé</small>
+                                <h3 class="text-success" id="bilanEncaisse">0 F</h3>
+                                <small class="text-muted" id="bilanResteWrap">reste dû par les patients : <strong id="bilanReste">0 F</strong></small>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="bilan-case">
+                                <small class="text-muted">Dû par les assurances</small>
+                                <h3 class="text-warning" id="bilanAssurances">0 F</h3>
+                                <small class="text-muted">prises en charge à facturer</small>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="bilan-case bilan-ca">
+                                <small>Chiffre d'affaires du jour</small>
+                                <h3 id="bilanCA">0 F</h3>
+                                <small>vendu + dû par les assurances</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
                 
                 <div class="row">
                     <div class="col-md-3 text-center">
@@ -1318,6 +1366,7 @@ function calculerStats(debut, fin) {
     }
     
     var totalVentes = 0;
+    var totalVendu = 0;   // ⭐ 2026-10-21 : part des patients (net à payer), pour le bilan du jour
     var totalCA = 0;
     var totalCreances = 0;
     var totalCATotal = 0;
@@ -1342,6 +1391,7 @@ function calculerStats(debut, fin) {
         var recetteCAC = v.prise_en_charge2 || 0;
         var totalCreance = recetteAMU + recetteCAC;
         
+        totalVendu += v.net_a_payer || 0;
         totalCA += recettePatient;
         totalCreances += totalCreance;
         totalCATotal += recettePatient + totalCreance;
@@ -1379,7 +1429,9 @@ function calculerStats(debut, fin) {
     
     var elPharma = document.getElementById('statPharma');
     if (elPharma) elPharma.innerText = totalPharma;
-    
+
+    afficherBilanJour(totalVentes, totalVendu, totalCA, totalCreances);
+
     var topActes = Object.keys(actesCount).sort(function(a, b) {
         return actesCount[b] - actesCount[a];
     }).slice(0, 5);
@@ -1407,6 +1459,24 @@ function calculerStats(debut, fin) {
     if (topProduitsTable) {
         topProduitsTable.innerHTML = topProduitsHtml || '<tr><td colspan="2" class="text-muted">Aucun produit</td></tr>';
     }
+}
+
+// ⭐ 2026-10-21 (patron) : encadré « Ventes du jour » — seulement quand la période choisie est Aujourd'hui
+function afficherBilanJour(nb, vendu, encaisse, assurances) {
+    var bloc = document.getElementById('bilanJour');
+    if (!bloc) return;
+    if (periodeStatsCourante !== 'aujourdhui') { bloc.style.display = 'none'; return; }
+    var f = function(n) { return Math.round(n).toLocaleString('fr-FR') + ' F'; };
+    document.getElementById('bilanJourDate').innerText = fmtDateFR(new Date());
+    document.getElementById('bilanNbVentes').innerText = nb;
+    document.getElementById('bilanVendu').innerText = f(vendu);
+    document.getElementById('bilanEncaisse').innerText = f(encaisse);
+    var reste = Math.max(0, vendu - encaisse);
+    document.getElementById('bilanReste').innerText = f(reste);
+    document.getElementById('bilanResteWrap').style.visibility = Math.round(reste) > 0 ? 'visible' : 'hidden';
+    document.getElementById('bilanAssurances').innerText = f(assurances);
+    document.getElementById('bilanCA').innerText = f(vendu + assurances);
+    bloc.style.display = '';
 }
 
 async function appliquerStatsPersonnalise() {
@@ -2058,6 +2128,15 @@ function imprimerStats() {
     html += '<style>' + styleImpressionNB() + '.stat{display:inline-block;padding:10px;margin:5px;border:1px solid #000;border-radius:5px;min-width:110px;text-align:center;font-size:14px;}h3{margin:4px 0 0;font-size:20px;}h4{font-size:16px;margin:16px 0 6px;}</style>';
     html += '</head><body><h2>STATISTIQUES</h2>';
     html += '<div class="periode-etat">Période : ' + escFR(libellePeriodeStats) + '</div>';
+    var bilan = document.getElementById('bilanJour');
+    if (bilan && bilan.style.display !== 'none') {
+        // ⭐ 2026-10-21 : bilan du jour, encadré, en tête de l'impression
+        html += '<div style="border:2px solid #000;border-radius:6px;padding:8px;margin:8px 0"><b>Ventes du jour — ' + escFR(document.getElementById('bilanJourDate').innerText) + '</b><br>';
+        [['bilanVendu', 'Vendu (part des patients)'], ['bilanEncaisse', 'Réellement encaissé'], ['bilanAssurances', 'Dû par les assurances'], ['bilanCA', "Chiffre d'affaires du jour"]].forEach(function(s) {
+            html += '<div class="stat"><div>' + s[1] + '</div><h3>' + document.getElementById(s[0]).innerText + '</h3></div>';
+        });
+        html += '</div>';
+    }
     html += '<div>';
     // L'admin voit "Créances" et "CA total" à la place de "Actes" et
     // "Pharmacie" (voir la condition sur les cartes plus haut) : on n'imprime que les
