@@ -1885,6 +1885,124 @@ function chargerSocietesAssurance(assuranceNom, datalistId) {
 }
 
 // ============================================
+// ⭐ 2026-10-21 (patron : « faire la même chose pour l'enregistrement par la caissière, et la modification ») :
+// assurances en CASES À TOUCHER, comme le portail d'accueil — principale : Non assuré / Assuré, puis
+// l'assurance (cases tirées des choix de la liste #type_assurance / #editAssurance : « Autre » n'apparaît que
+// là où il est permis) ; complémentaire : Pas de complémentaire / Complémentaire, puis les compagnies de la
+// structure (ou « Autre » : on tape le nom). Une fois choisie : « Vous avez choisi : ... — Changer ».
+// Les champs d'origine restent ceux qui sont enregistrés (taux, numéro, société inchangés).
+// ============================================
+const TUILES_ASSURANCE = {
+    ajout: { select: 'type_assurance', nomCac: 'assurance2_nom', resultats: 'assurance2NomsResultats', toggleCac: () => toggleAssurance2() },
+    edit: { select: 'editAssurance', nomCac: 'editAssurance2_nom', resultats: 'editAssurance2NomsResultats', toggleCac: () => toggleEditAssurance2() },
+};
+(function stylesTuilesAssurance() {
+    const st = document.createElement('style');
+    st.textContent = `
+    .tuiles-ass { margin-bottom: 10px; }
+    .tuiles-ass .grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .tuiles-ass .tuile { border: 2px solid #dbe4ec; border-radius: 10px; background: #fbfdfe; padding: 9px 8px; font-weight: 600;
+                         text-align: center; cursor: pointer; color: #1f2d3d; }
+    .tuiles-ass .tuile:hover { border-color: var(--bs-primary, #0B6FAE); }
+    .tuiles-ass .choix { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+                         border: 2px solid var(--bs-primary, #0B6FAE); border-radius: 10px; padding: 8px 12px;
+                         background: rgba(11, 111, 174, .07); font-weight: 700; color: var(--bs-primary, #0B6FAE); }
+    .tuiles-ass .choix .fa-circle-check { color: #0E9D67; margin-right: 6px; }
+    .tuiles-ass .lien { background: none; border: 0; color: var(--bs-primary, #0B6FAE); font-weight: 600; padding: 4px 0; margin-top: 6px; }
+    .tuiles-ass .changer { background: #fff; border: 1px solid var(--bs-primary, #0B6FAE); color: var(--bs-primary, #0B6FAE);
+                           border-radius: 20px; padding: 3px 12px; font-weight: 600; font-size: .9rem; }
+    [data-bs-theme="dark"] .tuiles-ass .tuile { background: rgba(255,255,255,.04); color: inherit; border-color: rgba(255,255,255,.18); }
+    [data-bs-theme="dark"] .tuiles-ass .changer { background: transparent; }`;
+    document.head.appendChild(st);
+})();
+function _escT(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+function _libelleOption(o) { return (o.textContent || '').replace(/\s*\(\d+\s*%\)\s*$/, '').trim(); }
+function _boiteTuiles(cle, sorte) {
+    const c = TUILES_ASSURANCE[cle];
+    const champ = document.getElementById(sorte === 'P' ? c.select : c.nomCac);
+    if (!champ) return null;
+    let boite = document.getElementById(`tuiles${sorte}_${cle}`);
+    if (!boite) {
+        boite = document.createElement('div');
+        boite.id = `tuiles${sorte}_${cle}`;
+        boite.className = 'tuiles-ass';
+        champ.closest('.card-body').prepend(boite);
+    }
+    return boite;
+}
+// ---- assurance principale
+function majPrincipale(cle, mode) {
+    const c = TUILES_ASSURANCE[cle], sel = document.getElementById(c.select), boite = _boiteTuiles(cle, 'P');
+    if (!boite) return;
+    const colonne = sel.closest('[class*="col-"]');
+    if (colonne) colonne.style.display = 'none';   // la liste d'origine reste, remplie par les cases
+    let html = '';
+    if (mode === 'liste') {
+        const options = [...sel.options].filter(o => o.value !== 'non_assure' && !o.hidden);
+        html = '<div class="small text-muted mb-1">Choisissez l\'assurance :</div><div class="grille">'
+            + options.map(o => `<button type="button" class="tuile" onclick="choisirTypePrincipale('${cle}', '${o.value}')">${_escT(_libelleOption(o))}</button>`).join('')
+            + `</div><button type="button" class="lien" onclick="majPrincipale('${cle}', 'etape1')"><i class="fas fa-arrow-left me-1"></i>Retour</button>`;
+    } else if (mode === 'choisi') {
+        const o = sel.selectedOptions[0];
+        html = `<div class="choix"><span><i class="fas fa-circle-check"></i>Vous avez choisi : ${_escT(o ? _libelleOption(o) : '')}</span>`
+            + `<button type="button" class="changer" onclick="majPrincipale('${cle}', 'etape1')"><i class="fas fa-arrow-left me-1"></i>Changer</button></div>`;
+    } else {
+        html = `<div class="grille"><button type="button" class="tuile" onclick="choisirTypePrincipale('${cle}', 'non_assure')"><i class="fas fa-user me-1"></i>Non assuré</button>`
+            + `<button type="button" class="tuile" onclick="majPrincipale('${cle}', 'liste')"><i class="fas fa-shield-heart me-1"></i>Assuré</button></div>`;
+    }
+    boite.innerHTML = html;
+}
+function choisirTypePrincipale(cle, valeur) {
+    const sel = document.getElementById(TUILES_ASSURANCE[cle].select);
+    sel.value = valeur;
+    sel.dispatchEvent(new Event('change'));   // taux, numéro d'assuré, « Autre » : comme un choix dans la liste
+    majPrincipale(cle, 'choisi');
+}
+// ---- assurance complémentaire
+function majComplementaire(cle, mode) {
+    const c = TUILES_ASSURANCE[cle], champ = document.getElementById(c.nomCac), boite = _boiteTuiles(cle, 'C');
+    if (!boite) return;
+    const colonne = champ.closest('[class*="col-"]');
+    if (colonne) colonne.style.display = mode === 'autre' ? '' : 'none';
+    const res = document.getElementById(c.resultats);
+    if (res) res.style.display = 'none';
+    let html = '';
+    if (mode === 'liste') {
+        const vus = new Set(), noms = [];
+        (compagniesConnuesPatients || []).forEach(n => { const k = (n || '').trim().toUpperCase(); if (k && !vus.has(k)) { vus.add(k); noms.push(n.trim()); } });
+        html = '<div class="small text-muted mb-1">Choisissez la compagnie :</div><div class="grille">'
+            + noms.map(n => `<button type="button" class="tuile" onclick='choisirComplementaire("${cle}", ${JSON.stringify(n).replace(/'/g, "&apos;")})'>${_escT(n)}</button>`).join('')
+            + `<button type="button" class="tuile" onclick="majComplementaire('${cle}', 'autre')"><i class="fas fa-pen me-1"></i>Autre (taper le nom)</button></div>`
+            + `<button type="button" class="lien" onclick="majComplementaire('${cle}', 'etape1')"><i class="fas fa-arrow-left me-1"></i>Retour</button>`;
+    } else if (mode === 'autre') {
+        html = `<div class="small text-muted">Tapez le nom de la compagnie ci-dessous.</div>`
+            + `<button type="button" class="lien" onclick="majComplementaire('${cle}', 'liste')"><i class="fas fa-arrow-left me-1"></i>Retour à la liste</button>`;
+        champ.value = ''; c.toggleCac();
+        setTimeout(() => champ.focus(), 50);
+    } else if (mode === 'choisi') {
+        const nom = champ.value.trim();
+        html = `<div class="choix"><span><i class="fas fa-circle-check"></i>${nom ? 'Vous avez choisi : ' + _escT(nom) : "Pas d'assurance complémentaire"}</span>`
+            + `<button type="button" class="changer" onclick="majComplementaire('${cle}', 'etape1')"><i class="fas fa-arrow-left me-1"></i>Changer</button></div>`;
+    } else {
+        html = `<div class="grille"><button type="button" class="tuile" onclick="choisirComplementaire('${cle}', '')">Pas de complémentaire</button>`
+            + `<button type="button" class="tuile" onclick="majComplementaire('${cle}', 'liste')"><i class="fas fa-plus-circle me-1"></i>Assurance complémentaire</button></div>`;
+    }
+    boite.innerHTML = html;
+}
+function choisirComplementaire(cle, nom) {
+    const c = TUILES_ASSURANCE[cle];
+    document.getElementById(c.nomCac).value = nom;
+    c.toggleCac();   // taux par défaut, société souscriptrice : comme un nom choisi dans la liste
+    majComplementaire(cle, 'choisi');
+}
+function initTuilesAssurance(cle, deja) {
+    // deja : la fiche a déjà ses assurances (modification, préinscription) -> elles s'affichent choisies
+    majPrincipale(cle, deja ? 'choisi' : 'etape1');
+    majComplementaire(cle, deja ? 'choisi' : 'etape1');
+}
+document.addEventListener('DOMContentLoaded', () => { initTuilesAssurance('ajout', false); initTuilesAssurance('edit', true); });
+
+// ============================================
 // AJOUT PATIENT
 // ============================================
 // ⭐ Rempli quand "Compléter la fiche" est cliqué depuis le panneau "En
@@ -1911,7 +2029,8 @@ function showAddModal() {
     document.getElementById('personne_prevenir_nom').value = '';
     document.getElementById('personne_prevenir_telephone').value = '';
     document.getElementById('personne_prevenir_relation').value = '';
-    
+    initTuilesAssurance('ajout', false);
+
     // ⭐ Modal Bootstrap standard : la classe modal-dialog-scrollable (posée
     // sur le HTML du modal) gère nativement le défilement interne et le
     // centrage, plus fiable que les anciens réglages de style forcés en JS
@@ -1961,6 +2080,7 @@ function preRemplirDepuisPreinscription(preinscription) {
         document.getElementById('numero_assure2').value = preinscription.numero_assure2 || '';
         document.getElementById('societe_assurance2').value = preinscription.societe_assurance2 || '';
     }
+    initTuilesAssurance('ajout', true);   // ce que le patient a choisi au portail, affiché choisi
 }
 
 async function rejeterPreinscription(id) {
@@ -2195,6 +2315,7 @@ async function editPatient(id) {
             
             toggleEditTaux();
             toggleEditAssurance2();
+            initTuilesAssurance('edit', true);
             
             // ⭐ Modal Bootstrap standard (voir le commentaire équivalent
             // dans showAddModal() pour le détail du pourquoi).
@@ -2230,6 +2351,7 @@ async function editPatient(id) {
             
             toggleEditTaux();
             toggleEditAssurance2();
+            initTuilesAssurance('edit', true);
             
             // ⭐ Modal Bootstrap standard (fallback).
             new bootstrap.Modal(document.getElementById('editPatientModal')).show();
