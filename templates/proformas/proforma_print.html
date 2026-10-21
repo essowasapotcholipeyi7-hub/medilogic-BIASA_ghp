@@ -913,8 +913,8 @@
     <!-- ===== BOUTONS ===== -->
     <div class="no-print">
         <div class="choix-format" title="Format d'impression">
-            <a href="?format=A4" class="{{ 'actif' if format != '80mm' else '' }}" onclick="retenirFormatProforma('A4')">A4</a>
-            <a href="?format=80mm" class="{{ 'actif' if format == '80mm' else '' }}" onclick="retenirFormatProforma('80mm')">Ticket 80 mm</a>
+            <a href="?format=A4" class="{{ 'actif' if format != '80mm' else '' }}" onclick="retenirFormatProforma('A4'); location.replace(this.href); return false;">A4</a>
+            <a href="?format=80mm" class="{{ 'actif' if format == '80mm' else '' }}" onclick="retenirFormatProforma('80mm'); location.replace(this.href); return false;">Ticket 80 mm</a>
         </div>
         <button class="btn-print" onclick="imprimerProforma()">
             <i class="fas fa-print"></i> Imprimer
@@ -943,7 +943,7 @@
         }
         
         function fermerFenetre() {
-            if (confirm('Voulez-vous fermer cette fenêtre ?')) {
+            {   // ⭐ 2026-10-21 (patron) : « Fermer » ferme tout de suite, sans confirmation
                 window.close();
             }
         }

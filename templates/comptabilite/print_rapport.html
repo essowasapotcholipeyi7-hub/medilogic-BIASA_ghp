@@ -989,7 +989,7 @@ function imprimerPDF() {
 
 // Fonction pour fermer la fenêtre
 function fermerFenetre() {
-    if (confirm('Voulez-vous fermer cette fenêtre ?')) {
+    {   // ⭐ 2026-10-21 (patron) : « Fermer » ferme tout de suite, sans confirmation
         window.close();
     }
 }
