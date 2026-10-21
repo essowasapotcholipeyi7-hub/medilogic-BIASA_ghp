@@ -82,7 +82,7 @@
                 {# ⭐ 2026-10-21 (patron) : pour les ventes DU JOUR seulement — ce qu'on a vendu, ce qu'on a réellement
                    encaissé, ce que les assurances doivent et le chiffre d'affaires. Une autre période : rien de changé. #}
                 <div id="bilanJour" class="bilan-jour mb-3" style="display:none;" data-th-garder>
-                    <div class="bilan-titre"><i class="fas fa-cash-register me-1"></i> Ventes du jour — <span id="bilanJourDate"></span></div>
+                    <div class="bilan-titre"><i class="fas fa-cash-register me-1"></i> <span id="bilanJourTitre">Ventes du jour</span> — <span id="bilanJourDate"></span></div>
                     <div class="row g-2 text-center">
                         <div class="col-6 col-md-3">
                             <div class="bilan-case">
@@ -107,7 +107,7 @@
                         </div>
                         <div class="col-6 col-md-3">
                             <div class="bilan-case bilan-ca">
-                                <small>Chiffre d'affaires du jour</small>
+                                <small id="bilanCALibelle">Chiffre d'affaires du jour</small>
                                 <h3 id="bilanCA">0 F</h3>
                                 <small>vendu + dû par les assurances</small>
                             </div>
@@ -116,6 +116,9 @@
                 </div>
                 {% endif %}
                 
+                {# ⭐ 2026-10-21 (patron) : pour l'admin, l'encadré ci-dessus remplace les anciennes cases (total
+                   ventes, espèces encaissées, créances assurances, CA total), quelle que soit la période #}
+                {% if not session.is_admin %}
                 <div class="row">
                     <div class="col-md-3 text-center">
                         <div class="border rounded p-2">
@@ -123,26 +126,6 @@
                             <h3 class="text-primary mb-0" id="statTotalVentes">0</h3>
                         </div>
                     </div>
-                    {% if session.is_admin %}
-                    <div class="col-md-3 text-center">
-                        <div class="border rounded p-2">
-                            <small class="text-muted">Espèces encaissées</small>
-                            <h3 class="text-success mb-0" id="statCA">0 F</h3>
-                        </div>
-                    </div>
-                    <div class="col-md-3 text-center">
-                        <div class="border rounded p-2">
-                            <small class="text-muted">Créances assurances</small>
-                            <h3 class="text-warning mb-0" id="statCreances">0 F</h3>
-                        </div>
-                    </div>
-                    <div class="col-md-3 text-center">
-                        <div class="border rounded p-2">
-                            <small class="text-muted">CA total (avec assurances)</small>
-                            <h3 class="text-dark mb-0" id="statCATotal">0 F</h3>
-                        </div>
-                    </div>
-                    {% else %}
                     <div class="col-md-3 text-center">
                         <div class="border rounded p-2">
                             <small class="text-muted">Actes</small>
@@ -155,8 +138,8 @@
                             <h3 class="text-warning mb-0" id="statPharma">0</h3>
                         </div>
                     </div>
-                    {% endif %}
                 </div>
+                {% endif %}
                
                 <div class="row mt-3">
                     <div class="col-md-6">
@@ -1461,13 +1444,16 @@ function calculerStats(debut, fin) {
     }
 }
 
-// ⭐ 2026-10-21 (patron) : encadré « Ventes du jour » — seulement quand la période choisie est Aujourd'hui
+// ⭐ 2026-10-21 (patron) : encadré des ventes (vendu, encaissé, dû par les assurances, chiffre d'affaires) —
+// « Ventes du jour » pour Aujourd'hui, sinon les ventes de la période choisie
 function afficherBilanJour(nb, vendu, encaisse, assurances) {
     var bloc = document.getElementById('bilanJour');
     if (!bloc) return;
-    if (periodeStatsCourante !== 'aujourdhui') { bloc.style.display = 'none'; return; }
     var f = function(n) { return Math.round(n).toLocaleString('fr-FR') + ' F'; };
-    document.getElementById('bilanJourDate').innerText = fmtDateFR(new Date());
+    var duJour = periodeStatsCourante === 'aujourdhui';
+    document.getElementById('bilanJourTitre').innerText = duJour ? 'Ventes du jour' : 'Ventes';
+    document.getElementById('bilanJourDate').innerText = duJour ? fmtDateFR(new Date()) : libellePeriodeStats;
+    document.getElementById('bilanCALibelle').innerText = duJour ? "Chiffre d'affaires du jour" : "Chiffre d'affaires";
     document.getElementById('bilanNbVentes').innerText = nb;
     document.getElementById('bilanVendu').innerText = f(vendu);
     document.getElementById('bilanEncaisse').innerText = f(encaisse);
@@ -1728,7 +1714,43 @@ function styleImpressionNB() {
             '*{color:#000 !important;background:transparent !important;box-shadow:none !important;}}';
 }
 
+// ⭐ 2026-10-21 (patron : « que les patients aient un numéro d'ordre du jour ») : chaque jour, les patients
+// sont numérotés 1, 2, 3... dans l'ordre de leur première vente de la journée (toutes les ventes du jour,
+// quels que soient les filtres : le numéro d'un patient ne change pas d'une impression à l'autre). Un même
+// patient revenu dans la journée garde son numéro ; une vente sans patient enregistré a le sien.
+var NOM_STRUCTURE = {{ (session.get('structure_nom') or '')|tojson }};
+var _ordresDuJour = null;
+function _jourVente(v) {
+    var d = v.date_vente ? new Date(v.date_vente) : null;
+    return d && !isNaN(d) ? d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() : '';
+}
+function _clePatient(v) {
+    if (v.patient_id) return 'id:' + v.patient_id;
+    var nom = normaliserTexte(v.patient_nom || '').trim().replace(/\s+/g, ' ');
+    if (!nom || /^(patient|client|anonyme|passage|client de passage|patient de passage)$/.test(nom)) return 'vente:' + v.ID;
+    return 'nom:' + nom;
+}
+function numeroOrdreDuJour(v) {
+    if (!_ordresDuJour) {
+        _ordresDuJour = {};
+        var compteurs = {};
+        (toutesLesVentes || []).slice().sort(function(a, b) {
+            return new Date(a.date_vente) - new Date(b.date_vente) || (a.ID - b.ID);
+        }).forEach(function(x) {
+            var jour = _jourVente(x);
+            if (!jour) return;
+            var cle = jour + '|' + _clePatient(x);
+            if (!_ordresDuJour[cle]) {
+                compteurs[jour] = (compteurs[jour] || 0) + 1;
+                _ordresDuJour[cle] = compteurs[jour];
+            }
+        });
+    }
+    return _ordresDuJour[_jourVente(v) + '|' + _clePatient(v)] || null;
+}
+
 async function imprimerHistorique() {
+    _ordresDuJour = null;   // ventes rechargées depuis : numéros recalculés
     if ((!ventesFiltrees || ventesFiltrees.length === 0) && reglementsFiltres.length === 0) {
         await afficherMessage(ventesMasquees ? 'Aucun règlement de créance à imprimer pour ces filtres' : 'Aucune vente à imprimer');
         return;
@@ -1758,6 +1780,10 @@ async function imprimerHistorique() {
     html += '<button class="btn-close" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>';
     html += '</div>';
     
+    // ⭐ 2026-10-21 (patron : « quand on imprime il n'y a pas de titre ») : titre imprimé (la barre du haut,
+    // avec son titre, ne s'imprime pas)
+    html += '<h2 style="margin-bottom:2px;">HISTORIQUE DES VENTES</h2>';
+    if (NOM_STRUCTURE) html += '<div class="header" style="margin-bottom:2px;font-size:14px;font-weight:bold;">' + escFR(NOM_STRUCTURE) + '</div>';
     html += '<div class="header">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
 
     // ⭐ NOUVEAU : l'état rappelle les filtres/tri appliqués — utile quand ce
@@ -1869,6 +1895,27 @@ async function imprimerHistorique() {
         if (!parCaissier[nom]) parCaissier[nom] = { ventes: 0, montant: 0, reglements: 0 };
         parCaissier[nom].reglements += (r.montant || 0);
     });
+    // ⭐ 2026-10-21 (patron) : liste du JOUR — ce que les patients doivent, ce que les assurances doivent et le
+    // chiffre d'affaires, encadrés, pour que la caissière rende compte facilement
+    if (!ventesMasquees && document.getElementById('periodeFiltre').value === 'aujourdhui') {
+        var partPatients = 0, payePatients = 0, resteDuPatients = 0, duAssurances = 0;
+        ventesFiltrees.forEach(function(v) {
+            partPatients += v.net_a_payer || 0;
+            payePatients += montantPayeReel(v);
+            resteDuPatients += Math.max(0, (v.net_a_payer || 0) - montantPayeReel(v));
+            duAssurances += (v.prise_en_charge || 0) + (v.prise_en_charge2 || 0);
+        });
+        html += '<div class="remise bilan-jour-impr">';
+        html += '<h3>Bilan des ventes du jour — ' + escFR(fmtDateFR(new Date())) + ' (' + ventesFiltrees.length + ' vente(s))</h3>';
+        html += '<table class="bilan-jour-tab" style="width:auto;min-width:60%;font-size:15px;margin-top:4px;"><tbody>' +
+            '<tr><td>Part des patients (à payer par les patients)</td><td class="text-end">' + fmtR(partPatients) + '</td></tr>' +
+            '<tr><td>&nbsp;&nbsp;dont réellement encaissé</td><td class="text-end">' + fmtR(payePatients) + '</td></tr>' +
+            '<tr><td>&nbsp;&nbsp;dont reste dû par les patients</td><td class="text-end">' + fmtR(resteDuPatients) + '</td></tr>' +
+            '<tr><td>Ce que les assurances doivent</td><td class="text-end">' + fmtR(duAssurances) + '</td></tr>' +
+            '<tr class="ligne-ca" style="font-size:17px;"><td><strong>CHIFFRE D\'AFFAIRES DU JOUR</strong> (part des patients + assurances)</td><td class="text-end"><strong>' + fmtR(partPatients + duAssurances) + '</strong></td></tr>' +
+            '</tbody></table></div>';
+    }
+
     html += '<div class="remise">';
     html += '<h3>Encaissements à remettre — ' + escFR(libellePeriode) + '</h3>';
     html += '<div class="lignes">';
@@ -2069,7 +2116,9 @@ async function imprimerHistorique() {
         html += '<tr>';
         html += '<td>#' + (v.numero_local || v.ID || (i + 1)) + '</td>';
         html += '<td>' + dateStr + '</td>';
-        html += '<td>' + (v.patient_nom || 'Patient') + '</td>';
+        // ⭐ 2026-10-21 (patron) : n° d'ordre du jour du patient (1, 2, 3... selon sa première vente de la journée)
+        var ordreJour = numeroOrdreDuJour(v);
+        html += '<td>' + escFR(v.patient_nom || 'Patient') + (ordreJour ? ' <strong>(n° ' + ordreJour + ')</strong>' : '') + '</td>';
         html += '<td><span class="' + assureBadgeClass + '">' + assureLabel + '</span>' + cacHtml + aideHtml + '</td>';
         html += '<td><span class="' + badgeClass + '">' + typeLabel + '</span></td>';
         html += '<td class="detail-cell">' + details + '</td>';
@@ -2131,8 +2180,8 @@ function imprimerStats() {
     var bilan = document.getElementById('bilanJour');
     if (bilan && bilan.style.display !== 'none') {
         // ⭐ 2026-10-21 : bilan du jour, encadré, en tête de l'impression
-        html += '<div style="border:2px solid #000;border-radius:6px;padding:8px;margin:8px 0"><b>Ventes du jour — ' + escFR(document.getElementById('bilanJourDate').innerText) + '</b><br>';
-        [['bilanVendu', 'Vendu (part des patients)'], ['bilanEncaisse', 'Réellement encaissé'], ['bilanAssurances', 'Dû par les assurances'], ['bilanCA', "Chiffre d'affaires du jour"]].forEach(function(s) {
+        html += '<div style="border:2px solid #000;border-radius:6px;padding:8px;margin:8px 0"><b>' + escFR(document.getElementById('bilanJourTitre').innerText) + ' — ' + escFR(document.getElementById('bilanJourDate').innerText) + '</b><br>';
+        [['bilanVendu', 'Vendu (part des patients)'], ['bilanEncaisse', 'Réellement encaissé'], ['bilanAssurances', 'Dû par les assurances'], ['bilanCA', document.getElementById('bilanCALibelle').innerText]].forEach(function(s) {
             html += '<div class="stat"><div>' + s[1] + '</div><h3>' + document.getElementById(s[0]).innerText + '</h3></div>';
         });
         html += '</div>';

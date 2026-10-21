@@ -12876,10 +12876,11 @@ def api_get_all_ventes():
         
         # 🔥 Ajouter toutes les colonnes nécessaires
         ventes = db.execute_query("""
-            SELECT 
-                v.id, 
-                v.patient_nom, 
-                v.type, 
+            SELECT
+                v.id,
+                v.patient_id,
+                v.patient_nom,
+                v.type,
                 v.net_a_payer, 
                 v.taux_assurance, 
                 v.date_vente, 
@@ -13065,6 +13066,7 @@ def api_get_all_ventes():
                 result.append({
                     'ID': v.get('id'),
                     'numero_local': v.get('numero_local') or v.get('id'),
+                    'patient_id': v.get('patient_id'),   # ⭐ 2026-10-21 : n° d'ordre du jour des patients (impression)
                     'patient_nom': v.get('patient_nom', 'Patient'),
                     'type': type_vente,
                     'net_a_payer': float(v.get('net_a_payer') or 0),
