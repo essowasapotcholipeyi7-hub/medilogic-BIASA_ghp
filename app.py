@@ -28116,6 +28116,8 @@ def format_currency(value):
 # Élargi à « lettre + 3 à 7 chiffres » : le catalogue pharmacie a aussi des codes
 # C000010 (« C000010 Acide Acetylsalicylique… »), que l'ancien motif laissait passer.
 _CODE_ACTE_OU_PRODUIT_RE = re.compile(r'^(?:[A-Z]\d{3,7}|\d{4,})\s+')
+# « bis » final, ou montant final écrit avec espace des milliers (« Epreuve d'effort 50 000 ») — jamais imprimé
+_BIS_FINAL_RE = re.compile(r'\s+(?:\(?bis\)?|\d{1,3}(?:[   ]\d{3})+\s*(?:F|FCFA)?)\s*$', re.I)
 
 @app.template_filter('taux_part')
 def _filtre_taux_part(taux):
@@ -28126,10 +28128,13 @@ def _filtre_taux_part(taux):
 
 @app.template_filter('sans_code')
 def sans_code(nom):
-    """Retire un préfixe 'code acte/produit' (ex. 'Q435 ') du début d'un nom."""
+    """Retire un préfixe 'code acte/produit' (ex. 'Q435 ') du début d'un nom — et un « bis » final.
+    ⭐ 2026-10-21 (patron, Clinique Alyah) : deux versions d'un même acte à deux prix (« Epreuve d'effort
+    50 000 » / « Epreuve d'effort 60 000 ») — la secrétaire choisit à la vente ; le montant (ou un « bis »)
+    ne sort pas sur les reçus et factures : « Epreuve d'effort »."""
     if not nom:
         return nom
-    return _CODE_ACTE_OU_PRODUIT_RE.sub('', nom, count=1)
+    return _BIS_FINAL_RE.sub('', _CODE_ACTE_OU_PRODUIT_RE.sub('', nom, count=1))
 def generer_numero_ordonnance(structure_id):
     """
     Génère un numéro d'ordonnance unique pour une structure
