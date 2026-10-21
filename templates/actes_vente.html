@@ -2576,7 +2576,9 @@ function examensLaboImagerie(ctx) {
     const lignes = [];
     let total = 0;
     panier.forEach((item, index) => {
-        const type = item.type_prestation || TYPE_PRESTATION_PAR_ACTE[item.nom];
+        // ⭐ 2026-10-21 : acte non classé -> d'après son code AMU (R = biologie, Q = imagerie)
+        const code = (String(item.nom || '').match(/^\s*([RQ])\d{3}/) || [])[1];
+        const type = item.type_prestation || TYPE_PRESTATION_PAR_ACTE[item.nom] || (code === 'R' ? 'analyse' : code === 'Q' ? 'examen' : null);
         if (type !== 'analyse' && type !== 'examen') return;
         const l = repartirLigneActes(item, ctx);
         total += l.total;
@@ -2591,7 +2593,7 @@ function majAlerteExamensPrivee(ctx) {
     const concerne = !!ctx.privee && ex.total > SEUIL_PROFORMA_EXAMENS;
     row.style.display = concerne ? '' : 'none';
     if (concerne) {
-        document.getElementById('alerteExamensTexte').innerHTML = 'Examens de biologie / imagerie : <strong>' + Math.round(ex.total).toLocaleString('fr-FR') + ' F</strong> (plus de ' + SEUIL_PROFORMA_EXAMENS.toLocaleString('fr-FR') + ' F) — l\'assurance <strong>' + (patientAssurance2 || 'privée') + '</strong> peut plafonner ce panier : proposez une proforma au patient, qu\'il aille voir son assurance d\'abord.';
+        document.getElementById('alerteExamensTexte').innerHTML = 'Examens de biologie / imagerie : <strong>' + Math.round(ex.total).toLocaleString('fr-FR') + ' F</strong> (plus de ' + SEUIL_PROFORMA_EXAMENS.toLocaleString('fr-FR') + ' F) — <strong>prenez l\'accord de l\'assurance ' + (patientAssurance2 || 'privée') + '</strong> (elle peut plafonner ce panier) : proposez une proforma au patient pour qu\'il obtienne cet accord.';
     }
 }
 async function proposerProformaExamens(forcer) {
@@ -2601,7 +2603,7 @@ async function proposerProformaExamens(forcer) {
     if (!ex.lignes.length) { await afficherMessage('Aucun examen de biologie / imagerie dans le panier.'); return false; }
     const ok = await demanderConfirmation(
         'Examens de biologie / imagerie : ' + Math.round(ex.total).toLocaleString('fr-FR') + ' F, au-delà de ' + SEUIL_PROFORMA_EXAMENS.toLocaleString('fr-FR') + ' F.\n\n'
-        + 'L\'assurance ' + (patientAssurance2 || 'privée') + ' peut plafonner ce panier. Faire une facture PROFORMA pour que le patient aille voir son assurance d\'abord ?\n\n'
+        + 'Il faut l\'ACCORD de l\'assurance ' + (patientAssurance2 || 'privée') + ' (elle peut plafonner ce panier). Faire une facture PROFORMA pour que le patient obtienne cet accord d\'abord ?\n\n'
         + 'Oui : la proforma s\'ouvre déjà remplie avec ces examens. Non : continuer la vente.',
         {type: 'warning', texteOk: 'Oui, faire la proforma', texteAnnuler: 'Non, continuer la vente'});
     if (!ok) return false;
