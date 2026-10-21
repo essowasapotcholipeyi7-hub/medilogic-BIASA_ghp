@@ -95,7 +95,7 @@
                             <div class="bilan-case">
                                 <small class="text-muted">Réellement encaissé</small>
                                 <h3 class="text-success" id="bilanEncaisse">0 F</h3>
-                                <small class="text-muted" id="bilanResteWrap">reste dû par les patients : <strong id="bilanReste">0 F</strong></small>
+                                <small class="text-muted" id="bilanResteWrap">reste à payer par les patients : <strong id="bilanReste">0 F</strong></small>
                             </div>
                         </div>
                         <div class="col-6 col-md-3">
@@ -1909,8 +1909,8 @@ async function imprimerHistorique() {
         html += '<h3>Bilan des ventes du jour — ' + escFR(fmtDateFR(new Date())) + ' (' + ventesFiltrees.length + ' vente(s))</h3>';
         html += '<table class="bilan-jour-tab" style="width:auto;min-width:60%;font-size:15px;margin-top:4px;"><tbody>' +
             '<tr><td>Part des patients (à payer par les patients)</td><td class="text-end">' + fmtR(partPatients) + '</td></tr>' +
-            '<tr><td>&nbsp;&nbsp;dont réellement encaissé</td><td class="text-end">' + fmtR(payePatients) + '</td></tr>' +
-            '<tr><td>&nbsp;&nbsp;dont reste dû par les patients</td><td class="text-end">' + fmtR(resteDuPatients) + '</td></tr>' +
+            '<tr><td>&nbsp;&nbsp;Payé par les patients (encaissé)</td><td class="text-end">' + fmtR(payePatients) + '</td></tr>' +
+            '<tr><td>&nbsp;&nbsp;Reste à payer par les patients</td><td class="text-end">' + fmtR(resteDuPatients) + '</td></tr>' +
             '<tr><td>Ce que les assurances doivent</td><td class="text-end">' + fmtR(duAssurances) + '</td></tr>' +
             '<tr class="ligne-ca" style="font-size:17px;"><td><strong>CHIFFRE D\'AFFAIRES DU JOUR</strong> (part des patients + assurances)</td><td class="text-end"><strong>' + fmtR(partPatients + duAssurances) + '</strong></td></tr>' +
             '</tbody></table></div>';
