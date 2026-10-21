@@ -2106,10 +2106,16 @@ async function imprimerHistorique() {
         // apportée si on en a fait". Jusqu'ici seul le bouton séparé
         // "Aides" (imprimerAides()) la montrait ; l'état principal ne la
         // mentionnait nulle part.
+        // ⭐ 2026-10-21 (patron) : la colonne Montant montre le montant AVANT l'aide, l'aide, puis le net payé
+        // (« 15 000 F / Aide -7 500 F / 7 500 F ») au lieu du seul net.
         var aideHtml = '';
+        var montantHtml = Math.round(netAPayer).toLocaleString('fr-FR') + ' F';
         if ((v.aide_hospitaliere || 0) > 0) {
             aideHtml = '<br><span class="badge-aide">Aide' + (v.type_aide === 'montant' ? '' : ' ' + libelleTauxAide(v)) + ' : -' +
                 Math.round(v.aide_hospitaliere).toLocaleString('fr-FR') + ' F</span>';
+            montantHtml = Math.round(netAPayer + v.aide_hospitaliere).toLocaleString('fr-FR') + ' F' + aideHtml +
+                '<br><strong>' + montantHtml + '</strong>';
+            aideHtml = '';
         }
 
         html += '<tr>';
@@ -2121,7 +2127,7 @@ async function imprimerHistorique() {
         html += '<td><span class="' + assureBadgeClass + '">' + assureLabel + '</span>' + cacHtml + aideHtml + '</td>';
         html += '<td><span class="' + badgeClass + '">' + typeLabel + '</span></td>';
         html += '<td class="detail-cell">' + details + '</td>';
-        html += '<td class="text-end">' + Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';
+        html += '<td class="text-end">' + montantHtml + '</td>';
         html += '<td class="text-end text-success">' + cellulePaye(v) + '</td>';
         html += '<td class="text-end text-danger">' + Math.round(resteAPayer).toLocaleString('fr-FR') + ' F</td>';
         html += '<td>' + statutPaiement + '</td>';
