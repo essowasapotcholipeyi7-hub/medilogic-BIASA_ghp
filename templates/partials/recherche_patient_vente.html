@@ -16,6 +16,11 @@
     [data-bs-theme="dark"] .rpv-resultats, [data-bs-theme="dark"] .rpv-resultats .list-group-item { background: #1f262d; color: #e8e8e8; border-color: rgba(255,255,255,.12); }
     [data-bs-theme="dark"] .rpv-resultats .list-group-item:hover, [data-bs-theme="dark"] .rpv-resultats .list-group-item.actif { background: #2b3a48; }
     .rpv-resultats small { color: #6b7c86; }
+    /* boutons francs, lisibles avec tous les thèmes (les boutons de l'appli sont « doux » par défaut) */
+    .rpv-carte .rpv-btn-liste { background: #fff !important; color: #0B6FAE !important; border: 2px solid #0B6FAE !important; font-weight: 600; }
+    .rpv-carte .rpv-btn-liste:hover { background: #eaf3fb !important; }
+    .rpv-carte .rpv-btn-nouveau { background: #0E9D67 !important; color: #fff !important; border: 2px solid #0E9D67 !important; font-weight: 600; }
+    .rpv-carte .rpv-btn-nouveau:hover { background: #0b8a5a !important; border-color: #0b8a5a !important; }
 </style>
 <div class="card rpv-carte mb-3" id="recherchePatientVente" style="display:none;">
     <div class="card-body py-3">
@@ -32,9 +37,13 @@
                    oninput="rechercherPatientVente()" onfocus="rechercherPatientVente()" onkeydown="clavierPatientVente(event)">
             <div class="list-group rpv-resultats" id="rpvResultats" style="display:none;" data-th-garder></div>
         </div>
-        <div class="small text-muted mt-2">
-            ou <a href="{{ url_for('patients') }}"><i class="fas fa-list me-1"></i>choisir dans la liste des patients</a>
-            · <a href="{{ url_for('patients') }}"><i class="fas fa-user-plus me-1"></i>enregistrer un nouveau patient</a>
+        {% set _retour_vente = 'pharma' if request.endpoint == 'pharma_vente' else 'actes' %}
+        <div class="d-flex flex-wrap gap-2 mt-2 align-items-center">
+            <span class="small text-muted">ou</span>
+            <a class="btn btn-sm rpv-btn-liste" href="{{ url_for('patients') }}"><i class="fas fa-list me-1"></i>Choisir dans la liste des patients</a>
+            {# ⭐ ouvre directement la fenêtre d'enregistrement ; après « Enregistrer », retour sur cette vente avec le patient #}
+            <a class="btn btn-sm rpv-btn-nouveau" id="rpvNouveau" href="{{ url_for('patients', nouveau=1, retour=_retour_vente) }}"
+               data-base="{{ url_for('patients', nouveau=1, retour=_retour_vente) }}"><i class="fas fa-user-plus me-1"></i>Enregistrer un nouveau patient</a>
         </div>
     </div>
 </div>
@@ -73,7 +82,15 @@
         document.getElementById('rpvResultats').style.display = 'none';
     };
 
+    // lien « nouveau patient » : le nom déjà tapé est repris dans la fiche
+    function lienNouveau() {
+        const a = document.getElementById('rpvNouveau'), tape = document.getElementById('rpvSaisie').value.trim();
+        const url = a.dataset.base + (tape && !/^[\d\s+]+$/.test(tape) ? '&nom=' + encodeURIComponent(tape) : '');
+        a.href = url;
+        return url;
+    }
     window.rechercherPatientVente = function () {
+        lienNouveau();
         const saisie = norm(document.getElementById('rpvSaisie').value).trim();
         const boite = document.getElementById('rpvResultats');
         if (!saisie) { boite.style.display = 'none'; return; }
@@ -89,7 +106,7 @@
                 ? choix.map((p, i) => `<div class="list-group-item list-group-item-action${i === 0 ? ' actif' : ''}" data-i="${i}">
                         <strong class="notranslate">${esc(p.nom)} ${esc(p.prenom)}</strong>
                         ${p.telephone ? `<small class="ms-2"><i class="fas fa-phone-alt me-1"></i>${esc(p.telephone)}</small>` : ''}</div>`).join('')
-                : `<div class="list-group-item text-muted">Aucun patient trouvé — <a href="{{ url_for('patients') }}">enregistrer un nouveau patient</a></div>`;
+                : `<div class="list-group-item text-muted">Aucun patient trouvé — <a href="${lienNouveau()}">enregistrer un nouveau patient</a></div>`;
             boite.querySelectorAll('[data-i]').forEach(e => e.addEventListener('mousedown', ev => { ev.preventDefault(); choisir(choix[+e.dataset.i]); }));
             boite.style.display = 'block';
         });

@@ -930,6 +930,15 @@ let detailPatientId = null;
 // la modale "Où voulez-vous aller ?" et on file directement vers la
 // vente déjà en attente, patient sélectionné inclus.
 const FINALISER_ATTENTE_PARAMS = new URLSearchParams(window.location.search);
+// ⭐ 2026-10-21 (patron) : « Enregistrer un nouveau patient » depuis une page de vente — la fenêtre d'ajout s'ouvre
+// tout de suite (nom déjà tapé repris) ; après « Enregistrer », retour sur la vente avec ce patient choisi
+const RETOUR_VENTE = ['actes', 'pharma'].includes(FINALISER_ATTENTE_PARAMS.get('retour')) ? FINALISER_ATTENTE_PARAMS.get('retour') : null;
+document.addEventListener('DOMContentLoaded', () => {
+    if (FINALISER_ATTENTE_PARAMS.get('nouveau') !== '1') return;
+    showAddModal();
+    const nom = FINALISER_ATTENTE_PARAMS.get('nom');
+    if (nom) document.getElementById('nom').value = nom.toUpperCase();
+});
 const FINALISER_ATTENTE_ID = FINALISER_ATTENTE_PARAMS.get('finaliser_attente');
 const FINALISER_ATTENTE_TYPE = FINALISER_ATTENTE_PARAMS.get('finaliser_type');
 const FINALISER_ATTENTE_RECHERCHE = FINALISER_ATTENTE_PARAMS.get('rechercher') || '';
@@ -2216,6 +2225,13 @@ async function savePatient() {
             // Le message de succès arrive via flash() côté serveur
             // (api_add_patient) et s'affiche comme bandeau après le
             // rechargement, sans bloquer l'enchaînement des saisies.
+            if (RETOUR_VENTE && data.id) {
+                memoriserPatient(data.id, `${patient.nom} ${patient.prenom || ''}`.trim(), patient.type_assurance,
+                                 patient.taux_prise_charge, patient.assurance2_nom || '', patient.taux_assurance2 || 0,
+                                 patient.societe_assurance2 || '');
+                window.location.href = RETOUR_VENTE === 'pharma' ? '/pharma_vente' : '/actes_vente';
+                return;
+            }
             location.reload();
         } else {
             await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});

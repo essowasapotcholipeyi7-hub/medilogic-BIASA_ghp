@@ -10,26 +10,30 @@
    (fond teinté à 10 %) — rouge sur le bandeau bleu clair : contraste 3,6 seulement. */
 #patientInfo .btn-deselection { background: #dc2626 !important; border-color: #dc2626 !important; color: #fff !important; }
 #patientInfo .btn-deselection:hover { background: #b91c1c !important; border-color: #b91c1c !important; }
+#patientInfo.patient-choisi { border: 2px solid #0E9D67; background: rgba(14, 157, 103, .07); border-radius: 12px; padding: 10px 14px; color: inherit; }
+#patientInfo .pc-ligne { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; }
+#patientInfo .pc-coche { font-size: 1.9rem; color: #0E9D67; line-height: 1; }
+#patientInfo .pc-bloc { display: flex; flex-direction: column; line-height: 1.25; }
+#patientInfo .pc-bloc small { font-size: .74rem; text-transform: uppercase; letter-spacing: .03em; opacity: .7; font-weight: 600; }
+#patientInfo .pc-bloc strong { font-size: 1.08rem; }
+#patientInfo .pc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#patientInfo .pc-changer { background: #0B6FAE !important; border-color: #0B6FAE !important; color: #fff !important; font-weight: 600; }
+#patientInfo .pc-changer:hover { background: #095a8c !important; border-color: #095a8c !important; }
 </style>
-        <div class="alert alert-info" id="patientInfo" style="display:none;">
-            <div class="row align-items-center">
-                <div class="col-md-3">
-                    <strong><i class="fas fa-user"></i> Patient :</strong> <span id="selectedPatientName"></span>
-                </div>
-                <div class="col-md-3">
-                    <strong><i class="fas fa-shield-alt"></i> Assurance :</strong> <span id="selectedAssurance"></span> (<span id="selectedTaux"></span>%)
-                </div>
-                <div class="col-md-3">
-                    <strong><i class="fas fa-plus-circle"></i> CAC :</strong> 
-                    <span id="selectedAssurance2Display">Aucune</span> (<span id="selectedTaux2Display">0%</span>)
-                    <span class="badge bg-success ms-1" id="cacActiveBadge" style="display:none;">Active</span>
-                </div>
-                <div class="col-md-3 text-end">
-                    <button class="btn btn-sm btn-danger me-1 btn-deselection" onclick="clearSelectedPatient()" title="Retirer le patient sélectionné">
-                        <i class="fas fa-times-circle"></i> Désélectionner
-                    </button>
-                    <button class="btn btn-sm btn-warning" onclick="changePatient()">
-                        <i class="fas fa-exchange-alt"></i> Changer
+        <div class="alert patient-choisi" id="patientInfo" style="display:none;">
+            {# ⭐ 2026-10-21 (patron) : patient choisi bien visible — coche verte, ses assurances, puis « Changer de patient »
+               et « Désélectionner » juste à côté (plus dans un coin) #}
+            <div class="pc-ligne">
+                <span class="pc-coche"><i class="fas fa-circle-check"></i></span>
+                <div class="pc-bloc"><small>Patient</small><strong class="notranslate" id="selectedPatientName"></strong></div>
+                <div class="pc-bloc"><small><i class="fas fa-shield-alt me-1"></i>Assurance</small><span><span id="selectedAssurance"></span> (<span id="selectedTaux"></span>%)</span></div>
+                <div class="pc-bloc"><small><i class="fas fa-plus-circle me-1"></i>Complémentaire (CAC)</small>
+                    <span><span id="selectedAssurance2Display">Aucune</span> (<span id="selectedTaux2Display">0%</span>)
+                    <span class="badge bg-success ms-1" id="cacActiveBadge" style="display:none;">Active</span></span></div>
+                <div class="pc-actions">
+                    <button class="btn btn-sm pc-changer" onclick="changePatient()"><i class="fas fa-exchange-alt me-1"></i>Changer de patient</button>
+                    <button class="btn btn-sm btn-danger btn-deselection" onclick="clearSelectedPatient()" title="Retirer le patient sélectionné">
+                        <i class="fas fa-times-circle me-1"></i>Désélectionner
                     </button>
                 </div>
             </div>
