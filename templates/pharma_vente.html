@@ -8,17 +8,26 @@
 <style>
 /* ⭐ « Désélectionner » lisible dans tous les thèmes : les boutons de l'appli sont « doux »
    (fond teinté à 10 %) — rouge sur le bandeau bleu clair : contraste 3,6 seulement. */
-#patientInfo .btn-deselection { background: #dc2626 !important; border-color: #dc2626 !important; color: #fff !important; }
-#patientInfo .btn-deselection:hover { background: #b91c1c !important; border-color: #b91c1c !important; }
+/* ⭐ 2026-10-21 (patron : « couleurs trop vives ») : fond pâle, texte et bordure colorés */
+#patientInfo .btn-deselection { background: #fdecec !important; border: 1px solid #e8a5a5 !important; color: #b42318 !important; font-weight: 600; }
+#patientInfo .btn-deselection:hover { background: #f9d9d9 !important; border-color: #d97b7b !important; }
 #patientInfo.patient-choisi { border: 2px solid #0E9D67; background: rgba(14, 157, 103, .07); border-radius: 12px; padding: 10px 14px; color: inherit; }
-#patientInfo .pc-ligne { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; }
+#patientInfo .pc-ligne { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 0; }
+#patientInfo .pc-coche { margin-right: 16px; }
+/* patient, assurance, complémentaire : bien espacés, séparés d'un trait fin */
+#patientInfo .pc-bloc { padding: 0 26px; border-left: 1px solid rgba(14, 157, 103, .25); }
+#patientInfo .pc-coche + .pc-bloc { padding-left: 0; border-left: 0; }
+#patientInfo .pc-actions { margin-left: 26px; }
 #patientInfo .pc-coche { font-size: 1.9rem; color: #0E9D67; line-height: 1; }
 #patientInfo .pc-bloc { display: flex; flex-direction: column; line-height: 1.25; }
 #patientInfo .pc-bloc small { font-size: .74rem; text-transform: uppercase; letter-spacing: .03em; opacity: .7; font-weight: 600; }
 #patientInfo .pc-bloc strong { font-size: 1.08rem; }
 #patientInfo .pc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-#patientInfo .pc-changer { background: #0B6FAE !important; border-color: #0B6FAE !important; color: #fff !important; font-weight: 600; }
-#patientInfo .pc-changer:hover { background: #095a8c !important; border-color: #095a8c !important; }
+#patientInfo .pc-changer { background: #e7f1fa !important; border: 1px solid #9cc3e3 !important; color: #0b5a8c !important; font-weight: 600; }
+#patientInfo .pc-changer:hover { background: #d6e8f6 !important; border-color: #78acd6 !important; }
+[data-bs-theme="dark"] #patientInfo .pc-changer { background: rgba(110, 168, 254, .12) !important; color: #9ec5fe !important; border-color: rgba(110, 168, 254, .35) !important; }
+[data-bs-theme="dark"] #patientInfo .btn-deselection { background: rgba(248, 113, 113, .12) !important; color: #fca5a5 !important; border-color: rgba(248, 113, 113, .35) !important; }
+@media (max-width: 768px) { #patientInfo .pc-bloc { padding: 0 14px; } #patientInfo .pc-actions { margin-left: 0; } }
 </style>
         <div class="alert patient-choisi" id="patientInfo" style="display:none;">
             {# ⭐ 2026-10-21 (patron) : patient choisi bien visible — coche verte, ses assurances, puis « Changer de patient »
