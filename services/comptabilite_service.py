@@ -158,6 +158,14 @@ def _log_anomalie(structure_id, source_type, source_id, message):
 # NOYAU COMMUN : CRÉATION D'UNE ÉCRITURE
 # ============================================================
 
+def exercice_cloture(structure_id, d):
+    """⭐ 2026-10-22 : True si l'exercice (année civile) de la date `d` est clôturé pour cette structure."""
+    if not structure_id or not d:
+        return False
+    from models import Cloture
+    return Cloture.query.filter_by(structure_id=structure_id, annee=d.year).first() is not None
+
+
 def creer_ecriture(structure_id, date_ecriture, libelle, lignes, journal_code,
                     piece_justificative=None, auto=True, source_type=None,
                     source_id=None, commentaire=None, user_nom='SYSTEME'):
@@ -192,6 +200,17 @@ def creer_ecriture(structure_id, date_ecriture, libelle, lignes, journal_code,
 
     if not isinstance(date_ecriture, date):
         date_ecriture = datetime.utcnow().date()
+
+    # ⭐ 2026-10-22 : un exercice clôturé est figé — une écriture automatique qui tomberait dedans (vente hors
+    # ligne synchronisée en retard, annulation tardive...) est passée au 1er jour du premier exercice ouvert.
+    if exercice_cloture(structure_id, date_ecriture):
+        date_origine = date_ecriture
+        while exercice_cloture(structure_id, date_ecriture):
+            date_ecriture = date(date_ecriture.year + 1, 1, 1)
+        libelle = f"{libelle} (exercice {date_origine.year} clôturé — opération du {date_origine.strftime('%d/%m/%Y')})"
+        _log_anomalie(structure_id, source_type, source_id,
+                      f"Écriture datée du {date_origine.strftime('%d/%m/%Y')} dans l'exercice {date_origine.year} déjà clôturé : "
+                      f"passée au {date_ecriture.strftime('%d/%m/%Y')} — {libelle}")
 
     ecriture = EcritureComptable(
         structure_id=structure_id,

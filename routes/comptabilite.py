@@ -14,7 +14,7 @@ from models import (
     Fournisseur, AchatFournisseur, ReglementFournisseur, Depense,
     ParametrageTva, DeclarationTva,
 )
-from services.comptabilite_service import get_soldes_caisses, creer_ecriture, COMPTE_CLIENTS_PATIENTS
+from services.comptabilite_service import get_soldes_caisses, creer_ecriture, COMPTE_CLIENTS_PATIENTS, exercice_cloture
 from utils.plan_comptable_syscohada import (
     COMPTE_BANQUE, COMPTE_CAISSE, COMPTE_IMMO_MATERIEL_MEDICAL, COMPTE_AMORT_MATERIEL_MEDICAL,
     COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_DUE, COMPTE_CREDIT_TVA,
@@ -537,6 +537,8 @@ def api_creer_ecriture():
         erreur_tva = _controle_periode_tva(structure_id, date_ecriture, data.get('lignes'))
         if erreur_tva:
             return jsonify({'success': False, 'error': erreur_tva}), 400
+        if exercice_cloture(structure_id, date_ecriture):
+            return jsonify({'success': False, 'error': _message_exercice_cloture(date_ecriture)}), 400
         # Generer le numero de piece automatiquement
         numero_piece = SequencePiece.get_next_number(structure_id, 'ecriture')
         
@@ -663,6 +665,8 @@ def api_modifier_ecriture(id):
         erreur_tva = _controle_periode_tva(structure_id, date_ecriture, data.get('lignes'))
         if erreur_tva:
             return jsonify({'success': False, 'error': erreur_tva}), 400
+        if exercice_cloture(structure_id, date_ecriture):
+            return jsonify({'success': False, 'error': _message_exercice_cloture(date_ecriture)}), 400
         
         ecriture.date_ecriture = date_ecriture
         ecriture.libelle = data.get('libelle')
@@ -709,6 +713,8 @@ def api_valider_ecriture(id):
     user_name = session.get('user_name', 'System')
     
     ecriture = EcritureComptable.query.filter_by(id=id, structure_id=structure_id).first_or_404()
+    if exercice_cloture(structure_id, ecriture.date_ecriture):
+        return jsonify({'success': False, 'error': _message_exercice_cloture(ecriture.date_ecriture)}), 400
     
     niveau = data.get('niveau', 1)
     action = data.get('action', 'approuve')
@@ -879,31 +885,48 @@ def api_sauvegarder_budget():
 
 @compta_bp.route('/api/exercice/statut')
 def api_exercice_statut():
-    """⭐ NOUVEAU : statut de l'exercice comptable en cours — onglet
-    "Exercice comptable" (SYSCOHADA : l'exercice comptable coïncide avec
-    l'année civile, sauf dérogation)."""
+    """⭐ Statut des exercices comptables — onglet "Exercice comptable" (SYSCOHADA : l'exercice coïncide avec
+    l'année civile). ⭐ 2026-10-22 : liste de TOUS les exercices (années ayant des écritures + l'année en cours)
+    et exercice proposé à la clôture — le plus ancien exercice terminé et non clôturé, sinon l'année en cours.
+    Avant, seule l'année civile du jour était connue : en janvier 2027, « Clôturer » aurait clôturé 2027."""
     structure_id = session.get('structure_id')
     annee_courante = datetime.now().year
+    from sqlalchemy import text
 
     clotures = Cloture.query.filter_by(structure_id=structure_id).order_by(Cloture.annee.desc()).all()
-    annees_cloturees = {c.annee for c in clotures}
+    par_annee = {c.annee: c for c in clotures}
+    rows = db.session.execute(text("""
+        SELECT EXTRACT(YEAR FROM date_ecriture)::int AS annee, COUNT(*) AS nb,
+               COUNT(*) FILTER (WHERE statut IN ('brouillon', 'en_attente')) AS nb_a_valider
+        FROM ecritures_comptables WHERE structure_id = :structure_id GROUP BY 1
+    """), {'structure_id': structure_id}).fetchall()
+    stats = {r.annee: r for r in rows}
+    annees = sorted(set(stats) | {annee_courante} | set(par_annee), reverse=True)
 
-    nb_ecritures_annee = EcritureComptable.query.filter(
-        EcritureComptable.structure_id == structure_id,
-        EcritureComptable.date_ecriture >= f"{annee_courante}-01-01",
-        EcritureComptable.date_ecriture <= f"{annee_courante}-12-31",
-    ).count()
+    exercices = []
+    for a in annees:
+        c = par_annee.get(a)
+        exercices.append({
+            'annee': a,
+            'cloture': bool(c),
+            'termine': date(a, 12, 31) < date.today(),
+            'nb_ecritures': stats[a].nb if a in stats else 0,
+            'nb_a_valider': stats[a].nb_a_valider if a in stats else 0,
+            'date_cloture': c.date_cloture.strftime('%d/%m/%Y %H:%M') if c and c.date_cloture else '',
+            'cloture_par': (c.created_by or '-') if c else '',
+        })
+    a_cloturer = sorted(e['annee'] for e in exercices if e['termine'] and not e['cloture'] and e['nb_ecritures'])
+    annee_proposee = a_cloturer[0] if a_cloturer else annee_courante
 
-    nb_brouillons = EcritureComptable.query.filter(
-        EcritureComptable.structure_id == structure_id,
-        EcritureComptable.statut.in_(['brouillon', 'en_attente']),
-    ).count()
-
+    courant = next(e for e in exercices if e['annee'] == annee_courante)
     return jsonify({
         'annee_courante': annee_courante,
-        'exercice_ouvert': annee_courante not in annees_cloturees,
-        'nb_ecritures_exercice_courant': nb_ecritures_annee,
-        'nb_ecritures_a_valider': nb_brouillons,
+        'annee_proposee': annee_proposee,
+        'exercices': exercices,
+        # champs historiques (cartes du haut)
+        'exercice_ouvert': not courant['cloture'],
+        'nb_ecritures_exercice_courant': courant['nb_ecritures'],
+        'nb_ecritures_a_valider': courant['nb_a_valider'],
         'clotures': [{
             'annee': c.annee,
             'date_cloture': c.date_cloture.strftime('%Y-%m-%d %H:%M') if c.date_cloture else '',
@@ -912,56 +935,362 @@ def api_exercice_statut():
     })
 
 
+# ============================================================
+# APERÇU DE L'EXERCICE (avant ET après clôture) — patron, 22/10/2026
+# ============================================================
+# « Avant de clôturer, qu'on ait un aperçu de tout ce qu'on a fait dans l'année » : ce qui est rentré
+# (produits), ce qui est sorti (charges), le résultat (gagné / perdu), la trésorerie (au total combien), ce
+# qu'on nous doit et ce que nous devons, le bilan, et les contrôles à faire AVANT de clôturer. Lecture seule,
+# même source que les autres états (écritures validées, comptes SYSCOHADA) ; imprimable (PDF) et exportable
+# (CSV) comme les autres rapports (type 'exercice').
+#
+# La clôture ne passe AUCUNE écriture : ce module calcule tout en cumul depuis toujours (bilan, soldes,
+# créances), les soldes de l'exercice N se retrouvent donc d'eux-mêmes à l'ouverture de N+1 — une écriture
+# de report à nouveau (RAN) les compterait deux fois. Le bilan sépare le résultat de l'exercice des résultats
+# des exercices antérieurs (report à nouveau), voir get_bilan().
+
+RUBRIQUES_PRODUITS_SYSCOHADA = {
+    '70': 'Ventes et prestations de services', '71': "Subventions d'exploitation", '72': 'Production immobilisée',
+    '73': 'Variations des stocks de biens et services produits', '75': 'Autres produits',
+    '77': 'Revenus financiers et produits assimilés', '78': 'Transferts de charges', '79': 'Reprises de provisions',
+}
+
+# Filtre commun : écriture validée de la structure, sans ligne sur un ancien compte ad-hoc sans classe
+# (même exclusion que get_compte_resultat() / get_bilan()).
+_SQL_ECRITURE_RETENUE = """
+    e.structure_id = :structure_id AND e.statut = 'valide'
+    AND NOT EXISTS (SELECT 1 FROM lignes_ecritures l2 JOIN comptes_comptables c2 ON c2.id = l2.compte_id
+                    WHERE l2.ecriture_id = e.id AND (c2.classe IS NULL OR c2.classe = ''))
+"""
+
+
+_MESSAGE_CLOTURE_SANS_ECRITURE = (
+    "Inutile : la clôture se fait dans l'onglet « Exercice comptable » (aperçu, contrôles, clôture). Les soldes passent "
+    "d'eux-mêmes sur l'exercice suivant et le bilan range les résultats passés au report à nouveau ; une écriture de "
+    "clôture ou de report à nouveau fausserait le compte de résultat ou doublerait les soldes.")
+
+
+def _message_exercice_cloture(d):
+    return (f"L'exercice {d.year} est clôturé : aucune écriture ne peut plus y être ajoutée, modifiée ou validée. "
+            f"Passez l'opération sur l'exercice ouvert.")
+
+
+def _par_rubrique(lignes, libelles):
+    rubriques = {}
+    for l in lignes:
+        if abs(l['montant']) < 0.5:
+            continue
+        code = str(l['numero'] or '')[:2]
+        rub = rubriques.setdefault(code, {'code': code, 'libelle': libelles.get(code, 'Autres'), 'total': 0.0, 'comptes': []})
+        rub['total'] += l['montant']
+        rub['comptes'].append({'numero': l['numero'], 'nom': l['nom'], 'montant': round(l['montant'], 2)})
+    return [dict(rubriques[k], total=round(rubriques[k]['total'], 2)) for k in sorted(rubriques)]
+
+
+def _mensuel_exercice(structure_id, debut, fin):
+    from sqlalchemy import text
+    rows = db.session.execute(text(f"""
+        SELECT to_char(e.date_ecriture, 'YYYY-MM') AS mois, c.type,
+               COALESCE(SUM(l.debit), 0) AS debit, COALESCE(SUM(l.credit), 0) AS credit
+        FROM ecritures_comptables e
+        JOIN lignes_ecritures l ON l.ecriture_id = e.id
+        JOIN comptes_comptables c ON c.id = l.compte_id
+        WHERE {_SQL_ECRITURE_RETENUE} AND c.type IN ('charge', 'produit')
+          AND e.date_ecriture >= :debut AND e.date_ecriture <= :fin
+        GROUP BY 1, 2
+    """), {'structure_id': structure_id, 'debut': debut, 'fin': fin}).fetchall()
+    mois = {f"{debut.year}-{m:02d}": {'produits': 0.0, 'charges': 0.0} for m in range(1, 13)}
+    for r in rows:
+        if r.mois not in mois:
+            continue
+        if r.type == 'produit':
+            mois[r.mois]['produits'] += float(r.credit) - float(r.debit)
+        else:
+            mois[r.mois]['charges'] += float(r.debit) - float(r.credit)
+    cumul, liste = 0.0, []
+    for m in sorted(mois):
+        v = mois[m]
+        resultat = v['produits'] - v['charges']
+        cumul += resultat
+        liste.append({'mois': m, 'produits': round(v['produits'], 2), 'charges': round(v['charges'], 2),
+                      'resultat': round(resultat, 2), 'cumul': round(cumul, 2)})
+    return liste
+
+
+def _tresorerie_exercice(structure_id, debut, fin):
+    """Caisse / banque / mobile money (classe 5) : solde au 31/12 précédent, au 31/12, et ce qui est
+    réellement entré / sorti dans l'année — hors virements internes (écriture uniquement entre comptes de
+    trésorerie, ex. versement de la caisse à la banque)."""
+    from sqlalchemy import text
+    avant = _soldes_comptes_a_date(structure_id, debut - timedelta(days=1), classes=['5'])
+    apres = _soldes_comptes_a_date(structure_id, fin, classes=['5'])
+    comptes = [{'numero': n, 'nom': (apres.get(n) or avant.get(n))['nom'],
+                'debut': round(avant.get(n, {}).get('solde', 0.0), 2), 'fin': round(apres.get(n, {}).get('solde', 0.0), 2)}
+               for n in sorted(set(avant) | set(apres))]
+    flux = db.session.execute(text(f"""
+        SELECT COALESCE(SUM(l.debit), 0) AS entrees, COALESCE(SUM(l.credit), 0) AS sorties
+        FROM ecritures_comptables e
+        JOIN lignes_ecritures l ON l.ecriture_id = e.id
+        JOIN comptes_comptables c ON c.id = l.compte_id
+        WHERE {_SQL_ECRITURE_RETENUE} AND c.classe = '5'
+          AND e.date_ecriture >= :debut AND e.date_ecriture <= :fin
+          AND EXISTS (SELECT 1 FROM lignes_ecritures l3 JOIN comptes_comptables c3 ON c3.id = l3.compte_id
+                      WHERE l3.ecriture_id = e.id AND c3.classe <> '5')
+    """), {'structure_id': structure_id, 'debut': debut, 'fin': fin}).first()
+    return {
+        'comptes': [c for c in comptes if abs(c['debut']) >= 0.5 or abs(c['fin']) >= 0.5],
+        'debut': round(sum(c['debut'] for c in comptes), 2),
+        'fin': round(sum(c['fin'] for c in comptes), 2),
+        'entrees': round(float(flux.entrees), 2),
+        'sorties': round(float(flux.sorties), 2),
+    }
+
+
+def _tiers_exercice(structure_id, fin):
+    """Classe 4 au 31/12 : ce qu'on nous doit (soldes débiteurs : patients, assurances, avances...) et ce que
+    nous devons (soldes créditeurs : fournisseurs, personnel, organismes sociaux, État...). Les dépréciations
+    (49x) viennent en moins des créances."""
+    from sqlalchemy import text
+    soldes = _soldes_comptes_a_date(structure_id, fin, classes=['4'])
+    creances, dettes = [], []
+    for numero in sorted(soldes):
+        s = soldes[numero]['solde']
+        if abs(s) < 0.5:
+            continue
+        ligne = {'numero': numero, 'nom': soldes[numero]['nom'], 'montant': round(abs(s), 2)}
+        if numero.startswith('49'):
+            creances.append(dict(ligne, montant=round(s, 2)))
+        elif s > 0:
+            creances.append(ligne)
+        else:
+            dettes.append(ligne)
+    patients = db.session.execute(text(f"""
+        SELECT COALESCE(NULLIF(l.tiers_nom, ''), 'Patient non nommé') AS nom, SUM(l.debit - l.credit) AS montant
+        FROM ecritures_comptables e
+        JOIN lignes_ecritures l ON l.ecriture_id = e.id
+        JOIN comptes_comptables c ON c.id = l.compte_id
+        WHERE {_SQL_ECRITURE_RETENUE} AND c.numero LIKE '411%' AND e.date_ecriture <= :fin
+          AND (l.tiers_type = 'patient' OR l.tiers_type IS NULL)
+          AND c.nom NOT ILIKE '%assurance%' AND c.nom NOT ILIKE '%tiers-payant%'
+        GROUP BY 1 HAVING SUM(l.debit - l.credit) > 0.5
+        ORDER BY 2 DESC LIMIT 10
+    """), {'structure_id': structure_id, 'fin': fin}).fetchall()
+    return {
+        'creances': creances, 'dettes': dettes,
+        'total_creances': round(sum(c['montant'] for c in creances), 2),
+        'total_dettes': round(sum(d['montant'] for d in dettes), 2),
+        'assureurs': generer_creances_par_assureur(structure_id, fin.strftime('%Y-%m-%d')),
+        'patients_debiteurs': [{'nom': p.nom, 'montant': round(float(p.montant), 2)} for p in patients],
+    }
+
+
+def _controles_cloture(structure_id, annee, debut, fin, bilan, tresorerie):
+    """Points à vérifier avant de clôturer. niveau : 'bloquant' (la clôture est refusée), 'attention' (à
+    regarder, n'empêche pas), 'ok'."""
+    from sqlalchemy import text
+    controles = []
+
+    def ajouter(niveau, titre, detail=''):
+        controles.append({'niveau': niveau, 'titre': titre, 'detail': detail})
+
+    if fin >= date.today():
+        ajouter('bloquant', f"L'exercice {annee} n'est pas terminé",
+                f"Il se termine le 31/12/{annee} : la clôture se fait après cette date. L'aperçu montre la situation à ce jour.")
+    else:
+        ajouter('ok', f"Exercice {annee} terminé (31/12/{annee})")
+
+    anterieures = db.session.execute(text("""
+        SELECT DISTINCT EXTRACT(YEAR FROM date_ecriture)::int AS annee FROM ecritures_comptables
+        WHERE structure_id = :structure_id AND statut = 'valide' AND date_ecriture < :debut
+    """), {'structure_id': structure_id, 'debut': debut}).fetchall()
+    cloturees = {c.annee for c in Cloture.query.filter_by(structure_id=structure_id).all()}
+    non_cloturees = sorted(r.annee for r in anterieures if r.annee not in cloturees)
+    if non_cloturees:
+        ajouter('bloquant', "Exercice précédent non clôturé",
+                f"Clôturez d'abord : {', '.join(str(a) for a in non_cloturees)} (les exercices se clôturent dans l'ordre).")
+
+    nb_a_valider = EcritureComptable.query.filter(
+        EcritureComptable.structure_id == structure_id,
+        EcritureComptable.statut.in_(['brouillon', 'en_attente']),
+        EcritureComptable.date_ecriture >= debut, EcritureComptable.date_ecriture <= fin,
+    ).count()
+    if nb_a_valider:
+        ajouter('bloquant', f"{nb_a_valider} écriture(s) en brouillon ou en attente de validation",
+                "Elles ne comptent dans aucun état : validez-les ou refusez-les (onglet Écritures) avant de clôturer.")
+    else:
+        ajouter('ok', "Aucune écriture en attente de validation")
+
+    totaux = db.session.execute(text("""
+        SELECT COALESCE(SUM(l.debit), 0) AS debit, COALESCE(SUM(l.credit), 0) AS credit
+        FROM ecritures_comptables e JOIN lignes_ecritures l ON l.ecriture_id = e.id
+        WHERE e.structure_id = :structure_id AND e.statut = 'valide'
+          AND e.date_ecriture >= :debut AND e.date_ecriture <= :fin
+    """), {'structure_id': structure_id, 'debut': debut, 'fin': fin}).first()
+    ecart = round(float(totaux.debit) - float(totaux.credit))
+    if abs(ecart) > 1:
+        ajouter('bloquant', "Balance déséquilibrée",
+                f"Total débit {_fmt_montant(float(totaux.debit))} F ≠ total crédit {_fmt_montant(float(totaux.credit))} F "
+                f"(écart {_fmt_montant(ecart)} F).")
+    else:
+        ajouter('ok', "Balance équilibrée (total débit = total crédit)")
+
+    if bilan.get('est_equilibre'):
+        ajouter('ok', "Bilan équilibré (actif = passif + capitaux propres)")
+    else:
+        ajouter('attention', "Bilan déséquilibré",
+                f"Actif {_fmt_montant(bilan.get('total_actif', 0))} F, passif + capitaux propres "
+                f"{_fmt_montant(bilan.get('total_passif_capitaux', 0))} F.")
+
+    nb_anomalies = AnomalieComptable.query.filter(AnomalieComptable.structure_id == structure_id,
+                                                  db.or_(AnomalieComptable.resolu.is_(None), AnomalieComptable.resolu.is_(False))).count()
+    if nb_anomalies:
+        ajouter('attention', f"{nb_anomalies} anomalie(s) comptable(s) non résolue(s)",
+                "Opérations qui n'ont pas pu être comptabilisées automatiquement : à régulariser (Tableau de bord, Anomalies).")
+
+    nb_exclues = db.session.execute(text("""
+        SELECT COUNT(DISTINCT e.id) FROM ecritures_comptables e
+        JOIN lignes_ecritures l ON l.ecriture_id = e.id JOIN comptes_comptables c ON c.id = l.compte_id
+        WHERE e.structure_id = :structure_id AND e.statut = 'valide' AND (c.classe IS NULL OR c.classe = '')
+          AND e.date_ecriture >= :debut AND e.date_ecriture <= :fin
+    """), {'structure_id': structure_id, 'debut': debut, 'fin': fin}).scalar() or 0
+    if nb_exclues:
+        ajouter('attention', f"{nb_exclues} écriture(s) sur d'anciens comptes hors plan SYSCOHADA",
+                "Elles sont écartées du résultat et du bilan : les repasser sur les bons comptes si elles sont réelles.")
+
+    immos = Immobilisation.query.filter(Immobilisation.structure_id == structure_id,
+                                        Immobilisation.statut == 'en_service',
+                                        Immobilisation.date_acquisition <= fin).all()
+    if immos:
+        dotees = {d.immobilisation_id for d in DotationAmortissement.query.filter_by(structure_id=structure_id, annee=annee).all()}
+        sans_dotation = [i for i in immos if i.id not in dotees
+                         and float(i.cumul_amorti or 0) < float(i.valeur_acquisition or 0) - float(i.valeur_residuelle or 0) - 0.5]
+        if sans_dotation:
+            ajouter('attention', f"Amortissements {annee} non passés ({len(sans_dotation)} immobilisation(s))",
+                    "Générez les dotations de l'année (onglet Immobilisations) pour que la charge figure au résultat.")
+        else:
+            ajouter('ok', f"Amortissements {annee} passés")
+
+    tva = ParametrageTva.query.filter_by(structure_id=structure_id).first()
+    if tva and tva.assujetti:
+        derniere = DeclarationTva.query.filter(DeclarationTva.structure_id == structure_id,
+                                               DeclarationTva.statut != 'annulee').order_by(DeclarationTva.date_fin.desc()).first()
+        if not derniere or derniere.date_fin < fin:
+            ajouter('attention', "TVA de fin d'exercice non déclarée",
+                    f"Dernière période déclarée jusqu'au {derniere.date_fin.strftime('%d/%m/%Y')}." if derniere
+                    else "Aucune déclaration de TVA enregistrée (onglet TVA).")
+        else:
+            ajouter('ok', "TVA déclarée jusqu'à la fin de l'exercice")
+
+    caisse = next((c for c in tresorerie['comptes'] if c['numero'].startswith('57')), None)
+    if caisse and caisse['fin'] < -0.5:
+        ajouter('attention', "Caisse négative au 31/12",
+                f"Solde {_fmt_montant(caisse['fin'])} F : une caisse ne peut pas être négative, une recette manque ou une dépense est en trop.")
+    return controles
+
+
+def get_apercu_exercice(structure_id, annee):
+    debut, fin = date(annee, 1, 1), date(annee, 12, 31)
+    resultat = get_compte_resultat(structure_id, debut.isoformat(), fin.isoformat())
+    bilan = get_bilan(structure_id, fin.isoformat())
+    tresorerie = _tresorerie_exercice(structure_id, debut, fin)
+    controles = _controles_cloture(structure_id, annee, debut, fin, bilan, tresorerie)
+    cloture = Cloture.query.filter_by(structure_id=structure_id, annee=annee).first()
+
+    n1 = None
+    precedent = get_compte_resultat(structure_id, date(annee - 1, 1, 1).isoformat(), date(annee - 1, 12, 31).isoformat())
+    if precedent['produits'] or precedent['charges']:
+        n1 = {'annee': annee - 1, 'total_produits': round(precedent['total_produits'], 2),
+              'total_charges': round(precedent['total_charges'], 2), 'resultat': round(precedent['resultat'], 2),
+              'tresorerie_fin': tresorerie['debut']}
+
+    nb_ecritures = EcritureComptable.query.filter(
+        EcritureComptable.structure_id == structure_id, EcritureComptable.statut == 'valide',
+        EcritureComptable.date_ecriture >= debut, EcritureComptable.date_ecriture <= fin).count()
+    return {
+        'annee': annee,
+        'date_debut': debut.isoformat(), 'date_fin': fin.isoformat(),
+        'en_cours': fin >= date.today(),
+        'situation_au': min(fin, date.today()).strftime('%d/%m/%Y'),
+        'cloture': {'date': cloture.date_cloture.strftime('%d/%m/%Y %H:%M') if cloture.date_cloture else '',
+                    'par': cloture.created_by or '-'} if cloture else None,
+        'nb_ecritures': nb_ecritures,
+        'total_produits': round(resultat['total_produits'], 2),
+        'total_charges': round(resultat['total_charges'], 2),
+        'resultat': round(resultat['resultat'], 2),
+        'resultat_text': 'Bénéfice' if resultat['resultat'] >= 0 else 'Perte',
+        'produits': _par_rubrique(resultat['produits'], RUBRIQUES_PRODUITS_SYSCOHADA),
+        'charges': _par_rubrique(resultat['charges'], RUBRIQUES_CHARGES_SYSCOHADA),
+        'mensuel': _mensuel_exercice(structure_id, debut, fin),
+        'tresorerie': tresorerie,
+        'tiers': _tiers_exercice(structure_id, fin),
+        'bilan': bilan,
+        'sig': _sig_et_cafg(structure_id, debut, fin),
+        'n1': n1,
+        'controles': controles,
+        'peut_cloturer': not cloture and not any(c['niveau'] == 'bloquant' for c in controles),
+    }
+
+
+def _annee_demandee(valeur):
+    try:
+        annee = int(valeur)
+    except (TypeError, ValueError):
+        return None
+    return annee if 2000 <= annee <= 2100 else None
+
+
+@compta_bp.route('/api/exercice/apercu')
+def api_exercice_apercu():
+    structure_id = session.get('structure_id')
+    annee = _annee_demandee(request.args.get('annee')) or datetime.now().year
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+    return jsonify({'success': True, **get_apercu_exercice(structure_id, annee)})
+
+
 @compta_bp.route('/api/cloture', methods=['POST'])
 def api_cloture():
+    """Clôture d'un exercice : refusée tant qu'un contrôle bloquant reste (exercice pas terminé, exercice
+    précédent ouvert, écritures en attente, balance déséquilibrée — voir _controles_cloture). Fige les
+    écritures : plus aucun ajout, modification ou validation dans l'année (routes d'écritures et
+    services/comptabilite_service.creer_ecriture)."""
     structure_id = session.get('structure_id')
-    annee = request.json.get('annee')
-    
+    annee = _annee_demandee((request.json or {}).get('annee'))
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
     if not annee:
-        return jsonify({'error': 'Annee requise'}), 400
-    
+        return jsonify({'success': False, 'error': 'Année requise'}), 400
+
     try:
-        existing = Cloture.query.filter_by(
-            structure_id=structure_id,
-            annee=annee
-        ).first()
-        
-        if existing:
-            return jsonify({'success': False, 'error': 'Cette annee est deja cloturee'}), 400
-        
-        date_debut = f"{annee}-01-01"
-        date_fin = f"{annee}-12-31"
-        
-        ecritures = EcritureComptable.query.filter(
+        if Cloture.query.filter_by(structure_id=structure_id, annee=annee).first():
+            return jsonify({'success': False, 'error': f"L'exercice {annee} est déjà clôturé"}), 400
+
+        apercu = get_apercu_exercice(structure_id, annee)
+        bloquants = [c for c in apercu['controles'] if c['niveau'] == 'bloquant']
+        if bloquants:
+            return jsonify({'success': False, 'controles': bloquants,
+                            'error': "Clôture impossible :\n" + '\n'.join(f"• {c['titre']} — {c['detail']}" for c in bloquants)}), 400
+
+        maintenant = datetime.utcnow()
+        nb_ecritures = EcritureComptable.query.filter(
             EcritureComptable.structure_id == structure_id,
-            EcritureComptable.date_ecriture >= date_debut,
-            EcritureComptable.date_ecriture <= date_fin,
-            EcritureComptable.statut == 'valide'
-        ).all()
-        
-        nb_ecritures = 0
-        for ecriture in ecritures:
-            ecriture.cloturee = True
-            ecriture.date_cloture = datetime.utcnow()
-            nb_ecritures += 1
-        
-        cloture = Cloture(
-            structure_id=structure_id,
-            annee=annee,
-            date_cloture=datetime.utcnow(),
-            created_by=session.get('user_name', 'System')
-        )
-        db.session.add(cloture)
+            EcritureComptable.date_ecriture >= date(annee, 1, 1),
+            EcritureComptable.date_ecriture <= date(annee, 12, 31),
+            EcritureComptable.statut == 'valide',
+        ).update({'cloturee': True, 'date_cloture': maintenant}, synchronize_session=False)
+
+        db.session.add(Cloture(structure_id=structure_id, annee=annee, date_cloture=maintenant,
+                               created_by=session.get('user_name', 'System')))
         db.session.commit()
-        
         return jsonify({
-            'success': True, 
-            'message': f'Cloture de l\'annee {annee} effectuee ({nb_ecritures} ecritures)'
+            'success': True,
+            'message': (f"Exercice {annee} clôturé ({nb_ecritures} écritures figées). "
+                        f"Résultat : {apercu['resultat_text'].lower()} de {_fmt_montant(abs(apercu['resultat']))} F. "
+                        f"Les soldes passent automatiquement sur {annee + 1}.")
         })
-        
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ============================================================
@@ -1230,23 +1559,13 @@ def api_cloture_exercice_apercu():
 @compta_bp.route('/api/cloture-exercice/generer', methods=['POST'])
 def api_cloture_exercice_generer():
     """Génère (et valide immédiatement) l'écriture de clôture des comptes
-    de gestion — action volontaire, jamais automatique."""
-    structure_id = session.get('structure_id')
-    if not structure_id:
-        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+    de gestion — action volontaire, jamais automatique.
 
-    data = request.json or {}
-    date_debut = parse_date(data.get('date_debut'))
-    date_fin = parse_date(data.get('date_fin'))
-    if not date_debut or not date_fin:
-        return jsonify({'success': False, 'error': 'Dates de début/fin invalides'}), 400
-
-    from services.comptabilite_service import generer_cloture_exercice
-    ecriture = generer_cloture_exercice(structure_id, date_debut, date_fin, user_nom=session.get('user_name', 'System'))
-    if not ecriture:
-        return jsonify({'success': False, 'error': "Rien à clôturer, ou une clôture existe déjà pour cet exercice."}), 400
-
-    return jsonify({'success': True, 'ecriture_id': ecriture.id, 'piece_justificative': ecriture.piece_justificative})
+    ⭐ 2026-10-22 : désactivé. Cette écriture solde les comptes 6/7 dans le compte 13 : le compte de résultat
+    de l'exercice serait ensuite à zéro, puisque tous les états le calculent à partir des comptes 6/7. La
+    clôture se fait par l'onglet « Exercice comptable » (aperçu, contrôles, verrouillage) ; le bilan range
+    lui-même les résultats passés au report à nouveau (get_bilan)."""
+    return jsonify({'success': False, 'error': _MESSAGE_CLOTURE_SANS_ECRITURE}), 400
 
 
 @compta_bp.route('/api/report-a-nouveau/apercu')
@@ -1270,22 +1589,11 @@ def api_report_a_nouveau_apercu():
 @compta_bp.route('/api/report-a-nouveau/generer', methods=['POST'])
 def api_report_a_nouveau_generer():
     """Génère (et valide immédiatement) l'écriture de report à nouveau —
-    action volontaire du comptable, jamais automatique/planifiée."""
-    structure_id = session.get('structure_id')
-    if not structure_id:
-        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+    action volontaire du comptable, jamais automatique/planifiée.
 
-    data = request.json or {}
-    date_cloture = parse_date(data.get('date_cloture'))
-    if not date_cloture:
-        return jsonify({'success': False, 'error': 'Date de clôture invalide'}), 400
-
-    from services.comptabilite_service import generer_report_a_nouveau
-    ecriture = generer_report_a_nouveau(structure_id, date_cloture, user_nom=session.get('user_name', 'System'))
-    if not ecriture:
-        return jsonify({'success': False, 'error': "Rien à générer, ou un report à nouveau existe déjà pour cet exercice — voir les anomalies comptables pour le détail."}), 400
-
-    return jsonify({'success': True, 'ecriture_id': ecriture.id, 'piece_justificative': ecriture.piece_justificative})
+    ⭐ 2026-10-22 : désactivé. Bilan, soldes, créances et trésorerie sont calculés en cumul depuis toujours :
+    les soldes de N sont DÉJÀ ceux d'ouverture de N+1, une écriture RAN les compterait deux fois."""
+    return jsonify({'success': False, 'error': _MESSAGE_CLOTURE_SANS_ECRITURE}), 400
 
 
 @compta_bp.route('/api/tiers')
@@ -2180,12 +2488,27 @@ def get_bilan(structure_id, date_fin):
         # partie des capitaux propres au bilan tant que l'exercice n'est pas
         # clôturé — présentation OHADA standard : une seule ligne "Résultat
         # net de l'exercice", pas le détail des comptes de charge/produit.
-        resultat_periode = get_compte_resultat(structure_id, None, date_fin)
+        # ⭐ 2026-10-22 : résultat de l'exercice de date_fin (depuis le 1er janvier) séparé des résultats des
+        # exercices antérieurs (report à nouveau, 121/129) — avant, tout le cumul depuis le début était
+        # présenté comme « résultat de l'exercice », faux dès le 2e exercice. Aucune écriture de clôture : les
+        # comptes 6/7 des exercices passés restent cumulés, c'est ce calcul qui les range au report à nouveau.
+        fin_bilan = date_fin_obj or date.today()
+        debut_exercice = date(fin_bilan.year, 1, 1)
+        resultat_periode = get_compte_resultat(structure_id, debut_exercice.isoformat(), fin_bilan.isoformat())
         resultat_net = resultat_periode.get('resultat', 0)
+        anterieur = get_compte_resultat(structure_id, None, (debut_exercice - timedelta(days=1)).isoformat())
+        report = anterieur.get('resultat', 0)
+        if abs(report) > 0.5:
+            capitaux_propres.append({
+                'numero': '121' if report >= 0 else '129',   # SYSCOHADA : 121 report créditeur, 129 débiteur
+                'nom': "Report à nouveau (résultats des exercices antérieurs)",
+                'montant': report,
+            })
+            total_capitaux += report
         if abs(resultat_net) > 0.5:
             capitaux_propres.append({
                 'numero': '131' if resultat_net >= 0 else '139',   # SYSCOHADA : 131 bénéfice, 139 perte
-                'nom': f"Résultat net de l'exercice ({resultat_periode.get('resultat_text', '')})",
+                'nom': f"Résultat net de l'exercice {fin_bilan.year} ({resultat_periode.get('resultat_text', '')})",
                 'montant': resultat_net,
             })
             total_capitaux += resultat_net
@@ -3100,6 +3423,10 @@ def _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_c
     elif type_rapport == 'charges':
         data = generer_etat_charges(structure_id, date_debut, date_fin)
         titre = "État des charges (SYSCOHADA)"
+    elif type_rapport == 'exercice':
+        annee = _annee_demandee(str(date_fin or date_debut or '')[:4]) or datetime.now().year
+        data = get_apercu_exercice(structure_id, annee)
+        titre = f"États financiers de l'exercice {annee}"
     else:
         return None, None
     return data, titre
@@ -3323,6 +3650,67 @@ def export_rapport_txt(type_rapport):
                                            + [_csv_montant(cpt['par_mois'].get(m, 0)) for m in data['mois']] + [_csv_montant(cpt['total'])]))
         lignes_csv.append(';'.join([_csv_champ('TOTAL DES CHARGES'), '']
                                    + [_csv_montant(data['total_par_mois'].get(m, 0)) for m in data['mois']] + [_csv_montant(data['total'])]))
+
+    elif type_rapport == 'exercice':
+        # ⭐ 2026-10-22 : aperçu complet de l'exercice, section par section (même contenu que l'écran et le PDF)
+        def section(titre_section, entetes):
+            lignes_csv.extend(['', _csv_champ(titre_section), ';'.join(_csv_champ(c) for c in entetes)])
+
+        def ligne(*valeurs):
+            lignes_csv.append(';'.join(_csv_montant(v) if isinstance(v, (int, float)) else _csv_champ(v) for v in valeurs))
+
+        etat = 'clôturé le ' + data['cloture']['date'] if data['cloture'] else (
+            'en cours (situation au ' + data['situation_au'] + ')' if data['en_cours'] else 'terminé, non clôturé')
+        section('SYNTHÈSE', ['Rubrique', f"Exercice {data['annee']}"] + ([f"Exercice {data['n1']['annee']}"] if data['n1'] else []))
+        n1 = data['n1'] or {}
+        ligne('État de l\'exercice', etat)
+        ligne('Ce qui est rentré (produits)', data['total_produits'], *([n1['total_produits']] if n1 else []))
+        ligne('Ce qui est sorti (charges)', data['total_charges'], *([n1['total_charges']] if n1 else []))
+        ligne(f"Résultat ({data['resultat_text']})", data['resultat'], *([n1['resultat']] if n1 else []))
+        ligne('Trésorerie au début', data['tresorerie']['debut'])
+        ligne('Entrées d\'argent', data['tresorerie']['entrees'])
+        ligne('Sorties d\'argent', data['tresorerie']['sorties'])
+        ligne('Trésorerie à la fin', data['tresorerie']['fin'])
+        ligne('Ce qu\'on nous doit (créances)', data['tiers']['total_creances'])
+        ligne('Ce que nous devons (dettes)', data['tiers']['total_dettes'])
+        for titre_section, rubriques, total in (('PRODUITS (ce qui est rentré)', data['produits'], data['total_produits']),
+                                                ('CHARGES (ce qui est sorti)', data['charges'], data['total_charges'])):
+            section(titre_section, ['N° compte', 'Compte', 'Montant'])
+            for rub in rubriques:
+                ligne(rub['code'], rub['libelle'].upper(), rub['total'])
+                for cpt in rub['comptes']:
+                    ligne(cpt['numero'], cpt['nom'], cpt['montant'])
+            ligne('TOTAL', '', total)
+        section('ÉVOLUTION MENSUELLE', ['Mois', 'Produits', 'Charges', 'Résultat', 'Résultat cumulé'])
+        for m in data['mensuel']:
+            ligne(m['mois'][5:7] + '/' + m['mois'][:4], m['produits'], m['charges'], m['resultat'], m['cumul'])
+        section('TRÉSORERIE', ['N° compte', 'Compte', 'Début', 'Fin'])
+        for c in data['tresorerie']['comptes']:
+            ligne(c['numero'], c['nom'], c['debut'], c['fin'])
+        section('CE QU\'ON NOUS DOIT (créances au 31/12)', ['N° compte', 'Compte', 'Montant'])
+        for c in data['tiers']['creances']:
+            ligne(c['numero'], c['nom'], c['montant'])
+        ligne('TOTAL', '', data['tiers']['total_creances'])
+        section('CE QUE NOUS DEVONS (dettes au 31/12)', ['N° compte', 'Compte', 'Montant'])
+        for c in data['tiers']['dettes']:
+            ligne(c['numero'], c['nom'], c['montant'])
+        ligne('TOTAL', '', data['tiers']['total_dettes'])
+        bilan = data['bilan']
+        section('BILAN AU 31/12', ['Type', 'N° compte', 'Compte', 'Montant'])
+        for cle, libelle in (('actifs', 'Actif'), ('passifs', 'Passif'), ('capitaux_propres', 'Capitaux propres')):
+            for c in bilan[cle]:
+                ligne(libelle, c['numero'], c['nom'], c['montant'])
+        ligne('TOTAL ACTIF', '', '', bilan['total_actif'])
+        ligne('TOTAL PASSIF + CAPITAUX', '', '', bilan['total_passif_capitaux'])
+        sig = data['sig']
+        section('SOLDES INTERMÉDIAIRES DE GESTION', ['Solde', 'Montant'])
+        for libelle, cle in (('Excédent brut d\'exploitation', 'ebe'), ('Résultat d\'exploitation', 'resultat_exploitation'),
+                             ('Résultat financier', 'resultat_financier'), ('Résultat net', 'resultat_net'),
+                             ('Capacité d\'autofinancement (CAFG)', 'cafg')):
+            ligne(libelle, sig[cle])
+        section('CONTRÔLES AVANT CLÔTURE', ['Niveau', 'Point', 'Détail'])
+        for c in data['controles']:
+            ligne({'ok': 'OK', 'attention': 'À vérifier', 'bloquant': 'BLOQUANT'}[c['niveau']], c['titre'], c['detail'])
 
     # BOM UTF-8 en tête : sans lui, Excel devine souvent un encodage ANSI
     # et affiche les accents mal formés (voire, sur certaines versions,

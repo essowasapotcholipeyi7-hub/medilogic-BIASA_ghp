@@ -1708,6 +1708,8 @@ function styleImpressionNB() {
         '.badge-actes,.badge-pharma,.badge-mixte,.badge-assure,.badge-non-assure,.badge-aide,.badge-secondary' +
             '{display:inline;white-space:nowrap;color:#000;background:none;border:none;padding:0;margin:0;}' +
         '.badge-aide{font-size:12px;}' +
+        // ⭐ 2026-10-22 : complémentaire sous l'assurance, en petit, retour à la ligne (colonne Assuré étroite)
+        '.cac-ligne{display:block;font-size:11px;line-height:1.2;white-space:normal;overflow-wrap:anywhere;}' +
         // Bloc « Encaissements à remettre » : ce que la caissière rend, en évidence
         '.remise{border:2px solid #000;padding:12px 16px;margin:14px 0;}' +
         '.remise h3{margin:0 0 8px;font-size:16px;text-transform:uppercase;letter-spacing:.3px;}' +
@@ -2131,8 +2133,9 @@ async function imprimerHistorique() {
         // assurances et ou société").
         var cacHtml = '';
         if (v.assurance2_nom) {
-            cacHtml = '<br><span class="badge-assure">+ CAC ' + v.assurance2_nom +
-                (v.societe_assurance2 ? ' (' + v.societe_assurance2 + ')' : '') + '</span>';
+            // ⭐ 2026-10-22 (patron) : sous l'assurance, en petit, revient à la ligne (ne déborde plus sur « Type »)
+            cacHtml = '<span class="cac-ligne">+ CAC ' + escFR(v.assurance2_nom) +
+                (v.societe_assurance2 ? ' (' + escFR(v.societe_assurance2) + ')' : '') + '</span>';
         }
 
         // ⭐ NOUVEAU : aide hospitalière apportée sur cette vente, si elle

@@ -88,6 +88,44 @@
         font-weight: 600;
         color: #1a2a6c;
     }
+    /* ⭐ 2026-10-22 : aperçu de l'exercice (onglet Exercice comptable) */
+    .exo-bandeau { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; border-radius: 10px;
+        margin-bottom: 14px; font-weight: 600; border: 1px solid var(--bs-border-color); background: var(--bs-tertiary-bg); }
+    .exo-etat-cours { border-left: 4px solid #175E86; }
+    .exo-etat-termine { border-left: 4px solid #B45309; }
+    .exo-etat-cloture { border-left: 4px solid #51636D; }
+    .exo-tuile { height: 100%; padding: 12px 14px; border: 1px solid var(--bs-border-color); border-radius: 10px; background: var(--bs-body-bg); }
+    .exo-tuile-libelle { font-size: .8rem; font-weight: 600; }
+    .exo-tuile-valeur { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 1.35rem; font-weight: 700;
+        font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .exo-tuile-sous { font-size: .75rem; color: var(--bs-secondary-color); }
+    .exo-tuile-produit .exo-tuile-valeur, .exo-tuile-benefice .exo-tuile-valeur { color: #0B7C52; }
+    .exo-tuile-charge .exo-tuile-valeur, .exo-tuile-perte .exo-tuile-valeur { color: #B4232F; }
+    .exo-tuile-tresorerie .exo-tuile-valeur { color: #175E86; }
+    .exo-tuile-benefice { border-color: #0E9D67; }
+    .exo-tuile-perte { border-color: #B4232F; }
+    [data-bs-theme="dark"] .exo-tuile-produit .exo-tuile-valeur, [data-bs-theme="dark"] .exo-tuile-benefice .exo-tuile-valeur { color: #4CC796; }
+    [data-bs-theme="dark"] .exo-tuile-charge .exo-tuile-valeur, [data-bs-theme="dark"] .exo-tuile-perte .exo-tuile-valeur { color: #F08A92; }
+    [data-bs-theme="dark"] .exo-tuile-tresorerie .exo-tuile-valeur { color: #7DBBE0; }
+    .exo-carte .card-header { font-weight: 600; font-size: .9rem; }
+    .exo-table td, .exo-table th { font-variant-numeric: tabular-nums; vertical-align: middle; }
+    .exo-rubrique { cursor: pointer; }
+    .exo-rubrique:hover td { background: var(--bs-tertiary-bg); }
+    .exo-total td { font-weight: 700; background: var(--bs-tertiary-bg); }
+    .exo-sous-titre td { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--bs-secondary-color); padding-top: 10px; }
+    .exo-part { width: 56px; }
+    .exo-barres { display: flex; flex-direction: column; gap: 2px; margin-top: 3px; width: 110px; }
+    .exo-barre-p, .exo-barre-c { display: inline-block; height: 4px; border-radius: 2px; min-width: 2px; }
+    .exo-barre-p { background: #0E9D67; }
+    .exo-barre-c { background: #D9534F; }
+    .exo-legende { float: right; font-weight: 400; font-size: .75rem; color: var(--bs-secondary-color); }
+    .exo-legende .exo-barre-p, .exo-legende .exo-barre-c { width: 14px; margin: 0 4px 1px 8px; }
+    .exo-controles li { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--bs-border-color); }
+    .exo-controles li:last-child { border-bottom: 0; }
+    .exo-controles i { margin-top: 3px; }
+    .exo-flux { padding: 10px 14px; display: grid; gap: 4px; font-variant-numeric: tabular-nums; }
+    .exo-flux > div { display: flex; justify-content: space-between; }
+    .exo-flux-total { border-top: 1px solid var(--bs-border-color); padding-top: 4px; font-weight: 700; }
 </style>
 {% endblock %}
 
@@ -561,8 +599,8 @@
                             </div>
                             <div class="col-md-6 text-end">
                                 <span class="badge bg-success" id="totalBudget">0 FCFA</span>
-                                <button class="btn btn-danger btn-sm ms-2" onclick="cloturerAnnee()">
-                                    <i class="fas fa-lock"></i> Clôturer l'année
+                                <button class="btn btn-outline-danger btn-sm ms-2" onclick="ouvrirOngletExercice()">
+                                    <i class="fas fa-lock"></i> Aperçu et clôture de l'exercice
                                 </button>
                             </div>
                         </div>
@@ -602,11 +640,10 @@
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h6><i class="fas fa-pen"></i> Écritures comptables</h6>
                             <div>
-                                <button class="btn btn-outline-secondary btn-sm" onclick="ouvrirClotureExercice()">
-                                    <i class="fas fa-scale-balanced"></i> Clôture des comptes de gestion
-                                </button>
-                                <button class="btn btn-outline-secondary btn-sm" onclick="ouvrirReportANouveau()">
-                                    <i class="fas fa-forward"></i> Report à nouveau
+                                <!-- ⭐ 2026-10-22 : « Clôture des comptes de gestion » et « Report à nouveau » retirés — la
+                                     clôture se fait dans l'onglet Exercice comptable, sans écriture (voir routes/comptabilite.py). -->
+                                <button class="btn btn-outline-secondary btn-sm" onclick="ouvrirOngletExercice()">
+                                    <i class="fas fa-calendar-check"></i> Exercice et clôture
                                 </button>
                                 <button class="btn btn-primary btn-sm" onclick="ouvrirNouvelleEcriture()">
                                     <i class="fas fa-plus"></i> Nouvelle écriture
@@ -983,49 +1020,31 @@
                     <!-- ONGLET EXERCICE COMPTABLE -->
                     <!-- ========================================== -->
                     <div class="tab-pane fade" id="exercice" role="tabpanel">
-                        <h6><i class="fas fa-calendar-check"></i> Exercice comptable</h6>
-
-                        <div class="row g-3 mb-4">
-                            <div class="col-md-4">
-                                <div class="card border-0 shadow-sm">
-                                    <div class="card-body">
-                                        <div class="text-uppercase small text-muted">Exercice en cours</div>
-                                        <h2 class="mb-0" id="exerciceAnneeCourante">—</h2>
-                                        <span class="badge mt-2" id="exerciceStatutBadge">—</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="card border-0 shadow-sm">
-                                    <div class="card-body">
-                                        <div class="text-uppercase small text-muted">Écritures sur l'exercice</div>
-                                        <h2 class="mb-0" id="exerciceNbEcritures">0</h2>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="card border-0 shadow-sm">
-                                    <div class="card-body">
-                                        <div class="text-uppercase small text-muted">En attente de validation</div>
-                                        <h2 class="mb-0" id="exerciceNbAValider">0</h2>
-                                        <small class="text-muted">écritures saisies manuellement, non encore validées</small>
-                                    </div>
-                                </div>
+                        <!-- ⭐ 2026-10-22 (patron) : aperçu complet de l'exercice AVANT de clôturer — ce qui est rentré,
+                             ce qui est sorti, le résultat, la trésorerie, ce qu'on nous doit / ce que nous devons, le
+                             bilan, les contrôles ; imprimable (PDF) et exportable (Excel). Rendu par afficherApercuExercice(). -->
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                            <h6 class="mb-0"><i class="fas fa-calendar-check"></i> Exercice comptable</h6>
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <label class="small text-muted mb-0" for="exerciceChoix">Exercice</label>
+                                <select class="form-select form-select-sm" id="exerciceChoix" style="width:auto;" onchange="chargerApercuExercice()"></select>
+                                <button class="btn btn-outline-primary btn-sm" onclick="imprimerApercuExercice()">
+                                    <i class="fas fa-print"></i> Imprimer / PDF
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="exporterApercuExercice()">
+                                    <i class="fas fa-file-csv"></i> Exporter (Excel)
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="exporterFecExercice()" title="Toutes les écritures de l'exercice, pour un cabinet comptable">
+                                    <i class="fas fa-file-lines"></i> Écritures (FEC)
+                                </button>
                             </div>
                         </div>
 
-                        <div class="alert alert-warning">
-                            <i class="fas fa-exclamation-triangle"></i>
-                            La clôture d'un exercice est <strong>définitive</strong> : toutes les écritures validées de
-                            l'année sont figées. Assurez-vous d'avoir vérifié le Journal, le Grand livre, la Balance
-                            et l'État financier avant de clôturer.
+                        <div id="exerciceApercu">
+                            <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i> Calcul de l'exercice…</div>
                         </div>
 
-                        <button class="btn btn-danger mb-4" onclick="cloturerAnnee()">
-                            <i class="fas fa-lock"></i> Clôturer l'exercice en cours
-                        </button>
-
-                        <div class="card">
+                        <div class="card mt-3">
                             <div class="card-header bg-light"><i class="fas fa-history"></i> Historique des clôtures</div>
                             <div class="card-body p-0">
                                 <table class="table table-sm table-hover mb-0">
@@ -3063,26 +3082,32 @@ function sauvegarderBudget() {
 }
 
 async function cloturerAnnee() {
-    let annee = document.getElementById('exerciceAnneeCourante')?.textContent?.trim();
-    if (!annee || annee === '—') {
-        annee = document.getElementById('budgetAnnee')?.value;
-    }
-    if (!annee) { await afficherMessage('Veuillez sélectionner une année'); return; }
-    if (!await demanderConfirmation(`Clôturer l'exercice ${annee} ?\n\nCette action est irréversible : toutes les écritures validées de l'année seront figées.`)) return;
+    // ⭐ 2026-10-22 : clôture de l'exercice CHOISI dans l'onglet « Exercice comptable » (avant : l'année civile
+    // du jour — en janvier 2027 le bouton aurait clôturé 2027 au lieu de 2026). Le serveur refuse tant qu'un
+    // contrôle bloquant reste (voir _controles_cloture).
+    const a = EXO.apercu;
+    if (!a) { ouvrirOngletExercice(); return; }
+    const annee = a.annee;
+    if (!await demanderConfirmation(
+        `Clôturer l'exercice ${annee} ?\n\n` +
+        `Résultat : ${a.resultat_text.toLowerCase()} de ${fExo(Math.abs(a.resultat))}.\n` +
+        `Trésorerie au 31/12/${annee} : ${fExo(a.tresorerie.fin)}.\n\n` +
+        `Cette action est définitive : plus aucune écriture ne pourra être ajoutée, modifiée ou validée dans ${annee}. ` +
+        `Les soldes passent automatiquement sur ${annee + 1}.`)) return;
 
     fetch('/comptabilite/api/cloture', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ annee: parseInt(annee) })
+        body: JSON.stringify({ annee: annee })
     })
     .then(r => r.json())
     .then(async data => {
         if (data.success) {
-            await afficherMessage(`${data.message}`);
+            await afficherMessage(data.message);
             if (typeof chargerBudget === 'function') chargerBudget();
             chargerExercice();
         } else {
-            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
+            await afficherMessage(data.error || 'Erreur inconnue', {type: 'danger'});
         }
     })
     .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
@@ -3090,24 +3115,43 @@ async function cloturerAnnee() {
 
 
 // ============================================================
-// EXERCICE COMPTABLE
+// EXERCICE COMPTABLE — aperçu avant clôture (patron, 2026-10-22)
 // ============================================================
+
+const EXO = { statut: null, apercu: null };
+const MOIS_EXO = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+
+function escExo(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+}
+
+function fExo(m) {
+    return formatEntier(Math.round(m || 0)) + ' F';
+}
+
+function ouvrirOngletExercice() {
+    const onglet = document.getElementById('exercice-tab');
+    if (onglet) {
+        bootstrap.Tab.getOrCreateInstance(onglet).show();
+        // l'onglet est dans le menu « Plus » : ne pas le laisser ouvert par-dessus l'aperçu
+        const menu = onglet.closest('.dropdown-menu');
+        const bouton = menu && menu.parentElement.querySelector('[data-bs-toggle="dropdown"]');
+        if (bouton) bootstrap.Dropdown.getOrCreateInstance(bouton).hide();
+        document.getElementById('exercice').scrollIntoView({block: 'start', behavior: 'smooth'});
+    }
+    chargerExercice();
+}
 
 function chargerExercice() {
     fetch('/comptabilite/api/exercice/statut')
         .then(r => r.json())
         .then(data => {
-            document.getElementById('exerciceAnneeCourante').textContent = data.annee_courante;
-            const badge = document.getElementById('exerciceStatutBadge');
-            if (data.exercice_ouvert) {
-                badge.textContent = 'Ouvert';
-                badge.className = 'badge mt-2 bg-success';
-            } else {
-                badge.textContent = 'Clôturé';
-                badge.className = 'badge mt-2 bg-secondary';
-            }
-            document.getElementById('exerciceNbEcritures').textContent = data.nb_ecritures_exercice_courant;
-            document.getElementById('exerciceNbAValider').textContent = data.nb_ecritures_a_valider;
+            EXO.statut = data;
+            const sel = document.getElementById('exerciceChoix');
+            const actuel = sel.value;
+            sel.innerHTML = (data.exercices || []).map(e => `<option value="${e.annee}">${e.annee} — ${
+                e.cloture ? 'clôturé' : (e.termine ? 'à clôturer' : 'en cours')}</option>`).join('');
+            sel.value = actuel && (data.exercices || []).some(e => String(e.annee) === actuel) ? actuel : String(data.annee_proposee);
 
             const tbody = document.getElementById('exerciceHistoriqueBody');
             if (!data.clotures || data.clotures.length === 0) {
@@ -3116,13 +3160,230 @@ function chargerExercice() {
                 tbody.innerHTML = data.clotures.map(c => `
                     <tr>
                         <td>${c.annee}</td>
-                        <td>${c.date_cloture}</td>
-                        <td>${c.created_by}</td>
+                        <td>${escExo(c.date_cloture)}</td>
+                        <td>${escExo(c.created_by)}</td>
                     </tr>
                 `).join('');
             }
+            chargerApercuExercice();
         })
         .catch(err => console.error('Erreur chargement exercice:', err));
+}
+
+function chargerApercuExercice() {
+    const annee = document.getElementById('exerciceChoix').value;
+    const zone = document.getElementById('exerciceApercu');
+    if (!annee) return;
+    zone.innerHTML = `<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i> Calcul de l'exercice ${escExo(annee)}…</div>`;
+    fetch(`/comptabilite/api/exercice/apercu?annee=${encodeURIComponent(annee)}`)
+        .then(r => r.json())
+        .then(a => {
+            if (!a.success) throw new Error(a.error || 'Erreur');
+            EXO.apercu = a;
+            zone.innerHTML = rendreApercuExercice(a);
+        })
+        .catch(err => {
+            zone.innerHTML = `<div class="alert alert-danger">Impossible de calculer l'exercice : ${escExo(err.message || err)}</div>`;
+        });
+}
+
+function basculerExo(cle) {
+    const lignes = document.querySelectorAll(`[data-exo-parent="${cle}"]`);
+    const ouvrir = lignes.length > 0 && lignes[0].classList.contains('d-none');
+    lignes.forEach(tr => tr.classList.toggle('d-none', !ouvrir));
+    const icone = document.querySelector(`[data-exo-cle="${cle}"] i`);
+    if (icone) {
+        icone.classList.toggle('fa-caret-right', !ouvrir);
+        icone.classList.toggle('fa-caret-down', ouvrir);
+    }
+}
+
+function tableauRubriquesExo(prefixe, rubriques, total, classeMontant) {
+    if (!rubriques.length) return '<p class="text-muted small mb-0 p-3">Aucun montant sur cet exercice.</p>';
+    let h = '<table class="table table-sm mb-0 exo-table"><tbody>';
+    rubriques.forEach((r, i) => {
+        const cle = `${prefixe}${i}`;
+        const part = total ? Math.round(r.total * 100 / total) : 0;
+        h += `<tr class="exo-rubrique" data-exo-cle="${cle}" onclick="basculerExo('${cle}')" title="Voir le détail par compte">
+                <td><i class="fas fa-caret-right me-2 text-muted"></i>${escExo(r.libelle)} <span class="text-muted small">(${escExo(r.code)})</span></td>
+                <td class="text-end fw-semibold ${classeMontant}">${fExo(r.total)}</td>
+                <td class="text-end text-muted small exo-part">${part} %</td>
+              </tr>`;
+        r.comptes.forEach(c => {
+            h += `<tr class="d-none small exo-compte" data-exo-parent="${cle}">
+                    <td class="ps-4">${escExo(c.numero)} — ${escExo(c.nom)}</td>
+                    <td class="text-end">${fExo(c.montant)}</td><td></td>
+                  </tr>`;
+        });
+    });
+    h += `<tr class="exo-total"><td>Total</td><td class="text-end ${classeMontant}">${fExo(total)}</td><td></td></tr></tbody></table>`;
+    return h;
+}
+
+function tuileExo(libelle, valeur, sous, classe) {
+    return `<div class="col-6 col-xl-4"><div class="exo-tuile ${classe || ''}">
+                <div class="exo-tuile-libelle">${libelle}</div>
+                <div class="exo-tuile-valeur">${valeur}</div>
+                ${sous ? `<div class="exo-tuile-sous">${sous}</div>` : ''}
+            </div></div>`;
+}
+
+function rendreApercuExercice(a) {
+    const n1 = a.n1;
+    const rappelN1 = ref => n1 ? `${a.annee - 1} : ${fExo(ref)}` : '';
+    let etat, classeEtat;
+    if (a.cloture) {
+        etat = `<i class="fas fa-lock"></i> Exercice ${a.annee} clôturé le ${escExo(a.cloture.date)} par ${escExo(a.cloture.par)}`;
+        classeEtat = 'exo-etat-cloture';
+    } else if (a.en_cours) {
+        etat = `<i class="fas fa-hourglass-half"></i> Exercice ${a.annee} en cours — situation au ${escExo(a.situation_au)}`;
+        classeEtat = 'exo-etat-cours';
+    } else {
+        etat = `<i class="fas fa-flag-checkered"></i> Exercice ${a.annee} terminé — à vérifier puis clôturer`;
+        classeEtat = 'exo-etat-termine';
+    }
+
+    const benefice = a.resultat >= 0;
+    let h = `<div class="exo-bandeau ${classeEtat}">${etat}<span class="ms-auto small">${formatEntier(a.nb_ecritures)} écritures validées · du 01/01/${a.annee} au 31/12/${a.annee}</span></div>`;
+
+    h += '<div class="row g-3 mb-3">';
+    h += tuileExo('Ce qui est rentré <span class="text-muted">(produits)</span>', fExo(a.total_produits), rappelN1(n1 && n1.total_produits), 'exo-tuile-produit');
+    h += tuileExo('Ce qui est sorti <span class="text-muted">(charges)</span>', fExo(a.total_charges), rappelN1(n1 && n1.total_charges), 'exo-tuile-charge');
+    h += tuileExo(benefice ? 'Ce qu\'on a gagné <span class="text-muted">(bénéfice)</span>' : 'Ce qu\'on a perdu <span class="text-muted">(perte)</span>',
+                  fExo(Math.abs(a.resultat)), rappelN1(n1 && n1.resultat), benefice ? 'exo-tuile-benefice' : 'exo-tuile-perte');
+    h += tuileExo('Au total en caisse et banque <span class="text-muted">(31/12)</span>', fExo(a.tresorerie.fin),
+                  `Au 01/01 : ${fExo(a.tresorerie.debut)}`, 'exo-tuile-tresorerie');
+    h += tuileExo('Ce qu\'on nous doit <span class="text-muted">(créances)</span>', fExo(a.tiers.total_creances), 'Patients, assurances, avances', '');
+    h += tuileExo('Ce que nous devons <span class="text-muted">(dettes)</span>', fExo(a.tiers.total_dettes), 'Fournisseurs, personnel, organismes, État', '');
+    h += '</div>';
+
+    h += '<div class="row g-3">';
+    // ---------- colonne gauche : activité
+    h += '<div class="col-lg-7 d-flex flex-column gap-3">';
+    h += `<div class="card exo-carte"><div class="card-header"><i class="fas fa-arrow-down text-success me-1"></i> Ce qui est rentré — produits par rubrique</div>
+            <div class="card-body p-0">${tableauRubriquesExo('p', a.produits, a.total_produits, 'text-success')}</div></div>`;
+    h += `<div class="card exo-carte"><div class="card-header"><i class="fas fa-arrow-up text-danger me-1"></i> Ce qui est sorti — charges par rubrique</div>
+            <div class="card-body p-0">${tableauRubriquesExo('c', a.charges, a.total_charges, 'text-danger')}</div></div>`;
+
+    const maxMois = Math.max(1, ...a.mensuel.map(m => Math.max(m.produits, m.charges)));
+    let mensuel = `<table class="table table-sm mb-0 exo-table exo-mensuel"><thead><tr><th>Mois</th><th class="text-end">Rentré</th>
+                   <th class="text-end">Sorti</th><th class="text-end">Résultat</th><th class="text-end">Cumul</th></tr></thead><tbody>`;
+    a.mensuel.forEach(m => {
+        const vide = !m.produits && !m.charges;
+        const largeurP = Math.round(m.produits * 100 / maxMois), largeurC = Math.round(m.charges * 100 / maxMois);
+        mensuel += `<tr class="${vide ? 'text-muted' : ''}">
+            <td>${MOIS_EXO[parseInt(m.mois.slice(5, 7), 10) - 1]}
+                ${vide ? '' : `<div class="exo-barres"><span class="exo-barre-p" style="width:${largeurP}%"></span><span class="exo-barre-c" style="width:${largeurC}%"></span></div>`}</td>
+            <td class="text-end">${vide ? '—' : fExo(m.produits)}</td>
+            <td class="text-end">${vide ? '—' : fExo(m.charges)}</td>
+            <td class="text-end fw-semibold ${m.resultat < 0 ? 'text-danger' : (vide ? '' : 'text-success')}">${vide ? '—' : fExo(m.resultat)}</td>
+            <td class="text-end">${fExo(m.cumul)}</td></tr>`;
+    });
+    mensuel += `<tr class="exo-total"><td>Année</td><td class="text-end">${fExo(a.total_produits)}</td><td class="text-end">${fExo(a.total_charges)}</td>
+                <td class="text-end ${benefice ? 'text-success' : 'text-danger'}">${fExo(a.resultat)}</td><td></td></tr></tbody></table>`;
+    h += `<div class="card exo-carte"><div class="card-header"><i class="fas fa-calendar-days me-1"></i> Mois par mois
+            <span class="exo-legende"><span class="exo-barre-p"></span> rentré <span class="exo-barre-c"></span> sorti</span></div>
+            <div class="card-body p-0 table-responsive">${mensuel}</div></div>`;
+    h += '</div>';
+
+    // ---------- colonne droite : contrôles, argent, tiers, bilan
+    h += '<div class="col-lg-5 d-flex flex-column gap-3">';
+    const icones = {ok: 'fa-circle-check text-success', attention: 'fa-triangle-exclamation text-warning', bloquant: 'fa-circle-xmark text-danger'};
+    let controles = '<ul class="list-unstyled mb-3 exo-controles">';
+    a.controles.forEach(c => {
+        controles += `<li class="exo-controle-${c.niveau}"><i class="fas ${icones[c.niveau]}"></i><div><div class="fw-semibold">${escExo(c.titre)}</div>
+                      ${c.detail ? `<div class="small text-muted">${escExo(c.detail)}</div>` : ''}</div></li>`;
+    });
+    controles += '</ul>';
+    if (a.cloture) {
+        controles += `<div class="alert alert-secondary small mb-0"><i class="fas fa-lock"></i> Exercice clôturé : les écritures de ${a.annee} sont figées.</div>`;
+    } else {
+        controles += `<button class="btn btn-danger w-100" onclick="cloturerAnnee()" ${a.peut_cloturer ? '' : 'disabled'}>
+                        <i class="fas fa-lock"></i> Clôturer l'exercice ${a.annee}</button>
+                      <div class="small text-muted mt-2">${a.peut_cloturer
+                        ? 'Tout est prêt. La clôture est définitive : vérifiez l\'aperçu, imprimez-le, puis clôturez.'
+                        : 'La clôture sera possible quand les points en rouge seront réglés. Les points en orange sont à vérifier.'}</div>`;
+    }
+    h += `<div class="card exo-carte"><div class="card-header"><i class="fas fa-list-check me-1"></i> Avant de clôturer</div>
+            <div class="card-body">${controles}</div></div>`;
+
+    let tresorerie = `<table class="table table-sm mb-0 exo-table"><thead><tr><th>Compte</th><th class="text-end">01/01</th><th class="text-end">31/12</th></tr></thead><tbody>`;
+    a.tresorerie.comptes.forEach(c => {
+        tresorerie += `<tr><td>${escExo(c.nom)}</td><td class="text-end">${fExo(c.debut)}</td><td class="text-end fw-semibold">${fExo(c.fin)}</td></tr>`;
+    });
+    tresorerie += `<tr class="exo-total"><td>Total</td><td class="text-end">${fExo(a.tresorerie.debut)}</td><td class="text-end">${fExo(a.tresorerie.fin)}</td></tr></tbody></table>
+        <div class="exo-flux">
+            <div><span class="text-muted">Au 01/01</span><strong>${fExo(a.tresorerie.debut)}</strong></div>
+            <div class="text-success"><span>+ Entrées d'argent</span><strong>${fExo(a.tresorerie.entrees)}</strong></div>
+            <div class="text-danger"><span>− Sorties d'argent</span><strong>${fExo(a.tresorerie.sorties)}</strong></div>
+            <div class="exo-flux-total"><span>= Au 31/12</span><strong>${fExo(a.tresorerie.fin)}</strong></div>
+        </div>`;
+    h += `<div class="card exo-carte"><div class="card-header"><i class="fas fa-wallet me-1"></i> Trésorerie (caisse, banque)</div>
+            <div class="card-body p-0">${tresorerie}</div></div>`;
+
+    const listeTiers = (lignes, vide) => lignes.length
+        ? lignes.map(l => `<tr><td>${escExo(l.nom || l.tiers_nom)}${l.numero ? ` <span class="text-muted small">${escExo(l.numero)}</span>` : ''}</td>
+                           <td class="text-end">${fExo(l.montant)}</td></tr>`).join('')
+        : `<tr><td colspan="2" class="text-muted small">${vide}</td></tr>`;
+    h += `<div class="card exo-carte"><div class="card-header"><i class="fas fa-hand-holding-dollar me-1"></i> Ce qu'on nous doit au 31/12</div>
+            <div class="card-body p-0"><table class="table table-sm mb-0 exo-table"><tbody>
+                ${listeTiers(a.tiers.creances, 'Aucune créance.')}
+                <tr class="exo-total"><td>Total</td><td class="text-end">${fExo(a.tiers.total_creances)}</td></tr>
+                ${a.tiers.assureurs.length ? `<tr class="exo-sous-titre"><td colspan="2">Dont assurances</td></tr>${listeTiers(a.tiers.assureurs, '')}` : ''}
+                ${a.tiers.patients_debiteurs.length ? `<tr class="exo-sous-titre"><td colspan="2">Patients qui doivent le plus</td></tr>${listeTiers(a.tiers.patients_debiteurs, '')}` : ''}
+            </tbody></table></div></div>`;
+    h += `<div class="card exo-carte"><div class="card-header"><i class="fas fa-file-invoice-dollar me-1"></i> Ce que nous devons au 31/12</div>
+            <div class="card-body p-0"><table class="table table-sm mb-0 exo-table"><tbody>
+                ${listeTiers(a.tiers.dettes, 'Aucune dette.')}
+                <tr class="exo-total"><td>Total</td><td class="text-end">${fExo(a.tiers.total_dettes)}</td></tr>
+            </tbody></table></div></div>`;
+
+    const b = a.bilan;
+    const s = a.sig;
+    h += `<div class="card exo-carte"><div class="card-header"><i class="fas fa-scale-balanced me-1"></i> Bilan au 31/12 et soldes de gestion</div>
+            <div class="card-body p-0"><table class="table table-sm mb-0 exo-table"><tbody>
+                <tr><td>Ce que possède la structure (actif)</td><td class="text-end fw-semibold">${fExo(b.total_actif)}</td></tr>
+                <tr><td>Dettes (passif)</td><td class="text-end">${fExo(b.total_passif)}</td></tr>
+                ${b.capitaux_propres.map(c => `<tr><td class="ps-4 small">${escExo(c.nom)}</td><td class="text-end small">${fExo(c.montant)}</td></tr>`).join('')}
+                <tr><td>Capitaux propres</td><td class="text-end">${fExo(b.total_capitaux)}</td></tr>
+                <tr class="exo-total"><td>${b.est_equilibre ? '<i class="fas fa-check text-success"></i> Bilan équilibré' : '<i class="fas fa-xmark text-danger"></i> Bilan déséquilibré'}</td>
+                    <td class="text-end">${fExo(b.total_passif_capitaux)}</td></tr>
+                <tr class="exo-sous-titre"><td colspan="2">Soldes intermédiaires de gestion</td></tr>
+                <tr><td>Excédent brut d'exploitation (EBE)</td><td class="text-end">${fExo(s.ebe)}</td></tr>
+                <tr><td>Résultat d'exploitation</td><td class="text-end">${fExo(s.resultat_exploitation)}</td></tr>
+                <tr><td>Résultat financier</td><td class="text-end">${fExo(s.resultat_financier)}</td></tr>
+                <tr><td>Capacité d'autofinancement (CAFG)</td><td class="text-end fw-semibold">${fExo(s.cafg)}</td></tr>
+            </tbody></table></div></div>`;
+    h += '</div></div>';
+    return h;
+}
+
+function _paramsExercice() {
+    const annee = document.getElementById('exerciceChoix').value || new Date().getFullYear();
+    return `date_debut=${annee}-01-01&date_fin=${annee}-12-31`;
+}
+
+function imprimerApercuExercice() {
+    window.open(`/comptabilite/rapport/print/exercice?${_paramsExercice()}`, '_blank', 'width=1100,height=800');
+}
+
+function _telechargerExo(url) {
+    // même procédé que exporterRapportTXT : <a download> pour ne pas déclencher le loader de navigation
+    const lien = document.createElement('a');
+    lien.href = url;
+    lien.setAttribute('download', '');
+    lien.style.display = 'none';
+    document.body.appendChild(lien);
+    lien.click();
+    document.body.removeChild(lien);
+}
+
+function exporterApercuExercice() {
+    _telechargerExo(`/comptabilite/rapport/export-txt/exercice?${_paramsExercice()}`);
+}
+
+function exporterFecExercice() {
+    _telechargerExo(`/comptabilite/rapport/export-fec?${_paramsExercice()}`);
 }
 
 

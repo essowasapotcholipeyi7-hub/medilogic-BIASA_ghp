@@ -910,6 +910,160 @@
                 </table>
             </div>
 
+        {% elif type_rapport == 'exercice' %}
+            <!-- ⭐ 2026-10-22 : ÉTATS FINANCIERS DE L'EXERCICE (aperçu avant / après clôture) -->
+            {% set mois_noms = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'] %}
+            <div class="exo-etat">
+                {% if data.cloture %}Exercice {{ data.annee }} clôturé le {{ data.cloture.date }} par {{ data.cloture.par }}
+                {% elif data.en_cours %}Exercice {{ data.annee }} en cours — situation au {{ data.situation_au }} (aperçu avant clôture)
+                {% else %}Exercice {{ data.annee }} terminé — non encore clôturé (aperçu avant clôture){% endif %}
+                · {{ mt(data.nb_ecritures) }} écritures validées
+            </div>
+            <div class="stat-boxes">
+                <div class="stat-box">
+                    <div class="number text-success">{{ mt(data.total_produits) }} F</div>
+                    <div class="label">Ce qui est rentré (produits)</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number text-danger">{{ mt(data.total_charges) }} F</div>
+                    <div class="label">Ce qui est sorti (charges)</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number {% if data.resultat >= 0 %}text-success{% else %}text-danger{% endif %}">{{ mt(data.resultat) }} F</div>
+                    <div class="label">Résultat ({{ data.resultat_text }})</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number">{{ mt(data.tresorerie.fin) }} F</div>
+                    <div class="label">Trésorerie au 31/12</div>
+                </div>
+            </div>
+
+            <div class="section-title">Synthèse</div>
+            <table>
+                <thead><tr><th>Rubrique</th><th class="text-end">Exercice {{ data.annee }}</th>{% if data.n1 %}<th class="text-end">Exercice {{ data.n1.annee }}</th>{% endif %}</tr></thead>
+                <tbody>
+                    <tr><td>Ce qui est rentré (produits)</td><td class="text-end">{{ mt(data.total_produits) }} F</td>{% if data.n1 %}<td class="text-end">{{ mt(data.n1.total_produits) }} F</td>{% endif %}</tr>
+                    <tr><td>Ce qui est sorti (charges)</td><td class="text-end">{{ mt(data.total_charges) }} F</td>{% if data.n1 %}<td class="text-end">{{ mt(data.n1.total_charges) }} F</td>{% endif %}</tr>
+                    <tr class="exo-ligne-forte"><td>Résultat ({{ data.resultat_text }})</td><td class="text-end">{{ mt(data.resultat) }} F</td>{% if data.n1 %}<td class="text-end">{{ mt(data.n1.resultat) }} F</td>{% endif %}</tr>
+                    <tr><td>Trésorerie au 01/01</td><td class="text-end">{{ mt(data.tresorerie.debut) }} F</td>{% if data.n1 %}<td></td>{% endif %}</tr>
+                    <tr><td>+ Entrées d'argent de l'année</td><td class="text-end">{{ mt(data.tresorerie.entrees) }} F</td>{% if data.n1 %}<td></td>{% endif %}</tr>
+                    <tr><td>− Sorties d'argent de l'année</td><td class="text-end">{{ mt(data.tresorerie.sorties) }} F</td>{% if data.n1 %}<td></td>{% endif %}</tr>
+                    <tr class="exo-ligne-forte"><td>= Trésorerie au 31/12 (au total)</td><td class="text-end">{{ mt(data.tresorerie.fin) }} F</td>{% if data.n1 %}<td></td>{% endif %}</tr>
+                    <tr><td>Ce qu'on nous doit (créances au 31/12)</td><td class="text-end">{{ mt(data.tiers.total_creances) }} F</td>{% if data.n1 %}<td></td>{% endif %}</tr>
+                    <tr><td>Ce que nous devons (dettes au 31/12)</td><td class="text-end">{{ mt(data.tiers.total_dettes) }} F</td>{% if data.n1 %}<td></td>{% endif %}</tr>
+                </tbody>
+            </table>
+
+            {% for titre_bloc, rubriques, total, couleur in [('Ce qui est rentré — produits', data.produits, data.total_produits, 'text-success'), ('Ce qui est sorti — charges', data.charges, data.total_charges, 'text-danger')] %}
+            <div class="section-title">{{ titre_bloc }}</div>
+            <table>
+                <thead><tr><th>Rubrique / compte</th><th class="text-end">Montant</th><th class="text-end">Part</th></tr></thead>
+                <tbody>
+                    {% for rub in rubriques %}
+                    <tr class="bg-primary-light"><td><strong>{{ rub.code }} — {{ rub.libelle }}</strong></td><td class="text-end fw-bold {{ couleur }}">{{ mt(rub.total) }} F</td>
+                        <td class="text-end">{{ ((rub.total * 100 / total) if total else 0)|round|int }} %</td></tr>
+                    {% for cpt in rub.comptes %}
+                    <tr><td style="padding-left:24px">{{ cpt.numero }} — {{ cpt.nom }}</td><td class="text-end">{{ mt(cpt.montant) }} F</td><td></td></tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr><td colspan="3" class="text-muted">Aucun montant sur cet exercice.</td></tr>
+                    {% endfor %}
+                    <tr class="exo-ligne-forte"><td>Total</td><td class="text-end">{{ mt(total) }} F</td><td></td></tr>
+                </tbody>
+            </table>
+            {% endfor %}
+
+            <div class="section-title">Mois par mois</div>
+            <table>
+                <thead><tr><th>Mois</th><th class="text-end">Rentré</th><th class="text-end">Sorti</th><th class="text-end">Résultat</th><th class="text-end">Cumul</th></tr></thead>
+                <tbody>
+                    {% for m in data.mensuel %}
+                    <tr><td>{{ mois_noms[(m.mois[5:7]|int) - 1] }}</td><td class="text-end">{{ mt(m.produits) }}</td><td class="text-end">{{ mt(m.charges) }}</td>
+                        <td class="text-end {% if m.resultat < 0 %}text-danger{% endif %}">{{ mt(m.resultat) }}</td><td class="text-end">{{ mt(m.cumul) }}</td></tr>
+                    {% endfor %}
+                    <tr class="exo-ligne-forte"><td>Année</td><td class="text-end">{{ mt(data.total_produits) }}</td><td class="text-end">{{ mt(data.total_charges) }}</td>
+                        <td class="text-end">{{ mt(data.resultat) }}</td><td></td></tr>
+                </tbody>
+            </table>
+
+            <div class="section-title">Trésorerie (caisse, banque)</div>
+            <table>
+                <thead><tr><th>Compte</th><th class="text-end">Au 01/01</th><th class="text-end">Au 31/12</th></tr></thead>
+                <tbody>
+                    {% for c in data.tresorerie.comptes %}
+                    <tr><td>{{ c.numero }} — {{ c.nom }}</td><td class="text-end">{{ mt(c.debut) }} F</td><td class="text-end">{{ mt(c.fin) }} F</td></tr>
+                    {% endfor %}
+                    <tr class="exo-ligne-forte"><td>Total</td><td class="text-end">{{ mt(data.tresorerie.debut) }} F</td><td class="text-end">{{ mt(data.tresorerie.fin) }} F</td></tr>
+                </tbody>
+            </table>
+
+            <div class="exo-deux-colonnes">
+                <div>
+                    <div class="section-title">Ce qu'on nous doit au 31/12</div>
+                    <table><tbody>
+                        {% for c in data.tiers.creances %}<tr><td>{{ c.numero }} — {{ c.nom }}</td><td class="text-end">{{ mt(c.montant) }} F</td></tr>
+                        {% else %}<tr><td colspan="2" class="text-muted">Aucune créance.</td></tr>{% endfor %}
+                        <tr class="exo-ligne-forte"><td>Total</td><td class="text-end">{{ mt(data.tiers.total_creances) }} F</td></tr>
+                        {% if data.tiers.patients_debiteurs %}
+                        <tr><td colspan="2" class="text-muted"><em>Patients qui doivent le plus</em></td></tr>
+                        {% for p in data.tiers.patients_debiteurs %}<tr><td>{{ p.nom }}</td><td class="text-end">{{ mt(p.montant) }} F</td></tr>{% endfor %}
+                        {% endif %}
+                    </tbody></table>
+                </div>
+                <div>
+                    <div class="section-title">Ce que nous devons au 31/12</div>
+                    <table><tbody>
+                        {% for c in data.tiers.dettes %}<tr><td>{{ c.numero }} — {{ c.nom }}</td><td class="text-end">{{ mt(c.montant) }} F</td></tr>
+                        {% else %}<tr><td colspan="2" class="text-muted">Aucune dette.</td></tr>{% endfor %}
+                        <tr class="exo-ligne-forte"><td>Total</td><td class="text-end">{{ mt(data.tiers.total_dettes) }} F</td></tr>
+                    </tbody></table>
+                </div>
+            </div>
+
+            <div class="section-title">Bilan au 31/12/{{ data.annee }}</div>
+            <table>
+                <thead><tr><th>Compte</th><th class="text-end">Montant</th></tr></thead>
+                <tbody>
+                    <tr class="bg-primary-light"><td colspan="2"><strong>ACTIF — ce que possède la structure</strong></td></tr>
+                    {% for c in data.bilan.actifs %}<tr><td>{{ c.numero }} — {{ c.nom }}</td><td class="text-end">{{ mt(c.montant) }} F</td></tr>{% endfor %}
+                    <tr class="exo-ligne-forte"><td>Total actif</td><td class="text-end">{{ mt(data.bilan.total_actif) }} F</td></tr>
+                    <tr class="bg-primary-light"><td colspan="2"><strong>PASSIF — dettes et capitaux propres</strong></td></tr>
+                    {% for c in data.bilan.passifs %}<tr><td>{{ c.numero }} — {{ c.nom }}</td><td class="text-end">{{ mt(c.montant) }} F</td></tr>{% endfor %}
+                    {% for c in data.bilan.capitaux_propres %}<tr><td>{{ c.numero }} — {{ c.nom }}</td><td class="text-end">{{ mt(c.montant) }} F</td></tr>{% endfor %}
+                    <tr class="exo-ligne-forte"><td>Total passif + capitaux propres {% if data.bilan.est_equilibre %}(équilibré){% else %}(DÉSÉQUILIBRÉ){% endif %}</td>
+                        <td class="text-end">{{ mt(data.bilan.total_passif_capitaux) }} F</td></tr>
+                </tbody>
+            </table>
+
+            <div class="section-title">Soldes intermédiaires de gestion</div>
+            <table><tbody>
+                <tr><td>Produits d'exploitation</td><td class="text-end">{{ mt(data.sig.produits_exploitation) }} F</td></tr>
+                <tr><td>Charges d'exploitation</td><td class="text-end">{{ mt(data.sig.charges_exploitation) }} F</td></tr>
+                <tr><td>Excédent brut d'exploitation (EBE)</td><td class="text-end">{{ mt(data.sig.ebe) }} F</td></tr>
+                <tr><td>Dotations aux amortissements et provisions</td><td class="text-end">{{ mt(data.sig.dotations_amortissements_provisions) }} F</td></tr>
+                <tr><td>Résultat d'exploitation</td><td class="text-end">{{ mt(data.sig.resultat_exploitation) }} F</td></tr>
+                <tr><td>Résultat financier</td><td class="text-end">{{ mt(data.sig.resultat_financier) }} F</td></tr>
+                <tr class="exo-ligne-forte"><td>Résultat net</td><td class="text-end">{{ mt(data.sig.resultat_net) }} F</td></tr>
+                <tr><td>Capacité d'autofinancement globale (CAFG)</td><td class="text-end">{{ mt(data.sig.cafg) }} F</td></tr>
+            </tbody></table>
+
+            <div class="section-title">Contrôles avant clôture</div>
+            <table><tbody>
+                {% for c in data.controles %}
+                <tr><td style="width:110px" class="{% if c.niveau == 'bloquant' %}text-danger{% elif c.niveau == 'attention' %}exo-attention{% else %}text-success{% endif %} fw-bold">
+                        {% if c.niveau == 'bloquant' %}BLOQUANT{% elif c.niveau == 'attention' %}À vérifier{% else %}OK{% endif %}</td>
+                    <td><strong>{{ c.titre }}</strong>{% if c.detail %}<br><span class="text-muted">{{ c.detail }}</span>{% endif %}</td></tr>
+                {% endfor %}
+            </tbody></table>
+            <style>
+                .exo-etat { text-align: center; font-size: 12px; color: #3d4f60; margin-top: -10px; }
+                .exo-ligne-forte td { font-weight: 700; background: #f1f4f9; }
+                .exo-attention { color: #b45309; }
+                .exo-deux-colonnes { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+                .section-title { margin-top: 22px; }
+                @media print { .section-title { break-after: avoid; } tr { break-inside: avoid; } }
+            </style>
+
         {% else %}
             <div class="text-center text-muted" style="padding:50px 0;">
                 <p>Aucune donnee disponible pour ce rapport</p>
