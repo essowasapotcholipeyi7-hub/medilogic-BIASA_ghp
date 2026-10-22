@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% set cacher_navigation = True %}
+
+{% block title %}Résultats regroupés — {{ demande.patient_nom }}{% endblock %}
+
+{# ⭐ 2026-10-22 (patron : « un patient qui fait NFS, CRP, GE, hépatite C… : tout en un seul fichier, une seule
+   en-tête et le logo, et pour chaque rubrique son titre ») — plusieurs comptes rendus d'un même patient
+   imprimés ensemble (services/modele_formulaire.regrouper_comptes_rendus). Même mise en page A4 que
+   resultat_imprimer.html. #}
+{% block extra_css %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<style>
+    @media print {
+        @page { size: A4; margin: 12mm; }
+        .no-print { display: none !important; }
+        body, .card, * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+        }
+    }
+    .resultat-contenu-html { font-size: 13px; }
+    .resultat-contenu-html img { max-width: 100%; }
+    .zone-a4 { max-width: 210mm; }
+    /* une analyse n'est pas coupée en deux entre deux pages quand elle tient sur une page */
+    .cr-section { break-inside: avoid; page-break-inside: avoid; }
+    @media print {
+        .zone-a4 { max-width: none !important; width: 100% !important; flex: 0 0 100% !important; padding: 0 !important; }
+        .cr-formulaire { border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
+        .cr-formulaire > .card-body { padding: 0 !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 zone-a4">
+        <div class="alert alert-info small no-print">
+            <i class="fas fa-layer-group me-1"></i>
+            {{ resultats|length }} résultats de <strong class="notranslate">{{ demande.patient_nom }}</strong> réunis en un seul document :
+            {% for d in demandes_ordre %}{{ d.acte_nom }}{% if not loop.last %} · {% endif %}{% endfor %}
+            {% if fichiers %}<br><i class="fas fa-paperclip me-1"></i>Joints en fichier (non regroupables, à imprimer à part) :
+                {% for r, d in fichiers %}<a href="{{ url_for('page_imprimer_resultat', resultat_id=r.id) }}" target="_blank">{{ d.acte_nom }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+        </div>
+        <div class="card{% if formulaire %} cr-formulaire{% endif %}" id="resultatContenu">
+            <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
+                {% if not formulaire %}
+                {# aucun compte rendu fait sur un modèle : en-tête de la clinique, comme un résultat rédigé en ligne #}
+                <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
+                    <div class="col-8">
+                        <div class="d-flex align-items-center gap-3">
+                            {% if structure.logo_url %}
+                            <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 55px; max-width: 110px; background: white; padding: 4px; border-radius: 6px;">
+                            {% endif %}
+                            <div>
+                                <h5 style="margin: 0;">{{ structure.nom or "SSoftOne v10" }}</h5>
+                                <p style="margin: 3px 0 0 0; font-size: 11px; opacity: 0.9; white-space: pre-line;">{{ structure.adresse or "" }}
+Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-4 text-end">
+                        <h6 style="margin: 0;">RÉSULTATS D'ANALYSES</h6>
+                        <p style="margin: 2px 0 0 0; font-size: 11px;">{{ dernier.created_at.strftime('%d/%m/%Y') if dernier.created_at else '' }}</p>
+                    </div>
+                </div>
+                <div style="font-size: 13px; margin-bottom: 14px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
+                    <strong>Patient :</strong> <span class="notranslate">{{ demande.patient_nom }}</span>
+                </div>
+                {% endif %}
+
+                <div class="resultat-contenu-html">{{ contenu | safe }}</div>
+
+                {% if 'mf-signatures' not in contenu %}
+                {% with resultat=dernier, demande=demande, url_signature=url_for('api_image_signature_resultat', resultat_id=dernier.id) %}{% include 'partials/signatures_resultat.html' %}{% endwith %}
+                {% endif %}
+
+                <hr>
+                <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
+                <div class="text-center mt-2"><svg id="codeBarreResultat"></svg></div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
+            <button onclick="fermerResultat()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
+        </div>
+    </div>
+</div>
+<script>
+if (window.JsBarcode) {
+    JsBarcode("#codeBarreResultat", "RES-{{ resultats|map(attribute='id')|join('-') }}", {
+        format: "CODE128", width: 1.2, height: 36, fontSize: 11, margin: 4,
+    });
+}
+function fermerResultat() {
+    window.close();
+    window.location.href = "{{ url_for('page_resultats_analyses') }}";
+}
+</script>
+{% endblock %}

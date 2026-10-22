@@ -275,3 +275,28 @@ def test_couleurs_du_theme_sombre_jamais_gardees():
     assert out.startswith('<div class="modele-formulaire">') and '!important' not in out and 'data-th-sombre' not in out
     assert 'font-weight: bold; white-space: pre-wrap' in out and 'color:#c00' in out
     assert retirer_couleurs_du_theme(out) == out
+
+
+def test_regrouper_comptes_rendus_une_seule_entete():
+    """Patron, 2026-10-22 : NFS + CRP + note libre d'un même patient en un seul document — une en-tête, un cadre
+    du patient, chaque analyse avec son titre, la signature une seule fois (celle du dernier)."""
+    from services.modele_formulaire import regrouper_comptes_rendus
+
+    def cr(titre, signataire):
+        return ('<div class="modele-formulaire"><style>.x{}</style>'
+                '<table class="mf-entete mf-entete-fixe"><tr><td><img src="banniere.jpg"></td></tr></table>'
+                '<table class="mf-identite mf-identite-bio"><tr><td>Nom : <span class="mf-valeur" data-id="patient">DOE</span>'
+                '<table><tr><td>imbriqué</td></tr></table></td></tr></table>'
+                f'<p class="mf-titre-analyse">{titre}</p><table class="mf-table"><tr><td>val</td></tr></table>'
+                '<p style="margin:0;text-align:right">Lomé, le <span class="mf-valeur" data-id="date_complete">22/10/2026</span></p>'
+                '<div class="mf-bloc-signature"><div><p style="margin:0">Le Responsable du laboratoire</p>'
+                f'<div class="mf-signatures"><div>{signataire}</div></div></div></div>'
+                '<p class="mf-pied">Merci</p></div>')
+    html = regrouper_comptes_rendus([('NFS', cr('HEMOGRAMME', 'TSL A')), ('CRP', cr('PROTEINE C REACTIVE', 'TSL B')),
+                                     ('Glycémie', '<p>Glycémie : 1,02 g/l</p>')])
+    assert html.count('banniere.jpg') == 1 and html.count('class="mf-identite') == 1 and html.count('imbriqué') == 1
+    assert html.index('banniere.jpg') < html.index('HEMOGRAMME') < html.index('PROTEINE C REACTIVE') < html.index('Glycémie : 1,02')
+    assert 'mf-titre-section' in html and '>Glycémie</p>' in html          # résultat rédigé en ligne : titre de l'acte
+    assert html.count('Responsable du laboratoire') == 1 and 'TSL B' in html and 'TSL A' not in html
+    assert html.count('data-id="date_complete"') == 1 and html.count('mf-pied') == 1
+    assert regrouper_comptes_rendus([]) == ''

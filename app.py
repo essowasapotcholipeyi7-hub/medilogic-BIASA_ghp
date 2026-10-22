@@ -16044,6 +16044,48 @@ def page_imprimer_resultat(resultat_id):
     return render_template('resultat_imprimer.html', resultat=resultat, demande=demande, structure=structure_info, patient_email=patient_email)
 
 
+@app.route('/resultats-analyses/regroupes')
+@login_required
+def page_imprimer_resultats_regroupes():
+    """⭐ 2026-10-22 (patron : « un patient qui fait NFS, CRP, GE, hépatite C… : tout regrouper en un seul
+    fichier, une seule en-tête et le logo, et pour chaque rubrique son titre ») — ?ids=12,15,18 : résultats
+    d'un MÊME patient, dans l'ordre donné, réunis par services/modele_formulaire.regrouper_comptes_rendus.
+    Un résultat joint en fichier (PDF, Word…) ne peut pas être fondu dans le document : il est signalé,
+    avec son lien, à imprimer à part."""
+    from services.modele_formulaire import regrouper_comptes_rendus
+    structure_id = session.get('structure_id')
+    ids = []
+    for x in (request.args.get('ids') or '').split(','):
+        if x.strip().isdigit() and int(x) not in ids:
+            ids.append(int(x))
+    trouves = ResultatExamen.query.filter(ResultatExamen.id.in_(ids), ResultatExamen.structure_id == structure_id).all() if ids else []
+    par_id = {r.id: r for r in trouves}
+    resultats = [par_id[i] for i in ids if i in par_id]
+    if len(resultats) < 2:
+        flash('Choisissez au moins deux résultats à regrouper.', 'warning')
+        return redirect(url_for('page_resultats_analyses'))
+    demandes = {d.id: d for d in DemandeExamen.query.filter(DemandeExamen.id.in_([r.demande_id for r in resultats])).all()}
+    if len({demandes[r.demande_id].patient_id for r in resultats}) != 1:
+        flash("Les résultats regroupés doivent être ceux d'un même patient.", 'warning')
+        return redirect(url_for('page_resultats_analyses'))
+    sections, fichiers = [], []
+    for r in resultats:
+        d = demandes[r.demande_id]
+        if r.contenu_html:
+            sections.append((d.acte_nom, filtre_mise_en_page_cr(r.contenu_html)))
+        else:
+            fichiers.append((r, d))
+    contenu = regrouper_comptes_rendus(sections)
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+    structure_info['adresse'] = sheets_helper.format_adresse(structure_info.get('adresse', ''))
+    avec_contenu = [r for r in resultats if r.contenu_html] or resultats
+    return render_template('resultats_regroupes_imprimer.html', contenu=contenu, resultats=resultats,
+                           demandes_ordre=[demandes[r.demande_id] for r in resultats], fichiers=fichiers,
+                           demande=demandes[resultats[0].demande_id], dernier=avec_contenu[-1],
+                           formulaire='mf-entete' in contenu, structure=structure_info)
+
+
 def _generer_pdf_resultat_texte_ghp(resultat, demande):
     """Construit un PDF (contenu rédigé en ligne) via reportlab — PUR
     PYTHON, sans binaire externe, même principe que côté gestion_patients

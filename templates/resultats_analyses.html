@@ -40,17 +40,27 @@
             <span class="input-group-text bg-white"><i class="fas fa-search"></i></span>
             <input type="text" class="form-control" id="rechercheResultats" placeholder="Rechercher un patient, un acte, un interprète..." oninput="filtrerResultats()">
         </div>
+        <div class="small text-muted mt-1"><i class="fas fa-layer-group me-1"></i>Plusieurs analyses d'un même patient dans un seul document : cochez-les (ou bouton <i class="fas fa-layer-group"></i> sur une ligne), puis « Imprimer ensemble ».</div>
+    </div>
+    {# ⭐ 2026-10-22 (patron : « NFS, CRP, GE, hépatite C… en un seul fichier, une seule en-tête ») #}
+    <div id="barreRegroupement" class="alert alert-primary rounded-0 mb-0 py-2 d-flex flex-wrap align-items-center gap-2" style="display:none !important;">
+        <span><i class="fas fa-layer-group me-1"></i><strong id="nbRegroupement">0</strong> résultat(s) coché(s)</span>
+        <span class="small" id="aideRegroupement"></span>
+        <span class="ms-auto d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-primary" id="btnRegrouper" onclick="imprimerRegroupes()"><i class="fas fa-print me-1"></i>Imprimer ensemble</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="viderRegroupement()">Tout décocher</button>
+        </span>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th>Patient</th><th>Acte</th><th>Filière</th><th>Résultat</th><th>Interprète</th><th></th>
+                        <th style="width:34px" title="Cocher pour regrouper"><i class="fas fa-layer-group text-muted"></i></th><th>Patient</th><th>Acte</th><th>Filière</th><th>Résultat</th><th>Interprète</th><th></th>
                     </tr>
                 </thead>
                 <tbody id="corpsResultats">
-                    <tr><td colspan="6" class="text-center text-muted py-4">Chargement...</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted py-4">Chargement...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -1050,6 +1060,49 @@ async function enregistrerResultat() {
 
 let TOUS_RESULTATS = [];
 
+// ⭐ 2026-10-22 (patron) : résultats cochés pour être imprimés ensemble (un même patient) — gardés quand on
+// change la recherche ; « Imprimer ensemble » ouvre un seul document (une en-tête, chaque analyse avec son titre)
+const RESULTATS_COCHES = new Set();
+function _jourResultat(l) { return (l.date_resultat || '').slice(0, 10); }
+function _resultatsDuJour(l) {
+    return TOUS_RESULTATS.filter(x => x.resultat_id && x.patient_id === l.patient_id && x.type_prestation === l.type_prestation
+                                   && _jourResultat(x) === _jourResultat(l));
+}
+function cocherResultat(id, coche) {
+    if (coche) RESULTATS_COCHES.add(id); else RESULTATS_COCHES.delete(id);
+    majBarreRegroupement();
+}
+function regrouperDuJour(id) {
+    const l = TOUS_RESULTATS.find(x => x.resultat_id === id);
+    if (!l) return;
+    RESULTATS_COCHES.clear();
+    _resultatsDuJour(l).forEach(x => RESULTATS_COCHES.add(x.resultat_id));
+    filtrerResultats();
+    majBarreRegroupement();
+}
+function viderRegroupement() {
+    RESULTATS_COCHES.clear();
+    filtrerResultats();
+    majBarreRegroupement();
+}
+function majBarreRegroupement() {
+    const choisis = TOUS_RESULTATS.filter(l => l.resultat_id && RESULTATS_COCHES.has(l.resultat_id));
+    const patients = new Set(choisis.map(l => l.patient_id));
+    const barre = document.getElementById('barreRegroupement');
+    barre.style.setProperty('display', choisis.length ? 'flex' : 'none', 'important');
+    document.getElementById('nbRegroupement').textContent = choisis.length;
+    document.getElementById('btnRegrouper').disabled = !(choisis.length >= 2 && patients.size === 1);
+    const aide = document.getElementById('aideRegroupement');
+    if (patients.size > 1) aide.textContent = "Ces résultats sont de patients différents : ne cochez que ceux d'un même patient.";
+    else if (choisis.length < 2) aide.textContent = 'Cochez au moins un autre résultat de ce patient.';
+    else aide.textContent = `${choisis[0].patient_nom} : ${choisis.map(l => l.acte_nom).join(' · ')}`;
+}
+function imprimerRegroupes() {
+    const ids = TOUS_RESULTATS.filter(l => l.resultat_id && RESULTATS_COCHES.has(l.resultat_id)).map(l => l.resultat_id);
+    if (ids.length < 2) return;
+    window.open('/resultats-analyses/regroupes?ids=' + ids.join(','), '_blank');
+}
+
 function chargerResultats() {
     fetch('/api/resultats-analyses').then(r => r.json()).then(lignes => {
         TOUS_RESULTATS = lignes;
@@ -1068,7 +1121,7 @@ function filtrerResultats() {
         document.getElementById('totalResultats').textContent = lignes.length;
         const corps = document.getElementById('corpsResultats');
         if (!lignes.length) {
-            corps.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucun acte réalisé.</td></tr>';
+            corps.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Aucun acte réalisé.</td></tr>';
             return;
         }
         corps.innerHTML = lignes.map(l => {
@@ -1080,7 +1133,9 @@ function filtrerResultats() {
                              || ROLE === 'admin' || ROLE === 'medecin' || ROLE === 'secretaire';
             let actions;
             if (l.resultat_id) {
+                const memeJour = _resultatsDuJour(l).length;
                 actions = `
+                    ${memeJour > 1 ? `<button class="btn btn-sm btn-outline-primary" onclick="regrouperDuJour(${l.resultat_id})" title="Regrouper les ${memeJour} résultats de ce patient du même jour"><i class="fas fa-layer-group"></i></button>` : ''}
                     <a href="/resultats-analyses/${l.resultat_id}/imprimer" target="_blank" class="btn btn-sm btn-outline-primary" title="Imprimer"><i class="fas fa-print"></i></a>
                     ${l.a_fichier ? `<a href="/api/resultats-analyses/${l.resultat_id}/fichier" target="_blank" class="btn btn-sm btn-outline-secondary" title="Voir le fichier"><i class="fas fa-eye"></i></a>` : ''}
                     <button class="btn btn-sm btn-outline-success" onclick='envoyerResultatEmail(${l.resultat_id}, ${JSON.stringify(l.patient_nom).replace(/'/g, "&apos;")})' title="Envoyer par email"><i class="fas fa-envelope"></i></button>
@@ -1091,8 +1146,12 @@ function filtrerResultats() {
             } else {
                 actions = '<span class="text-muted small">En attente de saisie</span>';
             }
+            const caseRegroupement = l.resultat_id
+                ? `<input type="checkbox" class="form-check-input" ${RESULTATS_COCHES.has(l.resultat_id) ? 'checked' : ''} onchange="cocherResultat(${l.resultat_id}, this.checked)" title="Cocher pour imprimer avec d'autres résultats de ce patient">`
+                : '';
             return `
                 <tr>
+                    <td>${caseRegroupement}</td>
                     <td><strong><span class="notranslate">${l.patient_nom}</span></strong></td>
                     <td>${l.acte_nom}</td>
                     <td>${filiereBadge}</td>

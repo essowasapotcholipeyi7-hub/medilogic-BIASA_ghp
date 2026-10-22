@@ -1513,3 +1513,76 @@ def retirer_couleurs_du_theme(html):
         decl = [d.strip() for d in m.group(2).split(';') if d.strip() and not _DECL_THEME.match(d)]
         return f'{m.group(1)}style="{"; ".join(decl)}"' if decl else m.group(1).rstrip()
     return re.sub(r'(<[a-zA-Z][^>]*?\s)style="([^"]*!\s*important[^"]*)"', style, html)
+
+
+# ============================================================
+# ⭐ 2026-10-22 (patron : « un patient qui fait NFS, CRP, GE, hépatite C… : tout regrouper en un seul fichier,
+# avec une seule en-tête et le logo, et pour chaque rubrique son titre ») — comptes rendus de plusieurs
+# analyses d'un même patient réunis en un seul document : l'en-tête et le cadre du patient du premier
+# compte rendu fait sur un modèle, puis chaque analyse (son titre, ses résultats), la signature et le pied
+# de page une seule fois, à la fin.
+# ============================================================
+def _fin_balise(html, debut, balise):
+    """Indice de fin de l'élément <balise> ouvert à `debut` (éléments imbriqués de même nom compris)."""
+    profondeur = 0
+    for m in re.finditer(rf'<{balise}\b|</{balise}>', html[debut:]):
+        profondeur += 1 if not m.group(0).startswith('</') else -1
+        if profondeur == 0:
+            return debut + m.end()
+    return len(html)
+
+
+def _extraire(html, motif, balise):
+    """(élément trouvé, html sans lui) — premier élément dont la balise ouvrante correspond à `motif`."""
+    m = re.search(motif, html)
+    if not m:
+        return '', html
+    fin = _fin_balise(html, m.start(), balise)
+    return html[m.start():fin], html[:m.start()] + html[fin:]
+
+
+def regrouper_comptes_rendus(sections):
+    """sections : [(titre de l'analyse, HTML du compte rendu)] dans l'ordre voulu -> HTML d'un seul document."""
+    if not sections:
+        return ''
+    haut, style, corps = '', '', []
+    for titre, html in sections:
+        html = html or ''
+        if 'mf-entete' in html:
+            entete, html = _extraire(html, r'<table class="mf-entete\b[^"]*"', 'table')
+            identite, html = _extraire(html, r'<table class="mf-identite\b[^"]*"', 'table')
+            if not haut:
+                m = re.search(r'<style>.*?</style>', html, flags=re.S)
+                style = m.group(0) if m else ''
+                haut = entete + identite
+            html = re.sub(r'<div style="border-top:1\.5px solid #000;margin:2px 0 10px"></div>', '', html, count=1)
+            corps.append({'html': html, 'formulaire': True, 'titre': titre})
+        else:
+            corps.append({'html': f'<p class="mf-titre-section" style="margin:14px 0 6px;font-weight:bold;font-size:13pt;'
+                                  f'text-decoration:underline">{escape(titre)}</p>' + html, 'formulaire': False, 'titre': titre})
+    # signature et pied de page : seulement ceux du dernier compte rendu qui en a
+    avec_signature = [i for i, c in enumerate(corps) if 'mf-bloc-signature' in c['html'] or 'mf-signatures' in c['html']]
+    avec_pied = [i for i, c in enumerate(corps) if 'mf-pied' in c['html']]
+    for i, c in enumerate(corps):
+        h = c['html']
+        if avec_signature and i != avec_signature[-1]:
+            bloc, h2 = _extraire(h, r'<div class="mf-bloc-signature\b', 'div')
+            if not bloc:
+                bloc, h2 = _extraire(h, r'<div class="mf-signatures\b', 'div')
+            h = h2
+            # « Lomé, le [date] » et la mention « Le Responsable du laboratoire » restées seules : retirées (la
+            # dernière occurrence, celle qui accompagne la signature)
+            for motif in (r'<p\b[^>]*>(?:(?!</p>).)*data-id="date_complete"(?:(?!</p>).)*</p>',
+                          r'<p\b[^>]*>(?:(?!</p>).)*\ble\s+(?:radiologue|laboratoire|biologiste|responsable\s+du\s+laboratoire)\b(?:(?!</p>).)*</p>'):
+                trouves = list(re.finditer(motif, h, flags=re.S | re.I))
+                if trouves:
+                    h = h[:trouves[-1].start()] + h[trouves[-1].end():]
+        if avec_pied and i != avec_pied[-1]:
+            h = re.sub(r'<p class="mf-pied\b.*?</p>', '', h, flags=re.S)
+        c['html'] = h
+    separateur = '<div class="mf-separateur-section" style="border-top:1px dashed #999;margin:14px 0 10px"></div>'
+    morceaux = []
+    for k, c in enumerate(corps):
+        morceaux.append(('' if k == 0 else separateur) + f'<div class="cr-section">{c["html"]}</div>')
+    tete = f'<div class="modele-formulaire">{style}{haut}</div>' if haut else ''
+    return tete + ''.join(morceaux)
