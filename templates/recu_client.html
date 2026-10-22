@@ -136,6 +136,9 @@
 
     }
 
+    /* ⭐ 2026-10-22 : montants des totaux jamais coupés en deux (« - 70962 » / « FCFA ») */
+    #recuContenu div[style*="space-between"] > span:last-child { white-space: nowrap; padding-left: 6px; text-align: right; }
+    #recuContenu div[style*="space-between"] { gap: 4px; }
     @media screen {
         body {
             background: #e9ecef;
@@ -303,35 +306,21 @@
                 <!-- ⭐ Ticket 80mm : ancien en-tête d'origine, inchangé
                      (patron : "remet l'ancien format ticket à sa place en
                      tenant juste compte detaille et cumulé"). -->
-                <div class="row" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin: -20px -20px 15px -20px; padding: 15px; border-radius: 10px 10px 0 0;">
-                    <div class="col-7">
-                        <div class="d-flex align-items-center gap-3">
-                            {% if structure_logo %}
-                            <img src="{{ structure_logo }}" alt="Logo" style="max-height: 60px; max-width: 120px; background: white; padding: 4px; border-radius: 6px;">
-                            {% endif %}
-                            <div>
-                                <h4 style="margin: 0; font-size: 14px;">{{ structure_nom or "SSoftone v10" }}</h4>
-                                <p style="margin: 3px 0 0 0; font-size: 9px; opacity: 0.9; white-space: pre-line;">
-                                    {{ structure_adresse or "" }}
-                                    Tél: {{ structure_telephone or "" }} | Email: {{ structure_email or "" }}
-                                </p>
-                            </div>
-                        </div>
+                {# ⭐ 2026-10-22 (patron : « il faudrait améliorer ») : ticket sur une seule colonne, centrée — le nom
+                   de la structure et le bloc « REÇU / N° / Date » côte à côte se tassaient sur 80 mm #}
+                <div class="ticket-entete" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin: -20px -20px 10px -20px; padding: 12px 10px 10px; border-radius: 10px 10px 0 0; text-align: center;">
+                    {% if structure_logo %}
+                    <img src="{{ structure_logo }}" alt="Logo" style="max-height: 46px; max-width: 120px; background: white; padding: 3px; border-radius: 6px; display: block; margin: 0 auto 4px;">
+                    {% endif %}
+                    <div style="font-size: 14px; font-weight: 700; line-height: 1.2;">{{ structure_nom or "SSoftone v10" }}</div>
+                    <div style="margin-top: 2px; font-size: 9px; opacity: 0.9; line-height: 1.3;">
+                        {% if structure_adresse %}{{ structure_adresse }}<br>{% endif %}
+                        Tél : {{ structure_telephone or "" }}{% if structure_email %} · {{ structure_email }}{% endif %}
                     </div>
-                    <div class="col-5 text-end">
-                        <h2 style="font-size: 14px; margin: 0;">REÇU</h2>
-                        {% if mode_detail == 'cumule' %}
-                        <p style="margin: 1px 0 0 0; font-size: 9px; opacity: 0.9;">Récapitulatif par catégorie</p>
-                        {% endif %}
-                        {% if type_vente == 'pharmacie' or type_vente == 'pharma' %}
-                        <p style="margin: 1px 0 0 0; font-size: 10px; font-weight: 600; letter-spacing: 0.5px;">PHARMACIE</p>
-                        {% elif type_vente == 'mixte' %}
-                        <p style="margin: 1px 0 0 0; font-size: 10px; font-weight: 600; letter-spacing: 0.5px;">ACTES & PHARMACIE</p>
-                        {% elif type_vente == 'actes' %}
-                        <p style="margin: 1px 0 0 0; font-size: 10px; font-weight: 600; letter-spacing: 0.5px;">ACTES MÉDICAUX</p>
-                        {% endif %}
-                        <p style="margin: 2px 0 0 0; font-size: 10px;">N° {{ "%06d" % numero_local_vente }}</p>
-                        <p style="font-size: 9px;">Date: {{ date_actuelle or "" }}</p>
+                    <div class="ticket-titre" style="margin: 7px 0 0; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,.6);">
+                        <div style="font-size: 13px; font-weight: 800; letter-spacing: .5px;">REÇU{% if type_vente == 'pharmacie' or type_vente == 'pharma' %} · PHARMACIE{% elif type_vente == 'mixte' %} · ACTES & PHARMACIE{% elif type_vente == 'actes' %} · ACTES MÉDICAUX{% endif %}</div>
+                        {% if mode_detail == 'cumule' %}<div style="font-size: 9px;">Récapitulatif par catégorie</div>{% endif %}
+                        <div style="font-size: 10px; margin-top: 1px;">N° {{ "%06d" % numero_local_vente }} — {{ date_actuelle or "" }}</div>
                     </div>
                 </div>
                 {% else %}
@@ -417,7 +406,11 @@
     <span style="color: #17a2b8; font-size: 8px;">(appliquée)</span><br>
     {% endif %}
     
-    <strong>Paiement :</strong> {{ mode_paiement }}
+    {# ⭐ 2026-10-22 : « Espèces », « Mixx by Yas (T-Money) »… au lieu de « especes », « Mixx_By_Yas » #}
+    {% set _modes = {'especes': 'Espèces', 'carte': 'Carte bancaire', 'cheque': 'Chèque', 'virement': 'Virement',
+                     'moov_money': 'Flooz (Moov Money)', 'flooz': 'Flooz (Moov Money)', 'mixx_by_yas': 'Mixx by Yas (T-Money)',
+                     'tmoney': 'Mixx by Yas (T-Money)', 'mobile_money': 'Mobile Money'} %}
+    <strong>Paiement :</strong> {{ _modes.get((mode_paiement or 'especes')|lower, mode_paiement) }}
 </div>
 
 <!-- TABLEAU DES ARTICLES -->
@@ -448,6 +441,31 @@
             <td style="padding:4px; font-size:9px;">{{ ligne.nom }}</td>
             <td style="text-align:center; font-size:9px;">{{ ligne.quantite|round(0)|int }}</td>
             <td style="text-align:right; font-weight:600; font-size:9px;">{{ ligne.total|round(0)|int }} F</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% elif format == '80mm' %}
+{# ⭐ 2026-10-22 (patron) : sur 80 mm, six colonnes (article, date, qté, prix, PBR, total) ne tiennent pas — la
+   colonne Total sortait du ticket et les noms d'actes s'étalaient sur 4 lignes. Chaque article sur deux
+   lignes : son nom et son total à droite, puis « date · qté × prix · PBR » sur toute la largeur. #}
+<table class="ticket-articles" style="width:100%; border-collapse: collapse; font-size: 10px;">
+    <thead>
+        <tr style="border-bottom: 1.5px solid #000;">
+            <th style="padding:3px 2px; text-align:left;">Article</th>
+            <th style="padding:3px 2px; text-align:right;">Total</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for article in articles %}
+        <tr>
+            <td style="padding:4px 2px 0; font-size:10px; font-weight:700; line-height:1.2;">{{ article.nom|sans_code }}</td>
+            <td style="padding:4px 2px 0 6px; text-align:right; font-size:10px; font-weight:700; white-space:nowrap; vertical-align:top;">{{ article.total|default(0)|round(0)|int }} F</td>
+        </tr>
+        <tr style="border-bottom:1px dashed #999;">
+            <td colspan="2" style="padding:1px 2px 4px; font-size:9px;">
+                {% if a_dates_prestation and article.date_prestation_affichee %}{{ article.date_prestation_affichee }} · {% endif %}{{ article.quantite }} × {{ article.prix_unitaire|default(0)|round(0)|int }} F{% if patient_amu %} · PBR {% if article.prise_en_charge_amu == false %}0{% elif article.pbr and article.pbr > 0 %}{{ article.pbr|round(0)|int }} F{% else %}-{% endif %}{% endif %}
+            </td>
         </tr>
         {% endfor %}
     </tbody>
