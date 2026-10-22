@@ -1012,7 +1012,9 @@ def docx_compte_rendu_libre(data):
 # ⭐ 2026-10-19 (patron) : signature(s) apposée(s) LÀ OÙ le compte rendu dit « Le Radiologue » (ou « Le
 # Laboratoire » / « Le Biologiste ») — sous la dernière ligne qui le dit ; rien si le texte ne le dit pas
 # (l'impression ajoute alors son bloc de signature habituel en bas).
-_LIGNE_SIGNATURE = re.compile(r'\ble\s+(radiologue|laboratoire|biologiste|m[ée]decin\s+radiologue)\b', re.I)
+# ⭐ 2026-10-22 : « Le Responsable du laboratoire » (biologie du Cabinet Médical Elite)
+_LIGNE_SIGNATURE = re.compile(r'\ble\s+(radiologue|laboratoire|biologiste|m[ée]decin\s+radiologue|responsable\s+du\s+laboratoire)\b',
+                              re.I)
 
 
 def apposer_signatures(html, signataires):

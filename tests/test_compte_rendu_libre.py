@@ -91,6 +91,15 @@ def test_signatures_apposees_sous_le_radiologue():
     assert apposer_signatures('<p>Résultat sans mention</p>', sg) == '<p>Résultat sans mention</p>'
 
 
+def test_signatures_apposees_sous_le_responsable_du_laboratoire():
+    """Biologie du Cabinet Médical Elite (2026-10-22) : « Le Responsable du laboratoire »."""
+    from services.modele_formulaire import apposer_signatures
+    html = ('<div class="modele-formulaire"><p>Lomé, le 22/10/2026</p>'
+            '<p class="mf-signature">Le Responsable du laboratoire</p><p>Fin</p></div>')
+    out = apposer_signatures(html, [{'nom': 'TSL X', 'titre': '', 'mime': '', 'image': ''}])
+    assert out.index('Responsable du laboratoire') < out.index('mf-signatures') < out.index('Fin')
+
+
 def test_mise_en_page_comme_le_word_de_valeo():
     """Patron, 2026-10-20 (photo du Word) : date à droite, « Examen réalisé sur » sous le titre, nom du
     radiologue centré sous « Le Radiologue » — à l'ouverture du modèle comme sur un compte rendu enregistré."""
