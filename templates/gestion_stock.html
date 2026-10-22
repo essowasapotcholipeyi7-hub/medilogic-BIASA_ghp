@@ -20,6 +20,11 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
+                <button class="nav-link" id="situation-tab" data-bs-toggle="tab" data-bs-target="#situationPeriodique" type="button" role="tab" onclick="chargerSituationPeriodique()">
+                    <i class="fas fa-calendar-alt"></i> Situation périodique
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
                 <button class="nav-link" id="inventaire-tab" data-bs-toggle="tab" data-bs-target="#inventaireProduits" type="button" role="tab" onclick="chargerInventaire()">
                     <i class="fas fa-clipboard-check"></i> Inventaire
                 </button>
@@ -315,12 +320,152 @@
                 </div>
             </div>
 
+            <!-- ========== ⭐ ONGLET SITUATION PÉRIODIQUE (médicaments, patron 2026-10-22) ==========
+                 Stock initial / entrées / sorties / stock final / ventes / valeur sur la période choisie.
+                 Calcul : /api/produits/situation-periodique (services/situation_periodique.py). -->
+            <div class="tab-pane fade" id="situationPeriodique" role="tabpanel">
+                <div class="card">
+                    <div class="card-header text-white d-flex justify-content-between align-items-center flex-wrap gap-2" style="background:#5b3e96;">
+                        <h5 class="mb-0"><i class="fas fa-calendar-alt"></i> Situation périodique des médicaments</h5>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button class="btn btn-light btn-sm" onclick="spVersInventaire()" title="Aller à l'inventaire physique">
+                                <i class="fas fa-clipboard-check"></i> Inventaire
+                            </button>
+                            <button class="btn btn-light btn-sm" onclick="spVersVentesParJour()" title="Ventes de médicaments jour par jour, sur la même période">
+                                <i class="fas fa-pills"></i> Historique par jour
+                            </button>
+                            <button class="btn btn-light btn-sm" onclick="spVersMouvements()" title="Tous les mouvements (entrées / sorties) de la période">
+                                <i class="fas fa-exchange-alt"></i> Mouvements de la période
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Période -->
+                        <div class="row g-2 align-items-end mb-2">
+                            <div class="col-auto">
+                                <label class="form-label small mb-1">Du</label>
+                                <input type="date" class="form-control form-control-sm" id="spDateDebut" onchange="chargerSituationPeriodique()">
+                            </div>
+                            <div class="col-auto">
+                                <label class="form-label small mb-1">Au</label>
+                                <input type="date" class="form-control form-control-sm" id="spDateFin" onchange="chargerSituationPeriodique()">
+                            </div>
+                            <div class="col-auto">
+                                <label class="form-label small mb-1">Valeur au</label>
+                                <select class="form-select form-select-sm" id="spBasePrix" onchange="chargerSituationPeriodique()">
+                                    <option value="vente">Prix de vente</option>
+                                    <option value="achat">Prix d'achat</option>
+                                </select>
+                            </div>
+                            <div class="col">
+                                <div class="d-flex flex-wrap gap-1" role="group" aria-label="Raccourcis de période">
+                                    <button class="btn btn-sm btn-light border" onclick="spRaccourci('jour')">Aujourd'hui</button>
+                                    <button class="btn btn-sm btn-light border" onclick="spRaccourci('hier')">Hier</button>
+                                    <button class="btn btn-sm btn-light border" onclick="spRaccourci('semaine')">Cette semaine</button>
+                                    <button class="btn btn-sm btn-light border" onclick="spRaccourci('mois')">Ce mois</button>
+                                    <button class="btn btn-sm btn-light border" onclick="spRaccourci('mois_precedent')">Mois précédent</button>
+                                    <button class="btn btn-sm btn-light border" onclick="spRaccourci('annee')">Cette année</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="small text-muted mb-3">Pour une date donnée, mettez le même jour dans « Du » et « Au » (ou cliquez « Aujourd'hui »).</div>
+                        <div id="spNote" class="alert alert-warning small py-2" hidden></div>
+
+                        <!-- Synthèse -->
+                        <div class="row g-2 mb-3" id="spSynthese">
+                            <div class="col-6 col-md">
+                                <div class="card border-0 shadow-sm h-100 bg-light"><div class="card-body text-center py-2">
+                                    <div class="fw-bold fs-5" id="spValInitial">—</div><small class="text-muted">Valeur du stock au début</small>
+                                </div></div>
+                            </div>
+                            <div class="col-6 col-md">
+                                <div class="card border-0 shadow-sm h-100 bg-success bg-opacity-10"><div class="card-body text-center py-2">
+                                    <div class="fw-bold fs-5 text-success" id="spValEntrees">—</div><small class="text-muted">Entrées (<span id="spQteEntrees">0</span> unités)</small>
+                                </div></div>
+                            </div>
+                            <div class="col-6 col-md">
+                                <div class="card border-0 shadow-sm h-100 bg-danger bg-opacity-10"><div class="card-body text-center py-2">
+                                    <div class="fw-bold fs-5 text-danger" id="spValSorties">—</div><small class="text-muted">Sorties (<span id="spQteSorties">0</span> unités)</small>
+                                </div></div>
+                            </div>
+                            <div class="col-6 col-md">
+                                <div class="card border-0 shadow-sm h-100 bg-primary bg-opacity-10"><div class="card-body text-center py-2">
+                                    <div class="fw-bold fs-5 text-primary" id="spValFinal">—</div><small class="text-muted">Valeur du stock à la fin</small>
+                                </div></div>
+                            </div>
+                            <div class="col-12 col-md">
+                                <div class="card border-0 shadow-sm h-100 bg-warning bg-opacity-10"><div class="card-body text-center py-2">
+                                    <div class="fw-bold fs-5" id="spMontantVentes">—</div><small class="text-muted">Montant des ventes (prix facturés)</small>
+                                </div></div>
+                            </div>
+                        </div>
+
+                        <!-- Filtres + exports -->
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <input type="text" class="form-control form-control-sm" id="spRecherche" placeholder="Rechercher un médicament..." style="max-width:230px;" oninput="spPage = 1; rendreSituationPeriodique()">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="spSeulementBouges" onchange="spPage = 1; rendreSituationPeriodique()">
+                                    <label class="form-check-label small" for="spSeulementBouges">Seulement ceux qui ont bougé</label>
+                                </div>
+                                <select class="form-select form-select-sm" id="spTri" style="width:auto;" onchange="spPage = 1; rendreSituationPeriodique()">
+                                    <option value="nom">Trier : nom</option>
+                                    <option value="sorties">Trier : plus de sorties</option>
+                                    <option value="montant_ventes">Trier : plus gros montant de ventes</option>
+                                    <option value="valeur_final">Trier : plus grosse valeur en stock</option>
+                                </select>
+                            </div>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button class="btn btn-light border btn-sm" onclick="spApercu()"><i class="fas fa-eye"></i> Aperçu / Imprimer</button>
+                                <button class="btn btn-outline-danger btn-sm" onclick="spExporter('pdf')"><i class="fas fa-file-pdf"></i> PDF</button>
+                                <button class="btn btn-light border btn-sm" onclick="spExporter('texte')"><i class="fas fa-file-alt"></i> Texte</button>
+                                <button class="btn btn-outline-success btn-sm" onclick="spExporter('csv')"><i class="fas fa-file-csv"></i> CSV</button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0" id="spTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Médicament</th>
+                                        <th class="text-end" title="Stock au début de la période">Stock initial</th>
+                                        <th class="text-end" title="Approvisionnements, écarts d'inventaire positifs, créations">Entrées</th>
+                                        <th class="text-end" title="Ventes (hors ventes annulées), écarts d'inventaire négatifs, suppressions">Sorties</th>
+                                        <th class="text-end" title="Stock à la fin de la période">Stock final</th>
+                                        <th class="text-end" title="Prix réellement facturés sur la période">Montant des ventes</th>
+                                        <th class="text-end" id="spEntetePrix">Prix unitaire</th>
+                                        <th class="text-end">Valeur du stock</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="spBody"><tr><td colspan="9" class="text-center text-muted">Choisissez une période.</td></tr></tbody>
+                                <tfoot id="spFoot"></tfoot>
+                            </table>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2">
+                            <div class="small text-muted">Stock final = stock initial + entrées − sorties. Cliquez sur un médicament pour voir chaque vente et chaque mouvement.</div>
+                            <div class="d-flex align-items-center gap-2">
+                                <select class="form-select form-select-sm" id="spParPage" style="width:auto;" onchange="spPage = 1; rendreSituationPeriodique()" title="Médicaments par page">
+                                    <option value="10">10 / page</option>
+                                    <option value="20" selected>20 / page</option>
+                                    <option value="50">50 / page</option>
+                                </select>
+                                <div id="spPagination" class="d-flex align-items-center gap-2"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- ========== ONGLET INVENTAIRE ========== -->
             <div class="tab-pane fade" id="inventaireProduits" role="tabpanel">
                 <div class="card">
                     <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h5><i class="fas fa-clipboard-check"></i> Inventaire physique</h5>
                         <div>
+                            <button class="btn btn-warning btn-sm me-2" onclick="versSituationPeriodique()" title="Stock initial, entrées, sorties, stock final et valeur sur une période">
+                                <i class="fas fa-calendar-alt"></i> Situation périodique
+                            </button>
                             <button class="btn btn-light btn-sm me-2" onclick="imprimerFeuilleComptage()" title="Liste à imprimer pour aller compter : stock système + colonnes vides à remplir">
                                 <i class="fas fa-print"></i> Feuille de comptage
                             </button>
@@ -392,6 +537,11 @@
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" data-bs-toggle="pill" data-bs-target="#sousMouvements" type="button" role="tab">
                             <i class="fas fa-exchange-alt"></i> Mouvements de stock (entrées / sorties)
+                        </button>
+                    </li>
+                    <li class="nav-item ms-auto">
+                        <button class="btn btn-warning btn-sm" type="button" onclick="versSituationPeriodique()" title="Stock initial, entrées, sorties, stock final et valeur sur une période">
+                            <i class="fas fa-calendar-alt"></i> Situation périodique
                         </button>
                     </li>
                 </ul>
@@ -549,6 +699,36 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-dark" onclick="imprimerListeProduitsModal()"><i class="fas fa-print"></i> Imprimer</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><i class="fas fa-times"></i> Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ Situation périodique : détail d'un médicament sur la période (chaque vente, entrée, inventaire…) -->
+<div class="modal fade" id="modalSpDetail" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header text-white" style="background:#5b3e96;">
+                <h5 class="modal-title" id="spDetailTitre"></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="spDetailResume" class="mb-2"></div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light"><tr>
+                            <th>Date</th><th>Mouvement</th><th>Vente / patient</th>
+                            <th class="text-end">Entrée</th><th class="text-end">Sortie</th><th class="text-end">Stock après</th>
+                            <th class="text-end">Prix unit.</th><th class="text-end">Montant</th><th>Par</th>
+                        </tr></thead>
+                        <tbody id="spDetailBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-dark" onclick="spImprimerDetail()"><i class="fas fa-print"></i> Imprimer</button>
+                <button type="button" class="btn btn-outline-primary" onclick="spDetailVersMouvements()"><i class="fas fa-history"></i> Voir dans Historique médicaments</button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><i class="fas fa-times"></i> Fermer</button>
             </div>
         </div>
@@ -2124,6 +2304,300 @@ function exporterHistorique(format) {
     const params = _histParamsActuels();
     params.set('format', format);
     window.open('/api/produits/historique/export?' + params.toString(), '_blank');
+}
+
+// ========== ⭐ SITUATION PÉRIODIQUE DES MÉDICAMENTS (patron, 2026-10-22) ==========
+// Une période (ou un seul jour) -> pour chaque médicament : stock initial, entrées, sorties,
+// stock final, montant des ventes, prix, valeur du stock. Données : /api/produits/situation-periodique
+// (chargées une fois par période ; recherche, tri et pages se font ici, sans recharger).
+const SP_STRUCTURE_NOM = {{ (session.structure_nom or '')|tojson }};
+let spDonnees = null;
+let spPage = 1;
+let spDetailCourant = null;
+
+function spEsc(t) {
+    return String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function spF(n) { return Math.round(Number(n) || 0).toLocaleString('fr-FR'); }
+function spQ(n) {
+    n = Number(n) || 0;
+    return Number.isInteger(n) ? n.toLocaleString('fr-FR') : n.toLocaleString('fr-FR', {maximumFractionDigits: 2});
+}
+function spISO(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function spRaccourci(type) {
+    const auj = new Date();
+    let debut = new Date(auj), fin = new Date(auj);
+    if (type === 'hier') { debut.setDate(auj.getDate() - 1); fin = new Date(debut); }
+    else if (type === 'semaine') { debut.setDate(auj.getDate() - ((auj.getDay() + 6) % 7)); }   // depuis lundi
+    else if (type === 'mois') { debut = new Date(auj.getFullYear(), auj.getMonth(), 1); }
+    else if (type === 'mois_precedent') {
+        debut = new Date(auj.getFullYear(), auj.getMonth() - 1, 1);
+        fin = new Date(auj.getFullYear(), auj.getMonth(), 0);
+    }
+    else if (type === 'annee') { debut = new Date(auj.getFullYear(), 0, 1); }
+    document.getElementById('spDateDebut').value = spISO(debut);
+    document.getElementById('spDateFin').value = spISO(fin);
+    chargerSituationPeriodique();
+}
+
+function spPeriode() {
+    const deb = document.getElementById('spDateDebut'), fin = document.getElementById('spDateFin');
+    if (!fin.value) fin.value = spISO(new Date());
+    if (!deb.value) { const d = new Date(); deb.value = spISO(new Date(d.getFullYear(), d.getMonth(), 1)); }
+    return {date_debut: deb.value, date_fin: fin.value, base_prix: document.getElementById('spBasePrix').value};
+}
+
+function chargerSituationPeriodique() {
+    const p = spPeriode();
+    const body = document.getElementById('spBody');
+    body.innerHTML = '<tr><td colspan="9" class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> Calcul de la situation...</td></tr>';
+    document.getElementById('spFoot').innerHTML = '';
+    fetch('/api/produits/situation-periodique?' + new URLSearchParams(p).toString())
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) {
+                spDonnees = null;
+                body.innerHTML = '<tr><td colspan="9" class="text-center text-danger">' + spEsc(d.error || 'Erreur') + '</td></tr>';
+                document.getElementById('spPagination').innerHTML = '';
+                return;
+            }
+            spDonnees = d;
+            spPage = 1;
+            // Début ramené au premier jour du suivi : on le montre dans le champ
+            if (d.date_debut && d.date_debut !== p.date_debut) document.getElementById('spDateDebut').value = d.date_debut;
+            const note = document.getElementById('spNote');
+            note.hidden = !d.note;
+            note.textContent = d.note || '';
+            document.getElementById('spEntetePrix').textContent = d.base_prix === 'achat' ? "Prix d'achat" : 'Prix de vente';
+            rendreSituationPeriodique();
+        })
+        .catch(e => { body.innerHTML = '<tr><td colspan="9" class="text-center text-danger">Erreur : ' + spEsc(e.message) + '</td></tr>'; });
+}
+
+function spLignesFiltrees() {
+    if (!spDonnees) return [];
+    const q = (document.getElementById('spRecherche').value || '').trim().toLowerCase();
+    const bouges = document.getElementById('spSeulementBouges').checked;
+    const tri = document.getElementById('spTri').value;
+    const lignes = spDonnees.lignes.filter(l => (!q || (l.nom || '').toLowerCase().includes(q)) && (!bouges || l.nb_mouvements > 0));
+    if (tri !== 'nom') lignes.sort((a, b) => (b[tri] || 0) - (a[tri] || 0) || (a.nom || '').localeCompare(b.nom || ''));
+    return lignes;
+}
+
+function spTotaux(lignes) {
+    const t = {};
+    ['stock_initial', 'entrees', 'sorties', 'stock_final', 'montant_ventes', 'valeur_initial', 'valeur_entrees', 'valeur_sorties', 'valeur_final']
+        .forEach(k => { t[k] = lignes.reduce((s, l) => s + (Number(l[k]) || 0), 0); });
+    return t;
+}
+
+function rendreSituationPeriodique() {
+    const body = document.getElementById('spBody'), foot = document.getElementById('spFoot');
+    if (!spDonnees) return;
+    const lignes = spLignesFiltrees();
+    const t = spTotaux(lignes);
+    document.getElementById('spValInitial').textContent = spF(t.valeur_initial) + ' F';
+    document.getElementById('spValEntrees').textContent = spF(t.valeur_entrees) + ' F';
+    document.getElementById('spValSorties').textContent = spF(t.valeur_sorties) + ' F';
+    document.getElementById('spValFinal').textContent = spF(t.valeur_final) + ' F';
+    document.getElementById('spMontantVentes').textContent = spF(t.montant_ventes) + ' F';
+    document.getElementById('spQteEntrees').textContent = spQ(t.entrees);
+    document.getElementById('spQteSorties').textContent = spQ(t.sorties);
+
+    const parPage = parseInt(document.getElementById('spParPage').value, 10) || 20;
+    const nbPages = Math.max(1, Math.ceil(lignes.length / parPage));
+    if (spPage > nbPages) spPage = nbPages;
+    const page = lignes.slice((spPage - 1) * parPage, spPage * parPage);
+
+    if (!lignes.length) {
+        body.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Aucun médicament pour cette période / ce filtre.</td></tr>';
+    } else {
+        body.innerHTML = page.map(l => {
+            const titreE = `Approvisionnements : ${spQ(l.entrees_appro)} · autres (inventaire, ajustement, retour…) : ${spQ(l.entrees_autres)}`;
+            const titreS = `Ventes : ${spQ(l.sorties_ventes)} · autres (inventaire, ajustement, suppression…) : ${spQ(l.sorties_autres)}`;
+            const ecart = l.ecart_non_journalise
+                ? ` <i class="fas fa-exclamation-triangle text-warning" title="Dont ${spQ(l.ecart_non_journalise)} non expliqué par un mouvement (stock modifié directement)"></i>` : '';
+            const stockBas = l.stock_final <= 0 ? ' text-danger' : '';
+            return `<tr role="button" onclick="spOuvrirDetail('${spEsc(l.id)}')">
+                <td><span class="fw-semibold">${spEsc(l.nom)}</span>${l.unite ? ' <small class="text-muted">' + spEsc(l.unite) + '</small>' : ''}${l.supprime ? ' <span class="badge bg-secondary">supprimé</span>' : ''}</td>
+                <td class="text-end">${spQ(l.stock_initial)}</td>
+                <td class="text-end text-success" title="${spEsc(titreE)}">${l.entrees ? '+' + spQ(l.entrees) : '0'}</td>
+                <td class="text-end text-danger" title="${spEsc(titreS)}">${l.sorties ? '−' + spQ(l.sorties) : '0'}</td>
+                <td class="text-end fw-bold${stockBas}">${spQ(l.stock_final)}${ecart}</td>
+                <td class="text-end">${l.montant_ventes ? spF(l.montant_ventes) + ' F' : '—'}</td>
+                <td class="text-end">${l.prix_unitaire ? spF(l.prix_unitaire) + ' F' : '<span class="text-muted" title="Prix non renseigné sur la fiche">—</span>'}</td>
+                <td class="text-end fw-semibold">${spF(l.valeur_final)} F</td>
+                <td class="text-end"><button class="btn btn-sm btn-outline-primary py-0" title="Voir chaque vente et chaque mouvement"><i class="fas fa-search"></i></button></td>
+            </tr>`;
+        }).join('');
+    }
+    foot.innerHTML = lignes.length ? `<tr class="table-light fw-bold">
+        <td>Total (${lignes.length} médicament${lignes.length > 1 ? 's' : ''})</td>
+        <td class="text-end">${spQ(t.stock_initial)}</td><td class="text-end text-success">+${spQ(t.entrees)}</td>
+        <td class="text-end text-danger">−${spQ(t.sorties)}</td><td class="text-end">${spQ(t.stock_final)}</td>
+        <td class="text-end">${spF(t.montant_ventes)} F</td><td></td><td class="text-end">${spF(t.valeur_final)} F</td><td></td></tr>` : '';
+
+    const pag = document.getElementById('spPagination');
+    if (lignes.length <= parPage) {
+        pag.innerHTML = `<small class="text-muted">${lignes.length} médicament(s)</small>`;
+    } else {
+        const de = (spPage - 1) * parPage + 1, a = Math.min(spPage * parPage, lignes.length);
+        pag.innerHTML = `<small class="text-muted">${de}–${a} sur ${lignes.length}</small>
+            <button class="btn btn-sm btn-outline-secondary" ${spPage <= 1 ? 'disabled' : ''} onclick="spPage--; rendreSituationPeriodique()"><i class="fas fa-chevron-left"></i></button>
+            <small>Page ${spPage} / ${nbPages}</small>
+            <button class="btn btn-sm btn-outline-secondary" ${spPage >= nbPages ? 'disabled' : ''} onclick="spPage++; rendreSituationPeriodique()"><i class="fas fa-chevron-right"></i></button>`;
+    }
+}
+
+// ---- Détail d'un médicament : chaque vente (n°, patient, quantité, prix) et chaque mouvement
+async function spOuvrirDetail(id) {
+    const l = (spDonnees?.lignes || []).find(x => String(x.id) === String(id));
+    if (!l) return;
+    const p = {date_debut: spDonnees.date_debut, date_fin: spDonnees.date_fin};
+    spDetailCourant = {ligne: l, periode: p, mouvements: []};
+    document.getElementById('spDetailTitre').textContent = l.nom + (l.unite ? ' (' + l.unite + ')' : '');
+    document.getElementById('spDetailResume').innerHTML = `<div class="small text-muted mb-1">Du ${spEsc(spDonnees.debut_affiche)} au ${spEsc(spDonnees.fin_affiche)}</div>
+        <span class="badge bg-light text-dark border me-1">Stock initial : ${spQ(l.stock_initial)}</span>
+        <span class="badge bg-success me-1">Entrées : +${spQ(l.entrees)}</span>
+        <span class="badge bg-danger me-1">Sorties : −${spQ(l.sorties)} (dont ventes ${spQ(l.sorties_ventes)})</span>
+        <span class="badge bg-primary me-1">Stock final : ${spQ(l.stock_final)}</span>
+        <span class="badge bg-warning text-dark">Montant des ventes : ${spF(l.montant_ventes)} F</span>`;
+    const body = document.getElementById('spDetailBody');
+    body.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Chargement...</td></tr>';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSpDetail')).show();
+    try {
+        const d = await fetch('/api/produits/situation-periodique/mouvements?' + new URLSearchParams({...p, produit_id: l.id})).then(r => r.json());
+        if (!d.success) { body.innerHTML = '<tr><td colspan="9" class="text-danger">' + spEsc(d.error || 'Erreur') + '</td></tr>'; return; }
+        spDetailCourant.mouvements = d.mouvements;
+        body.innerHTML = d.mouvements.length ? d.mouvements.map(m => `<tr>
+            <td class="text-nowrap">${spEsc(m.date)}</td><td>${spEsc(m.libelle)}${m.motif ? '<br><small class="text-muted">' + spEsc(m.motif) + '</small>' : ''}</td>
+            <td>${spEsc(m.reference)}${m.patient ? '<br><small>' + spEsc(m.patient) + '</small>' : ''}</td>
+            <td class="text-end text-success">${m.entree ? '+' + spQ(m.entree) : ''}</td><td class="text-end text-danger">${m.sortie ? '−' + spQ(m.sortie) : ''}</td>
+            <td class="text-end fw-semibold">${spQ(m.stock_apres)}</td>
+            <td class="text-end">${m.prix_unitaire != null ? spF(m.prix_unitaire) + ' F' : ''}</td><td class="text-end">${m.montant != null ? spF(m.montant) + ' F' : ''}</td>
+            <td><small>${spEsc(m.par)}</small></td></tr>`).join('')
+            : '<tr><td colspan="9" class="text-center text-muted">Aucun mouvement sur cette période : le stock n\'a pas bougé.</td></tr>';
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="9" class="text-danger">Erreur : ' + spEsc(e.message) + '</td></tr>';
+    }
+}
+
+async function spImprimerDetail() {
+    const c = spDetailCourant;
+    if (!c) return;
+    const l = c.ligne;
+    const html = `<html><head><title>${spEsc(l.nom)} — mouvements</title><style>
+        body{font-family:Arial,sans-serif;padding:20px;color:#000;font-size:13px;} h2{margin:0 0 4px;} table{width:100%;border-collapse:collapse;margin-top:12px;}
+        th,td{border:1px solid #000;padding:5px 7px;} th{text-align:left;} .e{text-align:right;} thead{display:table-header-group;}
+        </style></head><body>
+        <div>${spEsc(SP_STRUCTURE_NOM)}</div>
+        <h2>${spEsc(l.nom)}${l.unite ? ' (' + spEsc(l.unite) + ')' : ''}</h2>
+        <div>Du ${spEsc(spDonnees.debut_affiche)} au ${spEsc(spDonnees.fin_affiche)} — stock initial ${spQ(l.stock_initial)}, entrées +${spQ(l.entrees)}, sorties −${spQ(l.sorties)}, stock final ${spQ(l.stock_final)}, montant des ventes ${spF(l.montant_ventes)} F</div>
+        <table><thead><tr><th>Date</th><th>Mouvement</th><th>Vente / patient</th><th class="e">Entrée</th><th class="e">Sortie</th><th class="e">Stock après</th><th class="e">Prix unit.</th><th class="e">Montant</th><th>Par</th></tr></thead>
+        <tbody>${c.mouvements.map(m => `<tr><td>${spEsc(m.date)}</td><td>${spEsc(m.libelle)}</td><td>${spEsc(m.reference)}${m.patient ? ' — ' + spEsc(m.patient) : ''}</td>
+            <td class="e">${m.entree ? '+' + spQ(m.entree) : ''}</td><td class="e">${m.sortie ? '−' + spQ(m.sortie) : ''}</td><td class="e">${spQ(m.stock_apres)}</td>
+            <td class="e">${m.prix_unitaire != null ? spF(m.prix_unitaire) : ''}</td><td class="e">${m.montant != null ? spF(m.montant) : ''}</td><td>${spEsc(m.par)}</td></tr>`).join('')}</tbody></table>
+        </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+}
+
+// ---- Aperçu (toutes les pages, mêmes filtres) : fenêtre à relire, puis Imprimer / Enregistrer en PDF
+async function spApercu() {
+    if (!spDonnees) { await afficherMessage('Choisissez d\'abord une période.'); return; }
+    const lignes = spLignesFiltrees();
+    if (!lignes.length) { await afficherMessage('Rien à afficher pour cette période / ce filtre.'); return; }
+    const t = spTotaux(lignes);
+    const d = spDonnees;
+    const html = `<html><head><title>Situation périodique ${spEsc(d.debut_affiche)} - ${spEsc(d.fin_affiche)}</title><style>
+        body{font-family:Arial,sans-serif;padding:20px;color:#000;font-size:12px;} h2{margin:0 0 4px;} table{width:100%;border-collapse:collapse;margin-top:12px;}
+        th,td{border:1px solid #000;padding:4px 6px;} th{text-align:left;background:#eee;} .e{text-align:right;} tfoot td{font-weight:bold;} thead{display:table-header-group;} tr{page-break-inside:avoid;}
+        .synthese{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;} .synthese div{border:1px solid #000;padding:6px 10px;} .synthese b{display:block;font-size:14px;}
+        .barre{position:sticky;top:0;background:#f4f4f4;padding:8px;margin:-20px -20px 14px;border-bottom:1px solid #ccc;}
+        .barre button{font-size:14px;padding:6px 14px;margin-right:6px;cursor:pointer;}
+        @media print{.barre{display:none;} @page{size:landscape;}}
+        </style></head><body>
+        <div class="barre"><button onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button><button onclick="window.close()">Fermer</button></div>
+        <div>${spEsc(SP_STRUCTURE_NOM)}</div>
+        <h2>Situation périodique des médicaments</h2>
+        <div>Du <b>${spEsc(d.debut_affiche)}</b> au <b>${spEsc(d.fin_affiche)}</b> — valeur au ${spEsc(d.base_prix_libelle)} — établi le ${new Date().toLocaleString('fr-FR')} — ${lignes.length} médicament(s)</div>
+        <div class="synthese"><div>Valeur du stock au début<b>${spF(t.valeur_initial)} F</b></div><div>Valeur des entrées<b>${spF(t.valeur_entrees)} F</b></div>
+            <div>Valeur des sorties<b>${spF(t.valeur_sorties)} F</b></div><div>Valeur du stock à la fin<b>${spF(t.valeur_final)} F</b></div>
+            <div>Montant des ventes<b>${spF(t.montant_ventes)} F</b></div></div>
+        <table><thead><tr><th>Médicament</th><th class="e">Stock initial</th><th class="e">Entrées</th><th class="e">Sorties</th><th class="e">Stock final</th><th class="e">Montant des ventes</th><th class="e">${d.base_prix === 'achat' ? "Prix d'achat" : 'Prix de vente'}</th><th class="e">Valeur du stock</th></tr></thead>
+        <tbody>${lignes.map(l => `<tr><td>${spEsc(l.nom)}${l.unite ? ' <small>(' + spEsc(l.unite) + ')</small>' : ''}${l.supprime ? ' (supprimé)' : ''}</td><td class="e">${spQ(l.stock_initial)}</td>
+            <td class="e">${spQ(l.entrees)}</td><td class="e">${spQ(l.sorties)}</td><td class="e">${spQ(l.stock_final)}</td><td class="e">${spF(l.montant_ventes)}</td>
+            <td class="e">${spF(l.prix_unitaire)}</td><td class="e">${spF(l.valeur_final)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>Total</td><td class="e">${spQ(t.stock_initial)}</td><td class="e">${spQ(t.entrees)}</td><td class="e">${spQ(t.sorties)}</td><td class="e">${spQ(t.stock_final)}</td>
+            <td class="e">${spF(t.montant_ventes)} F</td><td></td><td class="e">${spF(t.valeur_final)} F</td></tr></tfoot></table>
+        <div style="margin-top:8px;font-size:11px;">Stock final = stock initial + entrées − sorties. Entrées : approvisionnements, écarts d'inventaire positifs, créations. Sorties : ventes (hors ventes annulées), écarts d'inventaire négatifs, suppressions. Montant des ventes : prix réellement facturés.</div>
+        </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'aperçu."); return; }
+    w.document.write(html); w.document.close(); w.focus();
+}
+
+// ---- PDF / texte / CSV : générés par le serveur, toutes les pages, mêmes filtres que l'écran
+function spExporter(format) {
+    const p = spPeriode();
+    const params = new URLSearchParams({...p, format: format, tri: document.getElementById('spTri').value});
+    const q = (document.getElementById('spRecherche').value || '').trim();
+    if (q) params.set('q', q);
+    if (document.getElementById('spSeulementBouges').checked) params.set('bouges', '1');
+    window.open('/api/produits/situation-periodique/export?' + params.toString(), '_blank');
+}
+
+// ---- Liens entre les onglets (patron : « quand on est dans Situation périodique, on peut vite aller
+// dans l'inventaire ou dans l'historique par jour »)
+function spAllerOnglet(idBouton) {
+    bootstrap.Tab.getOrCreateInstance(document.getElementById(idBouton)).show();
+    window.scrollTo({top: 0, behavior: 'smooth'});
+}
+function spAllerSousOngletHistorique(cible) {
+    spAllerOnglet('historique-tab');
+    const pill = document.querySelector('#sousOngletsHistorique [data-bs-target="' + cible + '"]');
+    if (pill) bootstrap.Tab.getOrCreateInstance(pill).show();
+}
+function spVersInventaire() {
+    spAllerOnglet('inventaire-tab');
+    chargerInventaire();
+}
+function spVersVentesParJour() {
+    const p = spPeriode();
+    document.getElementById('vmjDateDebut').value = p.date_debut;
+    document.getElementById('vmjDateFin').value = p.date_fin;
+    spAllerSousOngletHistorique('#sousVentesJour');
+    chargerVentesMedicamentsParJour();
+}
+function spVersMouvements(produitId, produitNom) {
+    const p = spPeriode();
+    document.getElementById('histFiltreDateDebut').value = p.date_debut;
+    document.getElementById('histFiltreDateFin').value = p.date_fin;
+    document.getElementById('histFiltreType').value = '';
+    const select = document.getElementById('histFiltreProduit');
+    if (produitId && ![...select.options].some(o => o.value === String(produitId))) {
+        const opt = document.createElement('option');
+        opt.value = produitId;
+        opt.textContent = produitNom || produitId;
+        select.appendChild(opt);
+    }
+    select.value = produitId ? String(produitId) : '';
+    spAllerSousOngletHistorique('#sousMouvements');
+    chargerHistoriqueProduits();
+}
+function spDetailVersMouvements() {
+    const l = spDetailCourant?.ligne;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSpDetail')).hide();
+    if (l) spVersMouvements(l.id, l.nom);
+}
+// Retour vers la Situation périodique depuis l'Inventaire ou l'Historique
+function versSituationPeriodique() {
+    spAllerOnglet('situation-tab');
+    chargerSituationPeriodique();
 }
 
 // ========== INITIALISATION ==========

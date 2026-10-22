@@ -10778,6 +10778,240 @@ def api_produits_stock_a_date():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ==================== ⭐ SITUATION PÉRIODIQUE DES MÉDICAMENTS (2026-10-22) ====================
+# Onglet « Situation périodique » de Gestion des stocks — calcul dans services/situation_periodique.py.
+_TYPES_MOUVEMENTS_ACTES = "('creation_acte', 'modification_acte', 'suppression_acte')"
+_ROLES_SITUATION_PERIODIQUE = ('admin', 'comptable', 'gestionnaire', 'pharmacien')   # = page gestion_stock
+
+
+def _nombre_fiche(valeur):
+    try:
+        s = str(valeur if valeur is not None else '').strip().replace(' ', '').replace(' ', '').replace(',', '.')
+        return float(s) if s else 0.0
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _liste_json(valeur):
+    if isinstance(valeur, str):
+        try:
+            valeur = json.loads(valeur)
+        except ValueError:
+            valeur = []
+    return [x for x in (valeur or []) if isinstance(x, dict)]
+
+
+def _periode_situation(args):
+    """(debut, fin, date_debut, date_fin) — fin exclue ; par défaut du 1er du mois à aujourd'hui."""
+    from datetime import timedelta as _td
+    aujourd_hui = date.today()
+    date_debut = (args.get('date_debut') or '').strip() or aujourd_hui.replace(day=1).isoformat()
+    date_fin = (args.get('date_fin') or '').strip() or aujourd_hui.isoformat()
+    debut = datetime.strptime(date_debut, '%Y-%m-%d')
+    fin = datetime.strptime(date_fin, '%Y-%m-%d') + _td(days=1)
+    if fin <= debut:
+        raise ValueError('La date de fin doit être après la date de début.')
+    return debut, fin, date_debut, date_fin
+
+
+def _calculer_situation_periodique(structure_id, args):
+    from datetime import timedelta as _td
+    from services import situation_periodique as sp
+    debut, fin, date_debut, date_fin = _periode_situation(args)
+
+    suivi = db.execute_query("SELECT MIN(date_mouvement) AS premier FROM mouvements_stock WHERE structure_id = %s",
+                             (structure_id,))
+    suivi_depuis = suivi[0].get('premier') if suivi else None
+    note = None
+    if suivi_depuis:
+        jour_suivi = suivi_depuis.replace(hour=0, minute=0, second=0, microsecond=0)
+        if fin <= jour_suivi:
+            raise ValueError(f"Le suivi des mouvements de stock a commencé le {suivi_depuis.strftime('%d/%m/%Y')} : "
+                             f"choisissez une période à partir de cette date.")
+        if debut < jour_suivi:
+            debut = jour_suivi
+            note = (f"Le suivi des mouvements a commencé le {suivi_depuis.strftime('%d/%m/%Y')} : la situation part "
+                    f"de ce jour-là (stock de départ = stock constaté ce jour-là).")
+
+    produits = {}
+    for row in (sheets_helper.get_all_values_cached(f"struct_{structure_id}_produits") or [])[1:]:
+        if not row or len(row) < 2 or not str(row[0]).strip():
+            continue
+        produits[str(row[0]).strip()] = {
+            'nom': (row[1] or '').strip(),
+            'prix_vente': _nombre_fiche(row[2] if len(row) > 2 else 0),
+            'prix_achat': _nombre_fiche(row[4] if len(row) > 4 else 0),
+            'stock_actuel': _nombre_fiche(row[5] if len(row) > 5 else 0),
+            'unite': (row[7] if len(row) > 7 else '') or '',
+        }
+
+    avant = {str(r['produit_id']): r for r in (db.execute_query(f"""
+        SELECT DISTINCT ON (produit_id) produit_id, produit_nom AS nom, stock_apres
+        FROM mouvements_stock
+        WHERE structure_id = %s AND date_mouvement < %s AND type_mouvement NOT IN {_TYPES_MOUVEMENTS_ACTES}
+        ORDER BY produit_id, date_mouvement DESC, id DESC
+    """, (structure_id, debut)) or [])}
+
+    periode = {str(r['produit_id']): r for r in (db.execute_query(f"""
+        SELECT produit_id, MAX(produit_nom) AS nom, COUNT(*) AS nb,
+               SUM(CASE WHEN type_mouvement = 'vente' THEN -quantite_delta ELSE 0 END) AS ventes,
+               SUM(CASE WHEN type_mouvement = 'annulation' THEN quantite_delta ELSE 0 END) AS annulations,
+               SUM(CASE WHEN type_mouvement IN ('vente', 'annulation')
+                          OR (type_mouvement = 'initial' AND reference_type IS NULL) THEN 0
+                        WHEN quantite_delta > 0 THEN quantite_delta ELSE 0 END) AS entrees_autres,
+               SUM(CASE WHEN type_mouvement IN ('vente', 'annulation') THEN 0
+                        WHEN quantite_delta < 0 THEN -quantite_delta ELSE 0 END) AS sorties_autres,
+               SUM(CASE WHEN type_mouvement = 'approvisionnement' AND quantite_delta > 0
+                        THEN quantite_delta ELSE 0 END) AS appro,
+               (ARRAY_AGG(stock_apres ORDER BY date_mouvement DESC, id DESC))[1] AS stock_final,
+               (ARRAY_AGG(stock_apres - quantite_delta ORDER BY date_mouvement, id))[1] AS stock_avant_premier,
+               (ARRAY_AGG(CASE WHEN type_mouvement = 'initial' AND reference_type IS NULL THEN 1 ELSE 0 END
+                          ORDER BY date_mouvement, id))[1] AS premier_seed,
+               (ARRAY_AGG(stock_apres ORDER BY date_mouvement, id))[1] AS seed_stock
+        FROM mouvements_stock
+        WHERE structure_id = %s AND date_mouvement >= %s AND date_mouvement < %s
+          AND type_mouvement NOT IN {_TYPES_MOUVEMENTS_ACTES}
+        GROUP BY produit_id
+    """, (structure_id, debut, fin)) or [])}
+
+    premiers = {str(r['produit_id']): r['premier'] for r in (db.execute_query(f"""
+        SELECT produit_id, MIN(date_mouvement) AS premier FROM mouvements_stock
+        WHERE structure_id = %s AND type_mouvement NOT IN {_TYPES_MOUVEMENTS_ACTES}
+        GROUP BY produit_id
+    """, (structure_id,)) or [])}
+
+    ventes = db.execute_query("""
+        SELECT produits FROM ventes
+        WHERE structure_id = %s AND type IN ('pharma', 'pharmacie', 'mixte')
+          AND (statut IS NULL OR statut != 'annulee')
+          AND date_vente >= %s AND date_vente < %s
+    """, (structure_id, debut, fin)) or []
+
+    situation = sp.construire_situation(produits, avant, periode, premiers,
+                                        sp.ventes_par_produit(ventes, _liste_json), fin,
+                                        base_prix=(args.get('base_prix') or 'vente'))
+    situation.update({
+        'date_debut': debut.strftime('%Y-%m-%d'), 'date_fin': date_fin,
+        'debut_affiche': debut.strftime('%d/%m/%Y'), 'fin_affiche': (fin - _td(days=1)).strftime('%d/%m/%Y'),
+        'suivi_depuis': suivi_depuis.strftime('%d/%m/%Y') if suivi_depuis else None,
+        'note': note,
+    })
+    lignes = sp.filtrer(situation['lignes'], args.get('q'), args.get('bouges') in ('1', 'true', 'on'))
+    tri = args.get('tri')
+    if tri in ('sorties', 'montant_ventes', 'valeur_final'):      # même tri que l'écran (exports)
+        lignes.sort(key=lambda l: (-(l[tri] or 0), (l['nom'] or '').lower()))
+    return situation, lignes
+
+
+@app.route('/api/produits/situation-periodique')
+@login_required
+def api_situation_periodique():
+    if session.get('role') not in _ROLES_SITUATION_PERIODIQUE:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    from services import situation_periodique as sp
+    try:
+        situation, lignes = _calculer_situation_periodique(session.get('structure_id'), request.args)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        print(f"❌ Situation périodique : {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+    situation['lignes'] = lignes
+    situation['totaux'] = sp.totaux(lignes)
+    return jsonify({'success': True, **situation})
+
+
+@app.route('/api/produits/situation-periodique/export')
+@login_required
+def api_situation_periodique_export():
+    """PDF, CSV ou texte de la situation — mêmes filtres que l'écran, toutes les pages."""
+    if session.get('role') not in _ROLES_SITUATION_PERIODIQUE:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    from services import situation_periodique as sp
+    try:
+        situation, lignes = _calculer_situation_periodique(session.get('structure_id'), request.args)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    nom_fichier = f"situation_periodique_{situation['date_debut']}_{situation['date_fin']}"
+    structure_nom = session.get('structure_nom') or ''
+    format_export = (request.args.get('format') or 'pdf').lower()
+    if format_export == 'csv':
+        return Response(sp.exporter_csv(situation, lignes).encode('utf-8'), content_type='text/csv; charset=utf-8',
+                        headers={'Content-Disposition': f'attachment; filename={nom_fichier}.csv'})
+    if format_export == 'texte':
+        return Response(sp.exporter_texte(situation, lignes, structure_nom).encode('utf-8'),
+                        content_type='text/plain; charset=utf-8',
+                        headers={'Content-Disposition': f'attachment; filename={nom_fichier}.txt'})
+    pdf = sp.exporter_pdf(situation, lignes, structure_nom, session.get('user_name') or '')
+    return Response(pdf, mimetype='application/pdf',
+                    headers={'Content-Disposition': f'inline; filename={nom_fichier}.pdf'})
+
+
+@app.route('/api/produits/situation-periodique/mouvements')
+@login_required
+def api_situation_periodique_mouvements():
+    """Détail d'un médicament sur la période : chaque vente (n°, patient, quantité, prix, montant),
+    approvisionnement, inventaire, annulation… avec le stock après chaque mouvement."""
+    if session.get('role') not in _ROLES_SITUATION_PERIODIQUE:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    from services.situation_periodique import LIBELLES_TYPES
+    structure_id = session.get('structure_id')
+    produit_id = (request.args.get('produit_id') or '').strip()
+    try:
+        debut, fin, _, _ = _periode_situation(request.args)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    rows = db.execute_query(f"""
+        SELECT id, type_mouvement, quantite_delta, stock_apres, reference_type, reference_id,
+               date_mouvement, created_by_nom, motif
+        FROM mouvements_stock
+        WHERE structure_id = %s AND produit_id = %s AND date_mouvement >= %s AND date_mouvement < %s
+          AND type_mouvement NOT IN {_TYPES_MOUVEMENTS_ACTES}
+        ORDER BY date_mouvement, id
+    """, (structure_id, produit_id, debut, fin)) or []
+
+    ids_ventes = sorted({int(r['reference_id']) for r in rows
+                         if r.get('reference_id') and r.get('type_mouvement') in ('vente', 'annulation')})
+    ventes = {}
+    if ids_ventes:
+        marques = ', '.join(['%s'] * len(ids_ventes))
+        for v in db.execute_query(f"""
+            SELECT id, numero_local, patient_nom, produits, statut FROM ventes
+            WHERE structure_id = %s AND id IN ({marques})
+        """, [structure_id] + ids_ventes) or []:
+            ventes[int(v['id'])] = v
+
+    mouvements = []
+    for r in rows:
+        delta = float(r.get('quantite_delta') or 0)
+        m = {
+            'date': r['date_mouvement'].strftime('%d/%m/%Y %H:%M') if r.get('date_mouvement') else '',
+            'type': r.get('type_mouvement'),
+            'libelle': LIBELLES_TYPES.get(r.get('type_mouvement'), r.get('type_mouvement')),
+            'entree': delta if delta > 0 else 0, 'sortie': -delta if delta < 0 else 0,
+            'stock_apres': float(r.get('stock_apres') or 0),
+            'par': r.get('created_by_nom') or '', 'motif': r.get('motif') or '',
+            'reference': '', 'patient': '', 'prix_unitaire': None, 'montant': None,
+        }
+        v = None
+        if r.get('reference_id') and r.get('type_mouvement') in ('vente', 'annulation'):
+            v = ventes.get(int(r['reference_id']))
+        if v:
+            m['reference'] = f"Vente n° {v.get('numero_local') or v['id']}" + (' (annulée)' if v.get('statut') == 'annulee' else '')
+            m['vente_id'] = v['id']
+            m['patient'] = v.get('patient_nom') or ''
+            for x in _liste_json(v.get('produits')):
+                if str(x.get('id') or '').strip() == produit_id:
+                    prix = x.get('prix') if x.get('prix') is not None else x.get('prix_reel')
+                    m['prix_unitaire'] = _nombre_fiche(prix)
+                    m['montant'] = round(m['prix_unitaire'] * abs(delta))
+                    break
+        mouvements.append(m)
+    return jsonify({'success': True, 'mouvements': mouvements})
+
+
 @app.route('/api/produits/search')
 @login_required
 def api_produits_search():
