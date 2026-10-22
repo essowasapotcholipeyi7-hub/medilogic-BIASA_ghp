@@ -132,7 +132,7 @@
                                 <td>{{ medecin.qualification or '-' }}</td>
                                 <td>{{ medecin.telephone or '-' }}</td>
                                 <td>{{ medecin.code_prescripteur or '-' }}</td>
-                                <td>{% if medecin.nif %}{{ medecin.nif }}{% else %}<span class="text-muted" title="Sans NIF : pas de RSPS retenue sur sa part">—</span>{% endif %}</td>
+                                <td>{% if medecin.nif %}{{ medecin.nif }}{% else %}<span class="text-muted" title="Sans NIF : taux de RSPS « sans NIF » de la structure (Part médecin)">—</span>{% endif %}</td>
                                 <td class="text-center">
                                     <span class="badge bg-primary">{{ medecin.nb_consultations }}</span>
                                 </td>
@@ -238,7 +238,10 @@
                         <div class="col-md-6">
                             <label class="form-label">NIF (identification fiscale)</label>
                             <input type="text" class="form-control" id="medecinNif" maxlength="30" placeholder="Ex. 1000123456">
-                            <div class="form-text">La <strong>RSPS</strong> (5 % par défaut) n'est retenue sur la part médecin que si le NIF est renseigné.</div>
+                            {# ⭐ 2026-10-22 (patron) : les vrais taux de la structure, et où les changer #}
+                            <div class="form-text" id="medecinNifAide">Retenue <strong>RSPS</strong> sur la part médecin : un taux pour les médecins
+                                <strong>avec NIF</strong>, un autre pour ceux <strong>sans NIF</strong> —
+                                <a href="{{ url_for('page_part_medecin') }}" target="_blank">régler les taux dans Part médecin</a>.</div>
                         </div>
                         <div class="col-md-12">
                             <div class="form-check form-switch">
@@ -754,7 +757,16 @@ async function showToast(message, type) {
 
 // Initialisation
 document.addEventListener('DOMContentLoaded', function() {
-    // Rien de special
+    // ⭐ 2026-10-22 (patron) : taux de RSPS réels de la structure sous le champ NIF (avec / sans NIF)
+    fetch('/api/part-medecin/parametres').then(r => r.json()).then(d => {
+        const aide = document.getElementById('medecinNifAide');
+        if (!aide || !d.success) return;
+        const lien = aide.querySelector('a').outerHTML;
+        aide.innerHTML = d.rsps_active
+            ? `Retenue <strong>RSPS</strong> sur la part médecin : <strong>${d.taux_rsps} %</strong> avec NIF, `
+              + `<strong>${d.taux_rsps_sans_nif} %</strong> sans NIF${d.taux_rsps_sans_nif ? '' : ' (aucune retenue)'} — ${lien}.`
+            : `Retenue <strong>RSPS</strong> désactivée : aucune retenue sur la part médecin — ${lien}.`;
+    }).catch(() => { /* texte par défaut */ });
 });
 </script>
 {% endblock %}

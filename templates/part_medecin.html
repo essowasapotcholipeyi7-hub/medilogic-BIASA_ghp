@@ -41,7 +41,7 @@
                 <span class="input-group-text">%</span>
             </div>
             <div class="form-check form-switch mb-0 small"><input class="form-check-input" type="checkbox" id="paramRspsActive"><label class="form-check-label" for="paramRspsActive">Active</label></div>
-            <button class="btn btn-sm btn-light" id="btnParamRsps" onclick="enregistrerParamRsps()" title="Enregistrer le taux par défaut"><i class="fas fa-save"></i></button>
+            <button class="btn btn-sm btn-light fw-semibold" id="btnParamRsps" onclick="enregistrerParamRsps()" title="Enregistrer les deux taux"><i class="fas fa-save me-1"></i>Enregistrer</button>
         </span>
     </div>
     <div class="card-body p-0">
@@ -462,8 +462,13 @@ async function enregistrerParamRsps() {
     const d = await fetch('/api/part-medecin/parametres', {method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({taux_rsps: parseFloat(document.getElementById('paramTauxRsps').value), taux_rsps_sans_nif: parseFloat(document.getElementById('paramTauxRspsSansNif').value) || 0, rsps_active: document.getElementById('paramRspsActive').checked})}).then(r => r.json());
     if (!d.success) { await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'}); return; }
-    await afficherMessage('Taux de RSPS enregistré : ' + d.taux_rsps + ' %' + (d.rsps_active ? '' : ' (désactivée)'), {type: 'success'});
-    chargerParamRsps();
+    // ⭐ 2026-10-22 : les deux taux dans le message, et la liste « En attente de clôture » rafraîchie (badges NIF / sans NIF)
+    await afficherMessage(d.rsps_active
+        ? `RSPS enregistrée : ${d.taux_rsps} % pour les médecins avec NIF, ${d.taux_rsps_sans_nif} % pour les médecins sans NIF`
+          + (d.taux_rsps_sans_nif ? '.' : ' (aucune retenue).')
+          + (d.clotures_recalculees ? `\n\n${d.clotures_recalculees} clôture(s) pas encore validée(s) recalculée(s) avec ces taux.` : '')
+        : 'RSPS désactivée : aucune retenue sur les parts médecin.', {type: 'success'});
+    chargerTout();
 }
 function chargerRsps() {
     fetch('/api/part-medecin/rsps').then(r => r.json()).then(d => {
@@ -508,6 +513,10 @@ async function confirmerVersementRsps() {
 }
 
 function chargerTout() { chargerParamRsps(); chargerRsps(); chargerEnAttente(); chargerHistorique(); }
+// ⭐ 2026-10-22 : Entrée dans un champ de taux = Enregistrer
+['paramTauxRsps', 'paramTauxRspsSansNif'].forEach(id => document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); enregistrerParamRsps(); }
+}));
 chargerTout();
 </script>
 

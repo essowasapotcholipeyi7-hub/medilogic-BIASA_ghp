@@ -17890,9 +17890,15 @@ def api_parametres_part_medecin():
             return jsonify({'success': False, 'error': 'Le taux sans NIF doit être entre 0 et 50 %'}), 400
         p.taux_rsps_sans_nif = sans_nif
         p.modifie_par = session.get('user_name')
+        db.session.flush()
+        from services.part_medecin_service import recalculer_rsps_clotures_non_validees
+        clotures_recalculees = recalculer_rsps_clotures_non_validees(structure_id)
         db.session.commit()
+    else:
+        clotures_recalculees = 0
     taux, actif, sans_nif = parametres_rsps_structure(structure_id)
-    return jsonify({'success': True, 'taux_rsps': taux, 'rsps_active': actif, 'taux_rsps_sans_nif': sans_nif})
+    return jsonify({'success': True, 'taux_rsps': taux, 'rsps_active': actif, 'taux_rsps_sans_nif': sans_nif,
+                    'clotures_recalculees': clotures_recalculees})
 
 
 @app.route('/part-medecin/point')

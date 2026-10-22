@@ -181,6 +181,24 @@ def parametres_rsps(structure_id, medecin=None):
     return taux_rsps_pour_medecin(taux, sans_nif, actif, getattr(medecin, 'nif', None))
 
 
+def recalculer_rsps_clotures_non_validees(structure_id):
+    """⭐ 2026-10-22 (patron : « j'ai fait le réglage, ça n'a pas marché ») : la RSPS est figée à la clôture —
+    une clôture faite AVANT de régler le taux (avec ou sans NIF) gardait l'ancien taux. Les clôtures pas
+    encore validées prennent le taux actuel de leur médecin ; validées / payées : inchangées. Renvoie le
+    nombre de clôtures modifiées (la route appelante enregistre)."""
+    modifiees = 0
+    for per in PeriodePartMedecin.query.filter_by(structure_id=structure_id, statut='calculee').all():
+        medecin = Medecin.query.filter_by(id=per.medecin_id, structure_id=structure_id).first()
+        taux, actif = parametres_rsps(structure_id, medecin)
+        montant_rsps, montant_net = calculer_rsps(per.montant_total, taux, actif)
+        taux = taux if actif else 0
+        if (round(float(per.taux_rsps or 0), 2) != round(float(taux), 2)
+                or round(float(per.montant_rsps or 0)) != round(montant_rsps)):
+            per.taux_rsps, per.montant_rsps, per.montant_net = taux, montant_rsps, montant_net
+            modifiees += 1
+    return modifiees
+
+
 def calculer_rsps(montant_brut, taux_rsps, actif=True):
     """(montant_rsps, montant_net) arrondis au franc."""
     brut = float(montant_brut or 0)
