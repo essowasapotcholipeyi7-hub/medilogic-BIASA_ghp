@@ -22,6 +22,81 @@
     @media print {
         .entete-a4-structure { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
+
+    /* ⭐ 2026-10-22 (patron : « la bande du milieu est vilaine, faites remonter le cadre du bas dedans ») :
+       l'encadré patient (.entete-patient) devient LA bande du document, à la couleur du logo de la
+       structure (--couleur-structure, défini dans templates/entetes/structure_<id>.html) : patient à
+       gauche, titre / numéro / date (.entete-titre, déplacé dedans par le script ci-dessous) à droite ;
+       l'ancienne bande vide est masquée — une hauteur de bande gagnée sur la page. */
+    #pdfWrapper .card-body div.bande-structure.entete-patient,
+    div.bande-structure.entete-patient {
+        display: flex !important; flex-wrap: nowrap !important; justify-content: space-between; align-items: flex-start; gap: 18px;
+        margin: 2px 0 10px !important; padding: 9px 14px !important; border-radius: 6px !important;
+        background: var(--couleur-structure, #1a2a6c) !important; color: #fff !important;
+        border: 0 !important; border-left: 6px solid var(--couleur-structure-accent, var(--couleur-structure, #1a2a6c)) !important;
+        font-size: 11px !important; line-height: 1.45;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    #pdfWrapper .card-body div.bande-structure.entete-patient *,
+    div.bande-structure.entete-patient * {
+        color: #fff !important; background: transparent !important; border-color: rgba(255, 255, 255, .45) !important;
+    }
+    .bande-structure .bande-patient { flex: 1 1 0%; min-width: 0; }
+    /* taille lisible même quand les lignes du document portent leur propre petite police (facture : 8 px) */
+    .bande-structure .bande-patient, .bande-structure .bande-patient * { font-size: var(--bande-taille, 11px) !important; }
+    .bande-structure .bande-patient.row { margin: 0; }
+    .bande-structure .bande-patient h5 { font-size: var(--bande-taille, 11px) !important; font-weight: 700; margin: 0 0 2px; text-transform: uppercase; letter-spacing: .4px; }
+    .bande-structure .bande-patient p { margin: 0; }
+    .bande-structure .entete-titre { flex: 0 0 auto; text-align: right; margin: 0 !important; }
+    .bande-structure .entete-titre .badge-rdv { font-size: 17px; font-weight: 800; letter-spacing: 1.5px; padding: 0; }
+    .bande-structure .entete-titre .badge-mode { font-size: 10px; padding: 0; }
+    /* noir et blanc : pas de fond, un cadre ; le bord gauche épais garde le repère */
+    html.impression-nb #pdfWrapper .card-body div.bande-structure.entete-patient {
+        background: #fff !important; color: #000 !important;
+        border: 1.5px solid #000 !important; border-left-width: 6px !important;
+    }
+    html.impression-nb #pdfWrapper .card-body div.bande-structure.entete-patient * { color: #000 !important; }
+    /* proforma : les informations patient (grille) à gauche, « FACTURE PROFORMA · N° · date · expire » à droite */
+    .patient-info.bande-structure .bande-patient { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; }
+    .patient-info.bande-structure .bande-patient .label { font-size: 8.5px !important; opacity: .85; }
+    .patient-info.bande-structure .bande-patient .value { font-size: 11.5px !important; }
+    .bande-structure .structure-info.entete-titre { display: block !important; border: 0 !important; padding: 0 !important; border-radius: 0 !important; }
+    .bande-structure .structure-info .nom { display: block; font-size: 15px; font-weight: 800; letter-spacing: 1px; }
+    .bande-structure .structure-info .details { display: block; }
+    .bande-structure .structure-info .details span { display: block; font-size: 10px; }
+    /* proforma : un peu moins d'air, l'en-tête de la structure prenant de la hauteur (tenir sur une page) */
+    .proforma-container .proforma-body { padding-top: 12px !important; padding-bottom: 8px !important; }
+    .proforma-container .section-title { margin-bottom: 6px !important; }
+    .proforma-container .proforma-footer { padding-top: 6px !important; padding-bottom: 6px !important; }
+    /* proforma sans encadré patient déplacé (ex. structure sans grille) : la ligne de titre seule prend la couleur */
+    .proforma-container .structure-info {
+        background: var(--couleur-structure, #1a2a6c) !important; color: #fff !important;
+        border-left: 6px solid var(--couleur-structure-accent, var(--couleur-structure, #1a2a6c));
+        border-radius: 6px; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .proforma-container .structure-info .nom, .proforma-container .structure-info .details,
+    .proforma-container .structure-info .details span { color: #fff !important; }
 </style>
 <div class="entete-a4-structure">{{ _entete_a4 }}</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var patient = document.querySelector('.entete-patient');
+    var titre = document.querySelector('.entete-titre');
+    if (!patient || !titre) return;
+    var ancienneBande = titre.closest('.recu-header');
+    var gauche = document.createElement('div');
+    gauche.className = 'bande-patient' + (patient.classList.contains('row') ? ' row g-0' : '');
+    while (patient.firstChild) gauche.appendChild(patient.firstChild);
+    patient.appendChild(gauche);
+    patient.appendChild(titre);
+    // la grille Bootstrap (.row) passe à la partie gauche : sur la bande, elle forçait ses deux enfants à 100 %
+    patient.classList.remove('row');
+    // taille du texte de la bande = celle du tableau du document (10 à 12 px) : chaque document a sa propre échelle
+    var cellule = document.querySelector('table:not(.entete-a4-structure table) td');
+    var taille = cellule ? parseFloat(getComputedStyle(cellule).fontSize) : 11;
+    patient.style.setProperty('--bande-taille', Math.max(10, Math.min(taille || 11, 12)) + 'px');
+    patient.classList.add('bande-structure');
+    if (ancienneBande) ancienneBande.classList.add('entete-identite');
+});
+</script>
 {%- endif -%}

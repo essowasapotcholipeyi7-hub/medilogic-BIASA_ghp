@@ -238,6 +238,14 @@
         td.text-center {
             text-align: center;
         }
+
+        /* ⭐ 2026-10-22 (patron : « un tableau sans bords latéraux ») : quadrillage complet en A4 (le ticket
+           80 mm garde ses lignes pointillées) */
+        body:not(.ticket-80) .table-container table { border: 1.5px solid #1a2a3a; }
+        {% if format != '80mm' %}@page { size: A4; margin: 10mm; }{% endif %}
+        body:not(.ticket-80) .table-container th,
+        body:not(.ticket-80) .table-container td { border: 1px solid #c3cad3; }
+        body:not(.ticket-80) .table-container th { border-bottom: 2px solid #1a2a3a; }
         
         .fw-bold {
             font-weight: 600;
@@ -642,7 +650,7 @@
     <div class="proforma-container">
         <!-- ===== EN-TÊTE ===== -->
         {% if format != '80mm' %}{% include 'partials/entete_a4.html' %}{% endif %}
-        <div class="proforma-header">
+        <div class="proforma-header entete-identite">
             <div class="top-row">
                 <div class="entete-identite logo-area">
                     {% if logo_url %}
@@ -669,7 +677,7 @@
         </div>
         {% endif %}
         <!-- ===== STRUCTURE INFO ===== -->
-        <div class="structure-info">
+        <div class="structure-info entete-titre">
             <span class="nom">FACTURE PROFORMA</span>
             <div class="details">
                 <span>N°: #{{ proforma.numero_proforma or proforma.id }}</span>
@@ -681,8 +689,8 @@
         <!-- ===== PROFORMA BODY ===== -->
         <div class="proforma-body">
             <!-- Patient Info -->
-            <div class="section-title">Informations patient</div>
-            <div class="patient-info">
+            <div class="section-title entete-identite">Informations patient</div>
+            <div class="patient-info entete-patient">
                 <div class="info-item">
                     <div class="label">Patient</div>
                     <div class="value"><span class="notranslate">{{ proforma.patient_nom }}</span></div>

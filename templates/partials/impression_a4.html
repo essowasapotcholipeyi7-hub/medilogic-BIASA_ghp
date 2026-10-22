@@ -60,6 +60,16 @@ function imprimerA4(mode) {
         font-weight: 700 !important;
     }
     #pdfWrapper .card-body table tr { border-bottom-color: #8a8a8a !important; }
+    /* ⭐ 2026-10-22 (patron : « ce tableau n'a pas de bords latéraux ») : vrai quadrillage, cadre extérieur
+       compris — sauf le tableau de l'en-tête de la structure */
+    #pdfWrapper .card-body table:not(.entete-a4-structure table) {
+        border: 1.5px solid #000 !important; border-collapse: collapse !important;
+    }
+    #pdfWrapper .card-body table:not(.entete-a4-structure table) th,
+    #pdfWrapper .card-body table:not(.entete-a4-structure table) td {
+        border: 1px solid #8a8a8a !important;
+    }
+    #pdfWrapper .card-body table:not(.entete-a4-structure table) th { border-bottom: 2px solid #000 !important; }
 
     /* Net à payer : mis en valeur par un encadré plutôt que par la couleur */
     #pdfWrapper .montant-net-a-payer { font-size: 1.2em; font-weight: 800 !important; }
