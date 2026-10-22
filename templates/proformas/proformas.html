@@ -645,12 +645,32 @@
                     <p class="mt-2">Chargement de la proforma...</p>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                <button type="button" class="btn btn-success" onclick="finaliserConversionVente()">
-                    <i class="fas fa-check"></i> Finaliser la vente
-                </button>
+            <!-- ⭐ 2026-10-22 (patron) : même grand bouton que Vente actes / Vente pharmacie (long, vert,
+                 animé, plus gros et vert plein dès que le montant donné couvre le net à payer). -->
+            <div class="modal-footer d-block">
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-success btn-lg fw-bold" id="btnSauvegarderConversion" onclick="finaliserConversionVente()"
+                            style="box-shadow: 0 3px 8px rgba(25,135,84,0.35); letter-spacing: 0.3px;">
+                        <i class="fas fa-check-circle"></i> Cliquez ici pour sauvegarder la vente
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Annuler</button>
+                </div>
             </div>
+            <style>
+                /* même animation que #finaliserBtn (partials/zone_paiement.html) */
+                #btnSauvegarderConversion { transition: padding .25s ease, font-size .25s ease; animation: pulsationSauvegarde 1.8s ease-in-out infinite; }
+                #btnSauvegarderConversion.pret {
+                    background: #198754 !important; border-color: #146c43 !important; color: #fff !important;
+                    font-size: 1.35rem; padding-top: .9rem; padding-bottom: .9rem; animation-duration: 1s;
+                }
+                #btnSauvegarderConversion.pret:hover { background: #157347 !important; }
+                #btnSauvegarderConversion.pret i { color: #fff !important; }
+                @keyframes pulsationSauvegarde {
+                    0%, 100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, .55); }
+                    50%      { box-shadow: 0 0 0 9px rgba(25, 135, 84, 0); }
+                }
+                @media (prefers-reduced-motion: reduce) { #btnSauvegarderConversion { animation: none; } }
+            </style>
         </div>
     </div>
 </div>
@@ -2298,6 +2318,7 @@ async function convertirEnVente(proformaId) {
 }
 
 function afficherModalConversion(data) {
+    montantAutoConversion = null;   // ⭐ nouvelle proforma : rien de pré-rempli automatiquement pour l'instant
     document.getElementById('convertProformaNumero').textContent = data.numero_proforma || data.id;
 
     // ⭐ Charge le PBR complémentaire propre à CETTE compagnie (voir
@@ -2634,14 +2655,14 @@ function afficherModalConversion(data) {
             <div class="col-md-12">
                 <div class="alert alert-info py-2 mb-0">
                     <i class="fas fa-hand-holding-usd"></i>
-                    Prédépôt déjà versé (soins ambulatoires) : <strong>${Math.round(data.avance_recue).toLocaleString('fr-FR')} F</strong> — pré-rempli ci-dessous dans "Montant donné".
+                    Prédépôt déjà versé (${data.hospitalisation_id ? 'hospitalisation' : 'soins ambulatoires'}) : <strong>${Math.round(data.avance_recue).toLocaleString('fr-FR')} F</strong> — pré-rempli ci-dessous dans "Montant donné".
                 </div>
             </div>
         </div>` : ''}
         <div class="row mt-3">
             <div class="col-md-4">
                 <label class="form-label fw-bold">Mode de paiement</label>
-                <select class="form-control" id="convertModePaiement">
+                <select class="form-control" id="convertModePaiement" onchange="changerModePaiementConversion()">
                     <option value="especes">Espèces</option>
                     <option value="carte">Carte bancaire</option>
                     <option value="Moov_money">FLOOZ</option>
@@ -2655,7 +2676,7 @@ function afficherModalConversion(data) {
                        oninput="calculerRenduConversion()" style="border-color:#dc3545;">
             </div>
             <div class="col-md-3">
-                <label class="form-label fw-bold" style="color:#28a745;">Rendu</label>
+                <label class="form-label fw-bold" id="convertRenduLabel" style="color:#28a745;">Rendu au patient</label>
                 <input type="text" class="form-control" id="convertMontantRendu" value="0 FCFA" readonly 
                        style="font-weight:bold; color:#28a745; background:#f0f8f0;">
             </div>
@@ -3140,9 +3161,9 @@ function mettreAJourTotauxConversion() {
         }
     }
 
-    const btn = document.querySelector('#convertirProformaModal .btn-success');
+    const btn = document.getElementById('btnSauvegarderConversion');
     if (btn) {
-        btn.innerHTML = `<i class="fas fa-receipt"></i> Finaliser la vente (${Math.round(netAPayer).toLocaleString('fr-FR')} F)`;
+        btn.innerHTML = `<i class="fas fa-check-circle"></i> Cliquez ici pour sauvegarder la vente — ${Math.round(netAPayer).toLocaleString('fr-FR')} F`;
     }
 
     rafraichirPartAssurance();
@@ -3297,42 +3318,69 @@ async function ajouterArticleConversion() {
     mettreAJourTotauxConversion();
 }
 
-function calculerRenduConversion() {
-    const netAPayer = calculeNetAPayerConversion();
-    const montantDonne = parseFloat(document.getElementById('convertMontantDonne').value) || 0;
-    
-    let rendu = 0;
-    let resteAPayer = 0;
-    
-    if (montantDonne > netAPayer) {
-        rendu = montantDonne - netAPayer;
-        resteAPayer = 0;
-    } else if (montantDonne < netAPayer) {
-        rendu = 0;
-        resteAPayer = netAPayer - montantDonne;
-    } else {
-        rendu = 0;
-        resteAPayer = 0;
+// ⭐ 2026-10-22 (patron) : Mixx by Yas, Flooz, carte, chèque… on paie le montant exact -> « Montant donné »
+// pré-rempli tout seul avec le net à payer (comme Vente actes / pharmacie, partials/zone_paiement.html).
+// Avec un prédépôt (hospitalisation, soins ambulatoires) : jamais moins que le prédépôt — s'il dépasse le
+// net, on rend la monnaie. Un montant tapé à la main (paiement partiel) est respecté. Espèces : la
+// caissière saisit ce que le patient donne.
+let montantAutoConversion = null;   // dernier montant posé automatiquement
+function avanceConversion() {
+    const d = (typeof proformaConversionData !== 'undefined' && proformaConversionData) ? proformaConversionData : {};
+    return Math.round(parseFloat(d.avance_recue || 0) || 0);
+}
+function paiementSansMonnaieConversion() {
+    const mode = document.getElementById('convertModePaiement');
+    return !!mode && mode.value !== '' && mode.value.toLowerCase() !== 'especes';
+}
+function montantSelonModeConversion(netAPayer) {
+    const champ = document.getElementById('convertMontantDonne');
+    const donne = Math.round(parseFloat(champ.value) || 0);
+    if (!paiementSansMonnaieConversion()) return donne;
+    const avance = avanceConversion();
+    const cible = Math.max(Math.round(netAPayer || 0), avance, 0);
+    if (donne === 0 || donne === montantAutoConversion || donne === avance || donne > cible) {
+        if (donne !== cible) champ.value = cible;
+        montantAutoConversion = cible;
+        return cible;
     }
-    
+    return donne;
+}
+function changerModePaiementConversion() {
+    const champ = document.getElementById('convertMontantDonne');
+    if (!paiementSansMonnaieConversion() && Math.round(parseFloat(champ.value) || 0) === montantAutoConversion) {
+        champ.value = avanceConversion();   // retour aux espèces : on repart du prédépôt (ou de 0)
+        montantAutoConversion = null;
+        setTimeout(() => { champ.focus(); champ.select(); }, 50);
+    }
+    calculerRenduConversion();
+}
+
+function calculerRenduConversion() {
+    const netAPayer = Math.round(calculeNetAPayerConversion() || 0);
+    const montantDonne = montantSelonModeConversion(netAPayer);
+    const fcfa = n => Math.round(n).toLocaleString('fr-FR') + ' FCFA';
+
+    // « Rendu au patient » quand il y a de la monnaie, « Manquant » quand le montant donné ne suffit pas
     const renduElement = document.getElementById('convertMontantRendu');
-    if (montantDonne < netAPayer) {
-        renduElement.value = `${Math.round(resteAPayer).toLocaleString('fr-FR')} F manquant`;
+    const label = document.getElementById('convertRenduLabel');
+    const manque = montantDonne < netAPayer;
+    if (label) {
+        label.textContent = manque ? 'Manquant' : 'Rendu au patient';
+        label.style.color = manque ? '#dc3545' : '#28a745';
+    }
+    if (manque) {
+        renduElement.value = fcfa(netAPayer - montantDonne);
         renduElement.style.color = '#dc3545';
         renduElement.style.background = '#fde8e8';
-    } else if (rendu === 0 && montantDonne === netAPayer) {
-        renduElement.value = '0 FCFA (juste)';
-        renduElement.style.color = '#28a745';
-        renduElement.style.background = '#f0f8f0';
-    } else if (rendu > 0) {
-        renduElement.value = `${Math.round(rendu).toLocaleString('fr-FR')} FCFA`;
-        renduElement.style.color = '#28a745';
-        renduElement.style.background = '#f0f8f0';
     } else {
-        renduElement.value = '0 FCFA';
+        renduElement.value = (montantDonne === netAPayer && netAPayer > 0) ? '0 FCFA · montant exact' : fcfa(montantDonne - netAPayer);
         renduElement.style.color = '#28a745';
         renduElement.style.background = '#f0f8f0';
     }
+
+    // grand bouton vert plein dès que le montant donné couvre le net à payer
+    const btn = document.getElementById('btnSauvegarderConversion');
+    if (btn) btn.classList.toggle('pret', montantDonne > 0 && montantDonne >= netAPayer);
 }
 
 // ============================================
