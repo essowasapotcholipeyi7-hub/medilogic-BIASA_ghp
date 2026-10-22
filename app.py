@@ -14301,15 +14301,9 @@ def page_rapport_recettes_service():
 def _bornes_periode_heures(args):
     """⭐ 2026-10-17 (patron) : période avec heures (prise de service, ex. du 17/10 16:00 au
     18/10 09:00). Renvoie (début, fin EXCLUE, libellé « du … au … »). Sans heure : journées entières.
-    ValueError si les dates sont invalides."""
-    d = datetime.strptime(args.get('date_debut') or '', '%Y-%m-%d')
-    f = datetime.strptime(args.get('date_fin') or '', '%Y-%m-%d')
-    hd = (args.get('heure_debut') or '00:00').strip() or '00:00'
-    hf = (args.get('heure_fin') or '23:59').strip() or '23:59'
-    debut = datetime.combine(d.date(), datetime.strptime(hd, '%H:%M').time())
-    fin_exclue = datetime.combine(f.date(), datetime.strptime(hf, '%H:%M').time()) + timedelta(minutes=1)
-    libelle = f"du {d.strftime('%d/%m/%Y')} à {hd} au {f.strftime('%d/%m/%Y')} à {hf}"
-    return debut, fin_exclue, libelle
+    ValueError si les dates sont invalides. Partagé avec l'onglet de la comptabilité."""
+    from services.service_acte_service import bornes_periode_heures
+    return bornes_periode_heures(args)
 
 
 @app.route('/api/rapports/recettes-service/detail', methods=['GET'])

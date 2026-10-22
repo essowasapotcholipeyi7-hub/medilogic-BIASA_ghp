@@ -326,6 +326,22 @@ def situation_ventes(structure_id, vente_ids):
 CLES_SITUATION = ('encaisse', 'du_assurances', 'du_patients', 'rembourse', 'aides')
 
 
+def bornes_periode_heures(args):
+    """Période du rapport « Recettes par service », heures possibles (prise de service, ex. du
+    17/10 16:00 au 18/10 09:00). Renvoie (début, fin EXCLUE, libellé « du … au … »). Sans
+    heure : journées entières. ValueError si les dates sont invalides. Partagé par l'écran
+    administrateur (app.py) et l'onglet de la comptabilité (routes/comptabilite.py)."""
+    from datetime import datetime, timedelta
+    d = datetime.strptime(args.get('date_debut') or '', '%Y-%m-%d')
+    f = datetime.strptime(args.get('date_fin') or '', '%Y-%m-%d')
+    hd = (args.get('heure_debut') or '00:00').strip() or '00:00'
+    hf = (args.get('heure_fin') or '23:59').strip() or '23:59'
+    debut = datetime.combine(d.date(), datetime.strptime(hd, '%H:%M').time())
+    fin_exclue = datetime.combine(f.date(), datetime.strptime(hf, '%H:%M').time()) + timedelta(minutes=1)
+    libelle = f"du {d.strftime('%d/%m/%Y')} à {hd} au {f.strftime('%d/%m/%Y')} à {hf}"
+    return debut, fin_exclue, libelle
+
+
 def _repartir(montant_ligne, situation):
     """Part d'une ligne dans la situation de sa vente (au prorata de son montant)."""
     if not situation or situation['base'] <= 0:

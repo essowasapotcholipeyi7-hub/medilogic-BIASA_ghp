@@ -3825,6 +3825,152 @@ def export_rapport_txt(type_rapport):
 
 
 # ============================================================
+# RECETTES PAR SERVICE (patron, 2026-10-22)
+# ============================================================
+# Le rapport existait déjà côté administration (/rapport-recettes-service), mais
+# réservé à l'administrateur : le comptable ne le voyait pas. Mêmes chiffres
+# (services/service_acte_service.py), ici sous l'accès de la comptabilité (hook
+# _verifier_role_comptabilite), avec en plus un export tableur.
+
+def _periode_recettes_service():
+    from services.service_acte_service import bornes_periode_heures
+    return bornes_periode_heures(request.args)
+
+
+def _service_demande():
+    """service=<id> ou 'non_classe' → (service_id ou None, demandé ?)."""
+    sv = request.args.get('service')
+    if not sv:
+        return None, False
+    return (int(sv) if sv.isdigit() else None), True
+
+
+@compta_bp.route('/api/recettes-service')
+def api_recettes_service():
+    from services.service_acte_service import generer_rapport_recettes_service, CLES_SITUATION
+    try:
+        debut, fin, libelle = _periode_recettes_service()
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Dates ou heures invalides'}), 400
+    services = generer_rapport_recettes_service(session.get('structure_id'), debut, fin)
+    return jsonify({'success': True, 'services': services, 'periode': libelle,
+                    'total': round(sum(s['montant_total'] for s in services), 2),
+                    'totaux': {k: round(sum(s[k] for s in services), 2) for k in CLES_SITUATION}})
+
+
+@compta_bp.route('/api/recettes-service/detail')
+def api_recettes_service_detail():
+    from services.service_acte_service import detail_recettes_service, CLES_SITUATION
+    try:
+        debut, fin, libelle = _periode_recettes_service()
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Dates ou heures invalides'}), 400
+    service_id, _ = _service_demande()
+    lignes = detail_recettes_service(session.get('structure_id'), debut, fin, service_id)
+    return jsonify({'success': True, 'lignes': lignes, 'periode': libelle,
+                    'total': round(sum(l['montant'] for l in lignes), 2),
+                    'totaux': {k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION}})
+
+
+@compta_bp.route('/recettes-service/print')
+def print_recettes_service():
+    """Même état imprimable que l'écran administrateur (rapport_recettes_service_print.html)."""
+    from services.service_acte_service import (generer_rapport_recettes_service, detail_recettes_service,
+                                               CLES_SITUATION)
+    structure_id = session.get('structure_id')
+    try:
+        debut, fin, libelle = _periode_recettes_service()
+    except (TypeError, ValueError):
+        flash('Dates invalides', 'danger')
+        return redirect(url_for('comptabilite.index'))
+    service_id, un_service = _service_demande()
+    if un_service:
+        lignes = detail_recettes_service(structure_id, debut, fin, service_id)
+        return render_template('rapport_recettes_service_print.html', services=[], lignes=lignes,
+                               totaux={k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION},
+                               service_nom=request.args.get('service_nom') or ('Non classé' if not service_id else f'Service {service_id}'),
+                               total=round(sum(l['montant'] for l in lignes), 2),
+                               libelle_periode=libelle, date_debut=None, date_fin=None, now=datetime.now())
+    services = generer_rapport_recettes_service(structure_id, debut, fin)
+    return render_template('rapport_recettes_service_print.html', services=services,
+                           totaux={k: round(sum(s[k] for s in services), 2) for k in CLES_SITUATION},
+                           total=round(sum(s['montant_total'] for s in services), 2),
+                           libelle_periode=libelle, date_debut=None, date_fin=None, now=datetime.now())
+
+
+@compta_bp.route('/recettes-service/export')
+def export_recettes_service():
+    """Export tableur (.csv ';', BOM UTF-8 — même format que les autres exports de la
+    comptabilité, s'ouvre directement dans Excel) des recettes par service.
+      contenu=synthese (défaut) : une ligne par service, avec les totaux ;
+      contenu=detail            : toutes les lignes (vente, patient, acte) avec leur service ;
+      service=<id>|non_classe    : le détail d'un seul service."""
+    from services.service_acte_service import generer_rapport_recettes_service, detail_recettes_service
+    structure_id = session.get('structure_id')
+    try:
+        debut, fin, libelle = _periode_recettes_service()
+    except (TypeError, ValueError):
+        return "Dates ou heures invalides", 400
+
+    service_id, un_service = _service_demande()
+    contenu_demande = 'detail' if un_service else (request.args.get('contenu') or 'synthese')
+    services = [] if un_service else generer_rapport_recettes_service(structure_id, debut, fin)
+
+    def ligne(*valeurs):
+        return ';'.join(_csv_montant(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else _csv_champ(v)
+                        for v in valeurs)
+
+    if un_service:
+        titre = f"Recettes du service : {request.args.get('service_nom') or ('Non classé' if not service_id else service_id)}"
+    elif contenu_demande == 'detail':
+        titre = "Recettes par service — détail des lignes"
+    else:
+        titre = "Recettes par service"
+    lignes_csv = [_csv_champ(_nom_structure_export(structure_id).upper()), _csv_champ(titre),
+                  _csv_champ(f"Période : {libelle}"),
+                  _csv_champ(f"Édité le {datetime.now().strftime('%d/%m/%Y %H:%M')}"), '']
+
+    if contenu_demande == 'detail':
+        a_traiter = ([(service_id, request.args.get('service_nom') or '')] if un_service
+                     else [(s['service_id'], s['service_nom']) for s in services])
+        lignes_csv.append(ligne('Service', 'Date et heure', 'N° vente', 'Patient', 'Acte / produit', 'Type',
+                                'Quantité', 'Prix', 'Montant', 'Encaissé', 'Dû assurances', 'Dû patients',
+                                'Remboursé', 'Aides / remises'))
+        totaux = [0.0] * 6
+        for sid, snom in a_traiter:
+            for l in detail_recettes_service(structure_id, debut, fin, sid):
+                lignes_csv.append(ligne(snom or 'Non classé', l['date'], str(l['numero'] or ''), l['patient'], l['acte'],
+                                        l['type'], l['quantite'], l['prix'], l['montant'], l['encaisse'],
+                                        l['du_assurances'], l['du_patients'], l['rembourse'], l['aides']))
+                for i, k in enumerate(('montant', 'encaisse', 'du_assurances', 'du_patients', 'rembourse', 'aides')):
+                    totaux[i] += l[k]
+        lignes_csv.append(ligne('TOTAL', '', '', '', '', '', '', '', *totaux))
+    else:
+        total = sum(s['montant_total'] for s in services)
+        lignes_csv.append(ligne('Service', 'Nombre de lignes', 'Recettes', '% du total', 'Encaissé',
+                                'Dû assurances', 'Dû patients', 'Remboursé', 'Aides / remises'))
+        for s in services:
+            pct = f"{(s['montant_total'] / total * 100):.1f}".replace('.', ',') if total else ''
+            lignes_csv.append(ligne(s['service_nom'], s['nb_lignes'], s['montant_total'], pct, s['encaisse'],
+                                    s['du_assurances'], s['du_patients'], s['rembourse'], s['aides']))
+        lignes_csv.append(ligne('TOTAL', sum(s['nb_lignes'] for s in services), total, '100' if total else '',
+                                *[sum(s[k] for s in services) for k in
+                                  ('encaisse', 'du_assurances', 'du_patients', 'rembourse', 'aides')]))
+
+    contenu = '﻿' + '\r\n'.join(lignes_csv) + '\r\n'
+    nom_fichier = ('recettes_service_detail' if contenu_demande == 'detail' else 'recettes_par_service') \
+        + f"_{debut.strftime('%Y-%m-%d')}_{(fin - timedelta(minutes=1)).strftime('%Y-%m-%d')}.csv"
+    from flask import Response
+    return Response(contenu, mimetype='text/csv; charset=utf-8',
+                    headers={'Content-Disposition': f'attachment; filename="{nom_fichier}"'})
+
+
+def _nom_structure_export(structure_id):
+    """Nom de la structure pour l'en-tête des exports (session, sinon « MEDILOGIC »)."""
+    return session.get('structure_nom') or 'MEDILOGIC'
+
+
+# ============================================================
 # EXPORT COMPTABLE NORMALISÉ (FORMAT FEC)
 # ============================================================
 # ⭐ Le TXT ci-dessus est un rapport IMPRIMABLE (colonnes de largeur fixe,

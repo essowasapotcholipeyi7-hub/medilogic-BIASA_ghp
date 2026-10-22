@@ -190,6 +190,11 @@
                         </button>
                     </li>
                     <li class="nav-item">
+                        <button class="nav-link" id="recettesservice-tab" data-bs-toggle="tab" data-bs-target="#recettesservice" type="button" role="tab" onclick="ouvrirRecettesService()">
+                            <i class="fas fa-sitemap"></i> Recettes par service
+                        </button>
+                    </li>
+                    <li class="nav-item">
                         <button class="nav-link" id="rapprochement-tab" data-bs-toggle="tab" data-bs-target="#rapprochement" type="button" role="tab" onclick="chargerComptesRapprochement()">
                             <i class="fas fa-scale-balanced"></i> Rapprochement bancaire
                         </button>
@@ -1207,6 +1212,109 @@
                                         </table>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET RECETTES PAR SERVICE (patron, 2026-10-22) -->
+                    <!-- ========================================== -->
+                    <!-- Mêmes chiffres que le rapport « Recettes par service » de
+                         l'administration (jusqu'ici invisible pour le comptable),
+                         avec un export tableur de la synthèse et du détail. -->
+                    <div class="tab-pane fade" id="recettesservice" role="tabpanel">
+                        <h6><i class="fas fa-sitemap"></i> Recettes par service</h6>
+
+                        <div class="card border-primary mb-3">
+                            <div class="card-body">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-auto">
+                                        <label class="form-label fw-bold mb-1">Du (date et heure)</label>
+                                        <div class="d-flex gap-1">
+                                            <input type="date" class="form-control" id="crsDateDebut">
+                                            <input type="time" class="form-control" id="crsHeureDebut" value="00:00" style="max-width:110px;">
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <label class="form-label fw-bold mb-1">Au (date et heure)</label>
+                                        <div class="d-flex gap-1">
+                                            <input type="date" class="form-control" id="crsDateFin">
+                                            <input type="time" class="form-control" id="crsHeureFin" value="23:59" style="max-width:110px;">
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <div class="btn-group">
+                                            <button class="btn btn-outline-secondary" onclick="crsPeriodeRapide('mois')">Ce mois</button>
+                                            <button class="btn btn-outline-secondary" onclick="crsPeriodeRapide('annee')">Cette année</button>
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <button class="btn btn-primary" onclick="chargerRecettesService()"><i class="fas fa-sync"></i> Afficher</button>
+                                    </div>
+                                    <div class="col-auto ms-auto d-flex gap-2 flex-wrap">
+                                        <button class="btn btn-outline-dark" onclick="imprimerRecettesService()"><i class="fas fa-print"></i> Imprimer</button>
+                                        <div class="btn-group">
+                                            <button class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown" type="button">
+                                                <i class="fas fa-file-excel"></i> Exporter (Excel)
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end">
+                                                <li><button class="dropdown-item" onclick="exporterRecettesService('synthese')"><i class="fas fa-table-list me-2"></i>Synthèse par service</button></li>
+                                                <li><button class="dropdown-item" onclick="exporterRecettesService('detail')"><i class="fas fa-list me-2"></i>Détail de toutes les lignes</button></li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-2 fw-bold text-primary" id="crsPeriodeLibelle"></div>
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-6 col-md-3"><div class="border rounded p-2 h-100"><div class="small text-muted">Recettes totales</div><div class="fs-5 fw-bold" id="crsTotal">-</div></div></div>
+                            <div class="col-6 col-md-3"><div class="border rounded p-2 h-100"><div class="small text-muted">Réellement encaissé</div><div class="fs-5 fw-bold text-success" id="crsEncaisse">-</div><div class="small text-muted">patients + assurances, remboursements déduits</div></div></div>
+                            <div class="col-6 col-md-3"><div class="border rounded p-2 h-100"><div class="small text-muted">Dû par les assurances</div><div class="fs-5 fw-bold text-warning" id="crsAssurances">-</div></div></div>
+                            <div class="col-6 col-md-3"><div class="border rounded p-2 h-100"><div class="small text-muted">Dû par les patients</div><div class="fs-5 fw-bold text-danger" id="crsPatients">-</div><div class="small text-muted" id="crsAutres"></div></div></div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover table-bordered align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Service</th>
+                                        <th class="text-end">Lignes</th>
+                                        <th class="text-end">Recettes</th>
+                                        <th class="text-end">% du total</th>
+                                        <th class="text-end text-success">Encaissé</th>
+                                        <th class="text-end text-warning">Dû assurances</th>
+                                        <th class="text-end text-danger">Dû patients</th>
+                                        <th class="text-end">Remboursé</th>
+                                        <th class="text-end">Aides / remises</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="crsLignes">
+                                    <tr><td colspan="9" class="text-center text-muted">Choisissez une période puis « Afficher ».</td></tr>
+                                </tbody>
+                                <tfoot class="table-light fw-bold" id="crsPied"></tfoot>
+                            </table>
+                        </div>
+                        <p class="small text-muted"><i class="fas fa-hand-pointer"></i> Cliquez sur un service pour voir le détail de ses recettes, l'imprimer ou l'exporter.</p>
+
+                        <div class="card mt-3" id="crsDetailCarte" style="display:none;">
+                            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <span><i class="fas fa-list"></i> <strong id="crsDetailTitre"></strong> <small id="crsDetailPeriode" class="ms-1"></small></span>
+                                <span class="d-flex gap-1">
+                                    <button class="btn btn-light btn-sm" onclick="imprimerDetailRecettesService()"><i class="fas fa-print"></i> Imprimer</button>
+                                    <button class="btn btn-success btn-sm" onclick="exporterDetailRecettesService()"><i class="fas fa-file-excel"></i> Exporter</button>
+                                    <button class="btn btn-outline-light btn-sm" onclick="document.getElementById('crsDetailCarte').style.display='none'"><i class="fas fa-times"></i></button>
+                                </span>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light"><tr><th>Date et heure</th><th>N° vente</th><th>Patient</th><th>Acte / produit</th><th class="text-end">Qté</th><th class="text-end">Prix</th><th class="text-end">Montant</th>
+                                        <th class="text-end text-success">Encaissé</th><th class="text-end text-warning">Dû assur.</th><th class="text-end text-danger">Dû patient</th></tr></thead>
+                                    <tbody id="crsDetailLignes"></tbody>
+                                    <tfoot class="table-light fw-bold"><tr><td colspan="6" class="text-end">Total</td><td class="text-end" id="crsDetailTotal"></td>
+                                        <td class="text-end text-success" id="crsDetailEncaisse"></td><td class="text-end text-warning" id="crsDetailAssur"></td><td class="text-end text-danger" id="crsDetailPatient"></td></tr></tfoot>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -4007,6 +4115,161 @@ async function enregistrerReglementAchat(force) {
 // ============================================================
 // TAFIRE
 // ============================================================
+
+// ============================================================
+// RECETTES PAR SERVICE (patron, 2026-10-22) — même calcul que le rapport de
+// l'administration, ici accessible au comptable, avec export tableur.
+// ============================================================
+let crsServiceCourant = null;
+let crsDejaOuvert = false;
+
+function crsF(n) { return Math.round(n || 0).toLocaleString('fr-FR') + ' F'; }
+function crsEsc(t) {
+    return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+}
+function crsDateISO(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function crsPeriodeRapide(type) {
+    const now = new Date();
+    const debut = type === 'mois' ? new Date(now.getFullYear(), now.getMonth(), 1) : new Date(now.getFullYear(), 0, 1);
+    document.getElementById('crsDateDebut').value = crsDateISO(debut);
+    document.getElementById('crsDateFin').value = crsDateISO(now);
+    document.getElementById('crsHeureDebut').value = '00:00';
+    document.getElementById('crsHeureFin').value = '23:59';
+    chargerRecettesService();
+}
+
+// Premier affichage de l'onglet : année en cours, comme le rapport de l'administration.
+function ouvrirRecettesService() {
+    if (crsDejaOuvert) return;
+    crsDejaOuvert = true;
+    crsPeriodeRapide('annee');
+}
+
+function crsParametres() {
+    return new URLSearchParams({
+        date_debut: document.getElementById('crsDateDebut').value,
+        date_fin: document.getElementById('crsDateFin').value,
+        heure_debut: document.getElementById('crsHeureDebut').value || '00:00',
+        heure_fin: document.getElementById('crsHeureFin').value || '23:59',
+    }).toString();
+}
+
+async function crsPeriodeValide() {
+    if (!document.getElementById('crsDateDebut').value || !document.getElementById('crsDateFin').value) {
+        await afficherMessage('Choisissez les deux dates de la période.');
+        return false;
+    }
+    return true;
+}
+
+async function chargerRecettesService() {
+    if (!(await crsPeriodeValide())) return;
+    const corps = document.getElementById('crsLignes');
+    const pied = document.getElementById('crsPied');
+    corps.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> Chargement...</td></tr>';
+    pied.innerHTML = '';
+    document.getElementById('crsDetailCarte').style.display = 'none';
+    fetch(`/comptabilite/api/recettes-service?${crsParametres()}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                corps.innerHTML = `<tr><td colspan="9" class="text-center text-danger">${crsEsc(data.error || 'Erreur')}</td></tr>`;
+                return;
+            }
+            const t = data.totaux || {};
+            document.getElementById('crsPeriodeLibelle').textContent = 'Période : ' + data.periode;
+            document.getElementById('crsTotal').textContent = crsF(data.total);
+            document.getElementById('crsEncaisse').textContent = crsF(t.encaisse);
+            document.getElementById('crsAssurances').textContent = crsF(t.du_assurances);
+            document.getElementById('crsPatients').textContent = crsF(t.du_patients);
+            const autres = [];
+            if ((t.rembourse || 0) > 0.5) autres.push('remboursé ' + crsF(t.rembourse));
+            if ((t.aides || 0) > 0.5) autres.push('aides / remises ' + crsF(t.aides));
+            document.getElementById('crsAutres').textContent = autres.join(' · ');
+
+            if (!data.services.length) {
+                corps.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3">Aucune recette sur cette période.</td></tr>';
+                return;
+            }
+            corps.innerHTML = data.services.map(s => {
+                const pct = data.total > 0 ? (s.montant_total / data.total * 100).toFixed(1).replace('.', ',') : '0';
+                const id = s.service_id ? String(s.service_id) : 'non_classe';
+                return `<tr style="cursor:pointer;" title="Voir le détail de ce service"
+                            onclick='voirDetailRecettesService(${JSON.stringify(id)}, ${JSON.stringify(s.service_nom).replace(/'/g, '&#39;')})'>
+                    <td class="fw-bold ${s.service_id ? '' : 'text-muted'}">${s.service_id ? '' : '<i class="fas fa-question-circle"></i> '}${crsEsc(s.service_nom)}</td>
+                    <td class="text-end">${s.nb_lignes}</td>
+                    <td class="text-end fw-bold">${crsF(s.montant_total)}</td>
+                    <td class="text-end">${pct} %</td>
+                    <td class="text-end text-success">${crsF(s.encaisse)}</td>
+                    <td class="text-end text-warning">${crsF(s.du_assurances)}</td>
+                    <td class="text-end text-danger">${crsF(s.du_patients)}</td>
+                    <td class="text-end">${crsF(s.rembourse)}</td>
+                    <td class="text-end">${crsF(s.aides)}</td>
+                </tr>`;
+            }).join('');
+            const nbLignes = data.services.reduce((a, s) => a + s.nb_lignes, 0);
+            pied.innerHTML = `<tr><td>TOTAL</td><td class="text-end">${nbLignes}</td><td class="text-end">${crsF(data.total)}</td><td class="text-end">100 %</td>
+                <td class="text-end text-success">${crsF(t.encaisse)}</td><td class="text-end text-warning">${crsF(t.du_assurances)}</td>
+                <td class="text-end text-danger">${crsF(t.du_patients)}</td><td class="text-end">${crsF(t.rembourse)}</td><td class="text-end">${crsF(t.aides)}</td></tr>`;
+        })
+        .catch(() => { corps.innerHTML = '<tr><td colspan="9" class="text-center text-danger">Erreur réseau</td></tr>'; });
+}
+
+function voirDetailRecettesService(serviceId, serviceNom) {
+    crsServiceCourant = {id: serviceId, nom: serviceNom};
+    const carte = document.getElementById('crsDetailCarte');
+    const corps = document.getElementById('crsDetailLignes');
+    carte.style.display = '';
+    document.getElementById('crsDetailTitre').textContent = serviceNom;
+    document.getElementById('crsDetailPeriode').textContent = '';
+    corps.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> Chargement...</td></tr>';
+    ['crsDetailTotal', 'crsDetailEncaisse', 'crsDetailAssur', 'crsDetailPatient'].forEach(id => document.getElementById(id).textContent = '');
+    fetch(`/comptabilite/api/recettes-service/detail?${crsParametres()}&service=${encodeURIComponent(serviceId)}`)
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) { corps.innerHTML = `<tr><td colspan="10" class="text-danger text-center">${crsEsc(d.error || 'Erreur')}</td></tr>`; return; }
+            document.getElementById('crsDetailPeriode').textContent = '— ' + d.periode;
+            corps.innerHTML = d.lignes.length ? d.lignes.map(l => `<tr>
+                <td class="text-nowrap">${crsEsc(l.date)}</td><td>${crsEsc(l.numero)}</td><td><span class="notranslate">${crsEsc(l.patient)}</span></td><td>${crsEsc(l.acte)}</td>
+                <td class="text-end">${l.quantite}</td><td class="text-end">${crsF(l.prix)}</td><td class="text-end">${crsF(l.montant)}</td>
+                <td class="text-end text-success">${crsF(l.encaisse)}</td><td class="text-end text-warning">${crsF(l.du_assurances)}</td><td class="text-end text-danger">${crsF(l.du_patients)}</td></tr>`).join('')
+                : '<tr><td colspan="10" class="text-center text-muted py-3">Aucune recette pour ce service sur la période.</td></tr>';
+            const t = d.totaux || {};
+            document.getElementById('crsDetailTotal').textContent = crsF(d.total);
+            document.getElementById('crsDetailEncaisse').textContent = crsF(t.encaisse);
+            document.getElementById('crsDetailAssur').textContent = crsF(t.du_assurances);
+            document.getElementById('crsDetailPatient').textContent = crsF(t.du_patients);
+            carte.scrollIntoView({behavior: 'smooth', block: 'start'});
+        })
+        .catch(() => { corps.innerHTML = '<tr><td colspan="10" class="text-danger text-center">Erreur réseau</td></tr>'; });
+}
+
+async function imprimerRecettesService() {
+    if (!(await crsPeriodeValide())) return;
+    window.open(`/comptabilite/recettes-service/print?${crsParametres()}`, '_blank', 'width=1100,height=800');
+}
+
+async function exporterRecettesService(contenu) {
+    if (!(await crsPeriodeValide())) return;
+    window.location.href = `/comptabilite/recettes-service/export?${crsParametres()}&contenu=${contenu}`;
+}
+
+function crsParamsService() {
+    return `&service=${encodeURIComponent(crsServiceCourant.id)}&service_nom=${encodeURIComponent(crsServiceCourant.nom)}`;
+}
+
+function imprimerDetailRecettesService() {
+    if (!crsServiceCourant) return;
+    window.open(`/comptabilite/recettes-service/print?${crsParametres()}${crsParamsService()}`, '_blank', 'width=1100,height=800');
+}
+
+function exporterDetailRecettesService() {
+    if (!crsServiceCourant) return;
+    window.location.href = `/comptabilite/recettes-service/export?${crsParametres()}${crsParamsService()}`;
+}
 
 function chargerTafire() {
     const anneeInput = document.getElementById('tafireAnnee');
