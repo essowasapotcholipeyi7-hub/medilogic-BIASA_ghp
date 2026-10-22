@@ -8,6 +8,10 @@
 {% endblock %}
 
 {% block content %}
+<style>
+    /* listes longues : elles défilent dans leur carte, la recherche reste visible */
+    .liste-modeles { max-height: 68vh; overflow-y: auto; }
+</style>
 
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h4 class="mb-0"><i class="fas fa-file-word me-2"></i>Modèles de résultats</h4>
@@ -32,14 +36,19 @@
 <div class="row g-3">
     <div class="col-md-6">
         <div class="card">
-            <div class="card-header bg-primary text-white"><i class="fas fa-vial me-1"></i> Biologie</div>
-            <div class="card-body p-0"><div id="listeModelesAnalyse"><div class="text-center text-muted py-4">Chargement...</div></div></div>
+            <div class="card-header bg-primary text-white"><i class="fas fa-vial me-1"></i> Biologie <span class="badge bg-light text-dark ms-1" id="nbModelesAnalyse"></span>
+                {# ⭐ 2026-10-22 (patron : « la liste est longue, il faut pouvoir rechercher un modèle rapidement ») #}
+                <input type="search" class="form-control form-control-sm mt-2" id="rechercheModelesAnalyse" autocomplete="off"
+                       placeholder="Rechercher un modèle de biologie (ex. NFS, CRP, sérologie...)" oninput="afficherListesModeles()"></div>
+            <div class="card-body p-0 liste-modeles"><div id="listeModelesAnalyse"><div class="text-center text-muted py-4">Chargement...</div></div></div>
         </div>
     </div>
     <div class="col-md-6">
         <div class="card">
-            <div class="card-header bg-success text-white"><i class="fas fa-x-ray me-1"></i> Imagerie</div>
-            <div class="card-body p-0"><div id="listeModelesExamen"><div class="text-center text-muted py-4">Chargement...</div></div></div>
+            <div class="card-header bg-success text-white"><i class="fas fa-x-ray me-1"></i> Imagerie <span class="badge bg-light text-dark ms-1" id="nbModelesExamen"></span>
+                <input type="search" class="form-control form-control-sm mt-2" id="rechercheModelesExamen" autocomplete="off"
+                       placeholder="Rechercher un modèle d'imagerie (ex. échographie, thorax, genou...)" oninput="afficherListesModeles()"></div>
+            <div class="card-body p-0 liste-modeles"><div id="listeModelesExamen"><div class="text-center text-muted py-4">Chargement...</div></div></div>
         </div>
     </div>
 </div>
@@ -209,8 +218,12 @@ async function supprimerModele(id) {
         .then(async data => { if (data.success) chargerModeles(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
-function chargerModeles() {
-    fetch('/api/modeles-resultats').then(r => r.json()).then(lignes => {
+// ⭐ 2026-10-22 : recherche dans chaque liste — tous les mots tapés, sans tenir compte des accents
+let modelesCharges = [];
+const _sansAccentsModele = t => (t || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function afficherListesModeles() {
+    const lignes = modelesCharges;
+    {
         const rendre = (liste) => liste.length
             ? '<div class="list-group list-group-flush">' + liste.map(m => `
                 <div class="list-group-item d-flex justify-content-between align-items-center">
@@ -228,8 +241,21 @@ function chargerModeles() {
                     </div>
                 </div>`).join('') + '</div>'
             : '<div class="text-center text-muted py-4">Aucun modèle pour le moment.</div>';
-        document.getElementById('listeModelesAnalyse').innerHTML = rendre(lignes.filter(l => l.type_prestation === 'analyse'));
-        document.getElementById('listeModelesExamen').innerHTML = rendre(lignes.filter(l => l.type_prestation === 'examen'));
+        [['analyse', 'Analyse'], ['examen', 'Examen']].forEach(([type, suffixe]) => {
+            const tous = lignes.filter(l => l.type_prestation === type);
+            const mots = _sansAccentsModele(document.getElementById('recherche' + 'Modeles' + suffixe).value).split(/\s+/).filter(Boolean);
+            const trouves = mots.length ? tous.filter(l => mots.every(m => _sansAccentsModele(l.nom).includes(m))) : tous;
+            document.getElementById('liste' + 'Modeles' + suffixe).innerHTML = (mots.length && !trouves.length && tous.length)
+                ? '<div class="text-center text-muted py-4">Aucun modèle ne correspond à cette recherche.</div>' : rendre(trouves);
+            document.getElementById('nb' + 'Modeles' + suffixe).textContent = mots.length ? `${trouves.length} / ${tous.length}` : (tous.length || '');
+        });
+    }
+}
+
+function chargerModeles() {
+    fetch('/api/modeles-resultats').then(r => r.json()).then(lignes => {
+        modelesCharges = Array.isArray(lignes) ? lignes : [];
+        afficherListesModeles();
     });
 }
 
