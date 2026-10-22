@@ -3888,7 +3888,7 @@ def print_recettes_service():
         lignes = detail_recettes_service(structure_id, debut, fin, service_id)
         return render_template('rapport_recettes_service_print.html', services=[], lignes=lignes,
                                totaux={k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION},
-                               service_nom=request.args.get('service_nom') or ('Non classé' if not service_id else f'Service {service_id}'),
+                               service_nom=request.args.get('service_nom') or ('Autre' if not service_id else f'Service {service_id}'),
                                total=round(sum(l['montant'] for l in lignes), 2),
                                libelle_periode=libelle, date_debut=None, date_fin=None, now=datetime.now())
     services = generer_rapport_recettes_service(structure_id, debut, fin)
@@ -3921,7 +3921,7 @@ def export_recettes_service():
                         for v in valeurs)
 
     if un_service:
-        titre = f"Recettes du service : {request.args.get('service_nom') or ('Non classé' if not service_id else service_id)}"
+        titre = f"Recettes du service : {request.args.get('service_nom') or ('Autre' if not service_id else service_id)}"
     elif contenu_demande == 'detail':
         titre = "Recettes par service — détail des lignes"
     else:
@@ -3939,7 +3939,7 @@ def export_recettes_service():
         totaux = [0.0] * 6
         for sid, snom in a_traiter:
             for l in detail_recettes_service(structure_id, debut, fin, sid):
-                lignes_csv.append(ligne(snom or 'Non classé', l['date'], str(l['numero'] or ''), l['patient'], l['acte'],
+                lignes_csv.append(ligne(snom or 'Autre', l['date'], str(l['numero'] or ''), l['patient'], l['acte'],
                                         l['type'], l['quantite'], l['prix'], l['montant'], l['encaisse'],
                                         l['du_assurances'], l['du_patients'], l['rembourse'], l['aides']))
                 for i, k in enumerate(('montant', 'encaisse', 'du_assurances', 'du_patients', 'rembourse', 'aides')):

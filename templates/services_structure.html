@@ -34,9 +34,19 @@
             <strong>Pharmacie</strong> : les ventes de la pharmacie y vont toutes seules.</li>
         <li>Seuls les services cochés <strong>« Hospitalisation »</strong> sont proposés à l'admission d'un séjour
             et peuvent avoir des <a href="{{ url_for('page_hospitalisation_configuration') }}">chambres et des lits</a>.</li>
-        <li>Les autres actes sont rangés d'après la spécialité indiquée dans leur nom, ou d'après la
-            {% if session.is_admin %}<a href="{{ url_for('page_classification_services') }}">classification des actes</a>{% else %}classification des actes{% endif %}.
-            Sinon, ils restent « Non classé ».</li>
+        <li>Rangés tout seuls d'après le nom de l'acte, si la structure a le service :
+            injections, perfusions, mises en observation et autres soins infirmiers vendus directement → <strong>Soins</strong>
+            (au cours d'une hospitalisation : service du séjour) ;
+            écho-doppler cardiaque, ECG, MAPA, Holter → <strong>Cardiologie</strong> ;
+            kératométrie, pachymétrie, PIO, glaucome, cristallin, fond d'œil → <strong>Ophtalmologie</strong> ;
+            césarienne, accouchement → <strong>Obstétrique</strong> (sinon Gynécologie) ;
+            échographie obstétricale, consultation prénatale → <strong>Gynécologie</strong> ;
+            spéculum, gants, thermomètre → <strong>Pharmacie</strong> ;
+            NFS, CRP et autres analyses, même sans code R → <strong>Laboratoire</strong>.</li>
+        <li>Les consultations vont au service de la spécialité indiquée dans leur nom. Le reste se range avec la
+            {% if session.is_admin %}<a href="{{ url_for('page_classification_services') }}">classification des actes</a>{% else %}classification des actes{% endif %},
+            sinon il va dans « Autre » (carnets CPN, carnets de consultation...).</li>
+        <li>Créer un service ou changer la classification met aussi à jour les recettes déjà enregistrées.</li>
     </ul>
 </div>
 

@@ -23,12 +23,17 @@ tranche gagne) :
      (médecine générale), un suffixe "(SPECIALITE)" comme le catalogue en
      porte déjà (ex. "S101 Consultation specialisee (RHUMATOLOGIE)"), les
      codes Q (radiologie/imagerie), les codes R (laboratoire), et la vente
-     pharmacie. Tout le reste (P, B, C, actes ambigus...) n'est PAS deviné
-     — mieux vaut "Non classé" et visible qu'un mauvais rapprochement.
+     pharmacie. ⭐ 2026-10-22 (patron) : plus les règles par domaine de
+     _REGLES_DOMAINE (soins infirmiers, cardiologie, ophtalmologie,
+     gynéco-obstétrique, petit matériel en pharmacie) et les analyses /
+     examens d'imagerie reconnus à leur nom. Le reste n'est PAS deviné —
+     mieux vaut "Autre" et visible qu'un mauvais rapprochement.
 
 Jamais de ligne silencieusement absente du rapport : ce qui n'est
-résolu par aucun des 3 niveaux tombe dans "Non classé" (service_id NULL),
-toujours compté dans les totaux."""
+résolu par aucun des 3 niveaux tombe dans "Autre" (service_id NULL,
+anciennement "Non classé"), toujours compté dans les totaux.
+reclasser_recettes_service() réapplique les règles aux recettes déjà
+enregistrées (après un changement de services ou de classement)."""
 import re
 import unicodedata
 
@@ -38,9 +43,21 @@ from models import db, ServiceHospitalisation, ClassificationServiceActe, Recett
 def _normaliser(texte):
     if not texte:
         return ''
+    texte = texte.replace('œ', 'oe').replace('Œ', 'OE')
     texte = unicodedata.normalize('NFKD', texte)
     texte = ''.join(c for c in texte if not unicodedata.combining(c))
     return texte.lower().strip()
+
+
+def _mots(texte):
+    """Texte normalisé réduit à des mots séparés par une espace (apostrophes, tirets,
+    parenthèses... deviennent des espaces) — pour chercher des mots-clés entiers."""
+    return ' '.join(re.sub(r'[^a-z0-9]+', ' ', _normaliser(texte)).split())
+
+
+def _contient(nom_mots, motifs):
+    """Un des motifs (expressions régulières sur _mots()) est présent dans le nom."""
+    return any(re.search(m, nom_mots) for m in motifs)
 
 
 # ⭐ 2026-10-17 (patron : « il faut que la création des services soit bien claire ») — avant, la seule
@@ -107,38 +124,175 @@ def _charger_classification_manuelle(structure_id):
     return {l.nom_acte: l.service_id for l in lignes}
 
 
+# ⭐ 2026-10-22 (patron) : classement automatique par domaine, d'après le nom de l'acte.
+# Chaque règle : (motifs cherchés dans le nom, type de service visé ou None, mots-clés du nom
+# du service visé dans l'ordre de préférence, motifs qui empêchent la règle). Si la structure
+# n'a pas ce service, la règle ne tranche pas et on passe aux suivantes (un écho-doppler
+# cardiaque sans service de cardiologie retombe ainsi en radiologie, par son code Q).
+_REGLES_DOMAINE = [
+    # Petit matériel vendu comme un acte (spéculum, gants...) : c'est de la pharmacie.
+    ([r'\bspeculum', r'\bgants?\b', r'\bthermometre', r'\bseringues?\b', r'\bcompresses?\b',
+      r'\bsparadrap', r'\bcatheter', r'\bperfuseur', r'\bepicranien'],
+     'pharmacie', ['pharmacie'], []),
+    # Cardiologie : écho-doppler cardiaque, MAPA, ECG, Holter, épreuve d'effort, IPS.
+    ([r'\bdoppler cardiaque', r'\bechodoppler cardiaque', r'\becho doppler cardiaque', r'\bechocardiograph',
+      r'\bmapa\b', r'\becg\b', r'\belectrocardiogra', r'\bholter', r'\bepreuve d effort',
+      r'\bpression systolique'],
+     None, ['cardiolog'], []),
+    # Ophtalmologie : kératométrie, pachymétrie, PIO, glaucome, cristallin, fond d'œil...
+    ([r'\bkeratometr', r'\bpachymetr', r'\bpio\b', r'\bpression intra ?oculaire', r'\btonometr',
+      r'\btonograph', r'\bglaucom', r'\bcristallin', r'\bcataract', r'\bfonds? d oeil', r'\brefraction',
+      r'\bchamp visuel', r'\bbiomicroscop', r'\bgonioscop', r'\bacuite visuelle', r'\bophtalm'],
+     None, ['ophtalm'], []),
+    # Césarienne, accouchement : obstétrique (sinon gynécologie / maternité).
+    ([r'\bcesarienne', r'\baccouchement'], None, ['obstetri', 'gyneco', 'maternite'], []),
+    # Échographie obstétricale, consultation prénatale : gynécologie.
+    ([r'\bech\w* obstetric', r'\bobstetricale', r'\bprenatale?\b'], None, ['gyneco', 'obstetri', 'maternite'], []),
+    # Soins infirmiers vendus directement (injections, perfusions, mises en observation...).
+    # Au cours d'une hospitalisation, la ligne va au service du séjour (service_id_force).
+    # Pas pour « Scanner avec injection » ni un examen codé Q (imagerie) / R (laboratoire).
+    ([r'\binjections?\b', r'\bperfusions?\b', r'\bmise en observation', r'\bsalle d observation',
+      r'\bsoins? (et surveillance )?infirmier', r'\bsurveillance infirmi', r'\bpansements?\b',
+      r'\boxygenotherapie', r'\bnebulisation', r'\baerosol', r'\bsondage', r'\bacte im\b',
+      r'\bintramusculaire', r'\bintraveineuse'],
+     None, ['soins', 'infirmier'], ['IMAGERIE', r'^[qr]\d']),
+]
+
+# Analyses de biologie reconnues au nom quand il n'y a pas de code R (« NFS », « CRP »...).
+_MOTIFS_LABORATOIRE = [
+    r'\bhemogramme', r'\bnfs\b', r'\bcrp\b', r'\bvs\b', r'\bvitesse de sedimentation', r'\bionogramme',
+    r'\bglycemie', r'\bglucose\b', r'\buree\b', r'\bcreatinin', r'\bbilan (lipidique|hepatique|renal)',
+    r'\btransaminase', r'\btsh', r'\bft3\b', r'\bft4\b', r'\bpsa\b', r'\btroponine', r'\bd ?dimere',
+    r'\bgroupage', r'\bgroupe sanguin', r'\bserologie', r'\bhemoglobine glyquee', r'\bhba1c',
+    r'\bgoutte epaisse', r'\becbu\b', r'\btp\b', r'\binr\b', r'\btemps de (quick|cephaline)',
+    r'\btaux de prothrombine', r'\bbnp\b', r'\bnt pro', r'\bmicroalbumin', r'\bacide urique', r'\bggt\b',
+    r'\bcholesterol', r'\btriglycerid', r'\bferritine', r'\bwidal', r'\bbeta ?hcg', r'\bbhcg',
+    r'\btest de grossesse', r'\bvih\b', r'\bhepatite', r'\btoxoplasm', r'\bdengue', r'\bpaludisme',
+    r'\btdr\b', r'\bselles\b', r'\bspermogramme', r'\bcalcemie', r'\bmagnesemie', r'\bproteinurie',
+    r'\bbilirubin', r'\bamylase', r'\blipase', r'\bcpk\b', r'\bldh\b', r'\bphosphatase',
+    r'\belectrophorese', r'\bhemoculture', r'\bantibiogramme', r'\bfibrinog', r'\breticulocyt',
+]
+
+# Imagerie reconnue au nom quand il n'y a pas de code Q (« Echodoppler thyroïdienne »...).
+_MOTIFS_IMAGERIE = [
+    r'\bechograph', r'\becho\b', r'\bechodoppler', r'\bdoppler', r'\bradiograph', r'\bradio\b',
+    r'\bscanner', r'\btdm\b', r'\birm\b', r'\bmammograph', r'\bscintigraph',
+]
+
+
+def _racine_service(nom_service):
+    """« CARDIOLOGIE » -> « cardiolog » (reconnaît aussi « cardiologique »),
+    « PEDIATRIE » -> « pediatr » ; les autres noms sont gardés entiers."""
+    nom = _mots(nom_service)
+    if nom.endswith('ologie'):
+        return nom[:-2]
+    if nom.endswith('iatrie'):
+        return nom[:-2]
+    return nom
+
+
+def _service_dans_le_nom(texte, services):
+    """Service dont le nom (ou sa racine, voir _racine_service) figure dans le texte, le plus
+    long d'abord (« MEDECINE GENERALE » plutôt que « MEDECINE ») — ou, à l'inverse, dont le nom
+    contient le texte en mots entiers (« (MEDECINE INTERNE) » -> « SERVICE MEDECINE INTERNE »).
+    Mots entiers seulement : « (GE) » ne doit plus tomber en « MEDECINE GENERALE »."""
+    texte_mots = _mots(texte)
+    if not texte_mots:
+        return None
+    par_longueur = sorted(services, key=lambda s: len(s['nom'] or ''), reverse=True)
+    for s in par_longueur:
+        racine = _racine_service(s['nom'])
+        if racine and re.search(r'\b' + re.escape(racine), texte_mots):
+            return s
+    if len(texte_mots) >= 4:
+        for s in par_longueur:
+            if re.search(r'\b' + re.escape(texte_mots) + r'\b', _mots(s['nom'])):
+                return s
+    return None
+
+
+def _service_vise(services, type_service, mots_cles):
+    """Service visé par une règle : d'abord par son TYPE (s'il y en a un), puis par les mots-clés
+    de son nom, dans l'ordre (le premier mot-clé trouvé gagne)."""
+    if type_service:
+        for s in services:
+            if s.get('type') == type_service:
+                return s
+    for mc in mots_cles:
+        trouve = _trouver_service_par_mot_cle(services, [mc])
+        if trouve:
+            return trouve
+    return None
+
+
 def deviner_service_acte(nom_acte, services):
     """Détection automatique (niveau 3) — retourne un dict de `services`
-    (voir charger_services) ou None si non déterminable. `services` doit
-    être la liste déjà chargée de cette structure (jamais rechargée ici,
-    pour rester bon marché sur un panier de plusieurs lignes)."""
+    (voir charger_services) ou None si non déterminable (la ligne va alors
+    dans « Autre »). `services` doit être la liste déjà chargée de cette
+    structure (jamais rechargée ici, pour rester bon marché sur un panier de
+    plusieurs lignes).
+
+    ⭐ 2026-10-22 (patron) : règles par domaine (voir _REGLES_DOMAINE), puis
+    consultation d'une spécialité, puis codes (Q imagerie, R laboratoire),
+    puis analyses / imagerie reconnues au nom. Corrige aussi les noms
+    finissant par une parenthèse (« R607 Hemogramme(NFS Complete) ») : la
+    parenthèse coupait court à toute détection, les analyses restaient
+    « Non classé »."""
     if not nom_acte or not services:
         return None
     nom = nom_acte.strip()
+    nom_mots = _mots(nom)
+
+    # Carnets (CPN, carnet de consultation, carnet TA...) : « Autre », volontairement.
+    if re.search(r'\bcarnets?\b', nom_mots):
+        return None
+
+    for motifs, type_service, mots_cles, exclusions in _REGLES_DOMAINE:
+        exclusions = [m for e in exclusions for m in (_MOTIFS_IMAGERIE if e == 'IMAGERIE' else [e])]
+        if _contient(nom_mots, motifs) and not _contient(nom_mots, exclusions):
+            s = _service_vise(services, type_service, mots_cles)
+            if s:
+                return s
 
     # S100 précisément — "d'office" médecine générale.
     if re.match(r'^S100\b', nom, re.IGNORECASE):
-        return _trouver_service_par_mot_cle(services, ['medecine generale', 'generaliste'])
+        s = _trouver_service_par_mot_cle(services, ['medecine generale', 'generaliste'])
+        if s:
+            return s
 
-    # Suffixe "(SPECIALITE)" — déjà présent tel quel dans le catalogue
-    # (ex. "S101 Consultation specialisee (RHUMATOLOGIE)").
+    # Spécialité nommée : suffixe "(SPECIALITE)" du catalogue (« S101 Consultation specialisee
+    # (RHUMATOLOGIE) », « (UROLOGIQUE) » pour UROLOGIE), ou consultation qui la nomme
+    # (« S101 Consultation CARDIOLOGIQUE », « Consultation en pediatrie »).
     m = re.search(r'\(([^)]+)\)\s*$', nom)
     if m:
-        specialite = _normaliser(m.group(1))
-        for s in services:
-            nom_service_norm = _normaliser(s['nom'])
-            if specialite == nom_service_norm or specialite in nom_service_norm or nom_service_norm in specialite:
-                return s
-        # Parenthèse présente mais aucun service ne correspond : on ne
-        # devine pas plus loin (mieux vaut Non classé qu'un mauvais choix).
-        return None
+        s = _service_dans_le_nom(m.group(1), services)
+        if s:
+            return s
+    # (« Chirurgie dentaire » n'est pas la chirurgie générale : laissée en « Autre ».)
+    if (re.search(r'\bconsultation', nom_mots) or re.match(r'^S1\d{2}\b', nom, re.IGNORECASE)) \
+            and not re.search(r'\bdentaire', nom_mots):
+        s = _service_dans_le_nom(nom, services)
+        if s:
+            return s
 
     # Préfixe de code au début du nom (ex. "Q100 Examen...", "R100 ...").
     m = re.match(r'^([A-Z]{1,3})\d{2,4}\b', nom)
     if m:
         regle = _MOTS_CLES_PAR_PREFIXE.get(m.group(1).upper())
         if regle:
-            return _trouver_service_par_type(services, regle[0], regle[1])
+            s = _trouver_service_par_type(services, regle[0], regle[1])
+            if s:
+                return s
+
+    # Sans code : analyses de biologie, puis imagerie, reconnues au nom.
+    if _contient(nom_mots, _MOTIFS_LABORATOIRE):
+        s = _trouver_service_par_type(services, 'laboratoire', ['laboratoire', 'biologie'])
+        if s:
+            return s
+    if _contient(nom_mots, _MOTIFS_IMAGERIE):
+        s = _trouver_service_par_type(services, 'imagerie', ['radiologie', 'imagerie'])
+        if s:
+            return s
 
     return None
 
@@ -176,7 +330,73 @@ def resoudre_service_acte(structure_id, nom_acte, service_id_choisi=None, servic
     if devine:
         return devine['id'], devine['nom'], 'auto'
 
-    return None, 'Non classé', 'non_classe'
+    # ⭐ 2026-10-22 (patron) : « au lieu de dire non classé, mets autre »
+    return None, LIBELLE_AUTRE, 'non_classe'
+
+
+# Libellé des recettes qu'aucune règle ne range dans un service (service_id NULL).
+LIBELLE_AUTRE = 'Autre'
+
+
+def _resoudre_ligne(structure_id, nom, type_source, service_id_choisi, service_id_force,
+                    classification, services):
+    """Service d'une ligne (acte ou produit) — commun à la vente et au reclassement.
+    Vente pharmacie : "d'office" service Pharmacie, pas besoin de sélecteur ni de code — un
+    médicament/consommable n'a pas de code de nomenclature S/Q/R à analyser. Distinct d'un
+    VRAI choix ligne par ligne (origine 'choix_manuel') : personne n'a rien choisi ici, c'est
+    une règle automatique comme les autres."""
+    origine_si_choisi = 'choix_manuel'
+    if type_source == 'produit' and not service_id_choisi and not service_id_force:
+        pharmacie = _trouver_service_par_type(services, 'pharmacie', ['pharmacie'])
+        service_id_choisi = pharmacie['id'] if pharmacie else None
+        origine_si_choisi = 'auto'
+    return resoudre_service_acte(
+        structure_id, nom,
+        service_id_choisi=service_id_choisi,
+        service_id_force=service_id_force,
+        classification_cache=classification,
+        services_cache=services,
+        origine_si_choisi=origine_si_choisi,
+    )
+
+
+def reclasser_recettes_service(structure_id):
+    """⭐ 2026-10-22 (patron) : applique les règles ACTUELLES (classement manuel par acte,
+    règles automatiques, services existants) aux recettes déjà enregistrées — sinon une
+    analyse vendue avant une nouvelle règle (ou avant la création du service) restait
+    « Autre » pour toujours. Ne touche que les lignes rangées automatiquement ou pas rangées
+    (origine 'auto' / 'non_classe' / 'classification') : jamais un choix fait à la vente, ni une
+    ligne d'hospitalisation (toujours au service du séjour). Renvoie le nombre de lignes
+    dont le service a changé."""
+    services = charger_services(structure_id)
+    classification = _charger_classification_manuelle(structure_id)
+    lignes = RecetteService.query.filter(
+        RecetteService.structure_id == structure_id,
+        db.or_(RecetteService.origine.is_(None),
+               RecetteService.origine.in_(['auto', 'non_classe', 'classification'])),
+        db.or_(RecetteService.type_source.is_(None), RecetteService.type_source != 'hospitalisation'),
+    ).all()
+    nb = 0
+    for l in lignes:
+        service_id, service_nom, origine = _resoudre_ligne(
+            structure_id, l.nom_acte, l.type_source or 'acte', None, None, classification, services)
+        if l.service_id != service_id or l.origine != origine:
+            l.service_id, l.service_nom, l.origine = service_id, service_nom, origine
+            nb += 1
+    if nb:
+        db.session.commit()
+    return nb
+
+
+def reclasser_recettes_service_sans_echec(structure_id):
+    """Reclassement après un changement de services / de classement : ne doit jamais faire
+    échouer l'enregistrement qui l'a déclenché."""
+    try:
+        return reclasser_recettes_service(structure_id)
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ Reclassement des recettes par service (structure {structure_id}) : {e}")
+        return 0
 
 
 def creer_lignes_service(structure_id, articles, vente_id, service_id_force=None, type_source_defaut=None):
@@ -202,26 +422,8 @@ def creer_lignes_service(structure_id, articles, vente_id, service_id_force=None
         type_article = a.get('type') or type_source_defaut or 'acte'
         type_source = 'produit' if type_article == 'produit' else 'acte'
 
-        # ⭐ Vente pharmacie : "d'office" service Pharmacie, pas besoin de
-        # sélecteur ni de code — un médicament/consommable n'a pas de
-        # code de nomenclature S/Q/R à analyser. Distinct d'un VRAI choix
-        # ligne par ligne (origine 'choix_manuel') : personne n'a rien
-        # choisi ici, c'est une règle automatique comme les autres.
-        service_id_choisi = a.get('service_id')
-        origine_si_choisi = 'choix_manuel'
-        if type_source == 'produit' and not service_id_choisi and not service_id_force:
-            pharmacie = _trouver_service_par_type(services, 'pharmacie', ['pharmacie'])
-            service_id_choisi = pharmacie['id'] if pharmacie else None
-            origine_si_choisi = 'auto'
-
-        service_id, service_nom, origine = resoudre_service_acte(
-            structure_id, nom,
-            service_id_choisi=service_id_choisi,
-            service_id_force=service_id_force,
-            classification_cache=classification,
-            services_cache=services,
-            origine_si_choisi=origine_si_choisi,
-        )
+        service_id, service_nom, origine = _resoudre_ligne(
+            structure_id, nom, type_source, a.get('service_id'), service_id_force, classification, services)
 
         prix = a.get('prix')
         if prix is None:
@@ -395,7 +597,9 @@ def generer_rapport_recettes_service(structure_id, date_debut, date_fin):
     for l in lignes:
         cle = l.service_id if l.service_id else 'non_classe'
         if cle not in agrege:
-            agrege[cle] = {'service_id': l.service_id, 'service_nom': noms_actuels.get(l.service_id) or l.service_nom or 'Non classé',
+            agrege[cle] = {'service_id': l.service_id,
+                           'service_nom': (noms_actuels.get(l.service_id) or l.service_nom or LIBELLE_AUTRE)
+                                          if l.service_id else LIBELLE_AUTRE,
                            'montant_total': 0.0,
                            'nb_lignes': 0, **{k: 0.0 for k in CLES_SITUATION}}
         agrege[cle]['montant_total'] += float(l.montant or 0)

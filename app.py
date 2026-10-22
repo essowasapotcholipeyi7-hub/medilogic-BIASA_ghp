@@ -32,7 +32,7 @@ from services.part_medecin_service import (charger_taux_part_medecin, creer_lign
                                            calculer_periode_part_medecin, charger_toujours_demander_medecin,
                                            charger_affectations, charger_medecins_affectes_csv, parametres_rsps, parametres_rsps_structure,
                                            montant_net_periode, point_prestations, rsps_a_verser, enregistrer_versement_rsps)
-from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service
+from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service, reclasser_recettes_service_sans_echec
 from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION
 from models import ConsommableLabo, UsageConsommable, MouvementConsommable, ParametrageStockLabo
 from services import comptes_service   # ⭐ 2026-10-18 : comptes (structures, personnel) dans Neon
@@ -14101,6 +14101,7 @@ def api_creer_classification_service():
         if existante:
             existante.service_id = service_id
             db.session.commit()
+            reclasser_recettes_service_sans_echec(structure_id)   # ⭐ 2026-10-22 : recettes déjà enregistrées aussi
             return jsonify({'success': True, 'id': existante.id, 'mis_a_jour': True})
 
         ligne = ClassificationServiceActe(
@@ -14109,6 +14110,7 @@ def api_creer_classification_service():
         )
         db.session.add(ligne)
         db.session.commit()
+        reclasser_recettes_service_sans_echec(structure_id)   # ⭐ 2026-10-22 : recettes déjà enregistrées aussi
         return jsonify({'success': True, 'id': ligne.id, 'mis_a_jour': False})
     except Exception as e:
         db.session.rollback()
@@ -14141,6 +14143,7 @@ def api_classification_services_lot():
                                                          created_by=session.get('user_name', 'System')))
             nb += 1
         db.session.commit()
+        reclasser_recettes_service_sans_echec(structure_id)   # ⭐ 2026-10-22 : recettes déjà enregistrées aussi
         return jsonify({'success': True, 'nb': nb})
     except Exception as e:
         db.session.rollback()
@@ -14157,6 +14160,7 @@ def api_supprimer_classification_service(ligne_id):
             return jsonify({'success': False, 'error': 'Introuvable'}), 404
         db.session.delete(ligne)
         db.session.commit()
+        reclasser_recettes_service_sans_echec(structure_id)   # ⭐ 2026-10-22 : retour au classement automatique
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
@@ -14233,6 +14237,8 @@ def api_creer_service_structure():
                                          type_service=type_service, hospitalisation=hospit)
         db.session.add(service)
         db.session.commit()
+        # ⭐ 2026-10-22 : les recettes déjà enregistrées qui reviennent à ce nouveau service y passent
+        reclasser_recettes_service_sans_echec(structure_id)
         return jsonify({'success': True, 'service_id': service.id})
     except Exception as e:
         db.session.rollback()
@@ -14284,6 +14290,7 @@ def api_modifier_service_structure(service_id):
         if 'actif' in data:
             service.actif = bool(data.get('actif'))
         db.session.commit()
+        reclasser_recettes_service_sans_echec(structure_id)   # ⭐ 2026-10-22 (nom, type ou actif changé)
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
@@ -14361,7 +14368,7 @@ def print_rapport_recettes_service():
         from services.service_acte_service import detail_recettes_service
         service_id = int(sv) if sv.isdigit() else None
         lignes = detail_recettes_service(structure_id, date_debut, date_fin_bornee, service_id)
-        service_nom = request.args.get('service_nom') or ('Non classé' if not service_id else f'Service {service_id}')
+        service_nom = request.args.get('service_nom') or ('Autre' if not service_id else f'Service {service_id}')
         from services.service_acte_service import CLES_SITUATION
         return render_template('rapport_recettes_service_print.html', services=[], lignes=lignes,
                                totaux={k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION},
