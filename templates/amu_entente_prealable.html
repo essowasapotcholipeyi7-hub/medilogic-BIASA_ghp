@@ -69,6 +69,16 @@
         border: 1px solid #e3e8ec; background: white; color: #51636D; font-weight: 600;
     }
     .ep-filtre-type button.active { background: #0A3D5C; color: white; border-color: #0A3D5C; }
+    /* ⭐ 2026-10-22 (patron) : on arrive sur les demandes EN ATTENTE ; approuvées / refusées / toutes à côté */
+    .ep-filtre-statut { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; border-bottom: 1px solid #e3e8ec; padding-bottom: 10px; }
+    .ep-filtre-statut button {
+        font-size: 13px; padding: 6px 14px; border-radius: 8px; border: 1px solid #e3e8ec; background: white;
+        color: #51636D; font-weight: 600; display: inline-flex; align-items: center; gap: 7px;
+    }
+    .ep-filtre-statut button .compte { font-size: 11px; min-width: 22px; padding: 1px 7px; border-radius: 999px; background: #EEF3F5; color: #0A3D5C; }
+    .ep-filtre-statut button[data-statut="en_attente"] .compte { background: #FCEEE0; color: #92400E; }
+    .ep-filtre-statut button.active { background: #0A3D5C; color: white; border-color: #0A3D5C; }
+    .ep-filtre-statut button.active .compte { background: rgba(255,255,255,.2); color: white; }
 </style>
 {% endblock %}
 
@@ -285,6 +295,16 @@
 
     <div class="ep-card">
         <h6><i class="fas fa-history me-1"></i>Historique</h6>
+        <div class="ep-filtre-statut" id="epFiltreStatut">
+            <button type="button" class="active" data-statut="en_attente"><i class="fas fa-hourglass-half"></i> En attente
+                <span class="compte">{{ demandes|selectattr('statut', 'equalto', 'en_attente')|list|length }}</span></button>
+            <button type="button" data-statut="approuvee"><i class="fas fa-check"></i> Approuvées
+                <span class="compte">{{ demandes|selectattr('statut', 'equalto', 'approuvee')|list|length }}</span></button>
+            <button type="button" data-statut="refusee"><i class="fas fa-times"></i> Refusées
+                <span class="compte">{{ demandes|selectattr('statut', 'equalto', 'refusee')|list|length }}</span></button>
+            <button type="button" data-statut="toutes"><i class="fas fa-list"></i> Toutes
+                <span class="compte">{{ demandes|length }}</span></button>
+        </div>
         <div class="ep-historique-toolbar">
             <div class="ep-filtre-type" id="epFiltreType">
                 <button type="button" class="active" data-type="tous">Tous</button>
@@ -311,7 +331,7 @@
                 <tbody>
                     {% for d in demandes %}
                     {% set p = patients_par_id.get(d.patient_id) %}
-                    <tr data-types="{% if d.inclure_actes %}actes {% endif %}{% if d.inclure_produits %}produits {% endif %}{% if d.inclure_hospitalisation %}hospit{% endif %}">
+                    <tr data-statut="{{ d.statut }}" data-types="{% if d.inclure_actes %}actes {% endif %}{% if d.inclure_produits %}produits {% endif %}{% if d.inclure_hospitalisation %}hospit{% endif %}">
                         <td>{{ d.created_at.strftime('%d/%m/%Y %H:%M') if d.created_at else '' }}</td>
                         <td><span class="notranslate">{{ (p.nom + ' ' + p.prenom) if p else ('Patient #' ~ d.patient_id) }}</span></td>
                         <td>{{ medecins_par_id.get(d.medecin_id, '—') }}</td>
@@ -964,25 +984,32 @@ if (HOSPITALISATION_ID_PREREMPLI) {
 function filtrerHistoriqueEp() {
     const q = (document.getElementById('epHistoriqueRecherche').value || '').trim().toLowerCase();
     const typeActif = document.querySelector('#epFiltreType button.active').dataset.type;
+    const statutActif = document.querySelector('#epFiltreStatut button.active').dataset.statut;
     const lignes = document.querySelectorAll('table.ep-historique tbody tr[data-types]');
     let visibles = 0;
     lignes.forEach(tr => {
         const types = tr.dataset.types.split(' ').filter(Boolean);
+        const matchStatut = statutActif === 'toutes' || tr.dataset.statut === statutActif;
         const matchType = typeActif === 'tous' || types.includes(typeActif);
         const matchRecherche = !q || tr.textContent.toLowerCase().includes(q);
-        const visible = matchType && matchRecherche;
+        const visible = matchStatut && matchType && matchRecherche;
         tr.style.display = visible ? '' : 'none';
         if (visible) visibles++;
     });
-    document.getElementById('epHistoriqueAucunResultat').style.display = (lignes.length && !visibles) ? '' : 'none';
+    const vide = document.getElementById('epHistoriqueAucunResultat');
+    vide.style.display = (lignes.length && !visibles) ? '' : 'none';
+    vide.querySelector('td').textContent = (statutActif === 'en_attente' && typeActif === 'tous' && !q)
+        ? "Aucune demande d'entente préalable en attente. Les demandes traitées sont dans « Approuvées » et « Refusées »."
+        : 'Aucun résultat pour ces filtres.';
 }
 document.getElementById('epHistoriqueRecherche').addEventListener('input', filtrerHistoriqueEp);
-document.querySelectorAll('#epFiltreType button').forEach(btn => {
+document.querySelectorAll('#epFiltreType button, #epFiltreStatut button').forEach(btn => {
     btn.addEventListener('click', function() {
-        document.querySelectorAll('#epFiltreType button').forEach(b => b.classList.remove('active'));
+        this.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('active'));
         this.classList.add('active');
         filtrerHistoriqueEp();
     });
 });
+filtrerHistoriqueEp();   // ⭐ à l'arrivée : les demandes en attente seulement
 </script>
 {% endblock %}
