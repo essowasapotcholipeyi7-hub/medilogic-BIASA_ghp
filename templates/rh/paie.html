@@ -207,22 +207,26 @@ const MOIS_NOMS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','A
 
 function initSelecteurs() {
     const now = new Date();
+    // ⭐ 2026-10-22 : retour depuis un bulletin (?mois=&annee=) — on revient sur le mois qu'on regardait
+    const params = new URLSearchParams(location.search);
+    const moisVoulu = parseInt(params.get('mois'), 10) || (now.getMonth() + 1);
+    const anneeVoulue = parseInt(params.get('annee'), 10) || now.getFullYear();
     const selMois = document.getElementById('paieMois');
     MOIS_NOMS.forEach((nom, idx) => {
         const opt = document.createElement('option');
         opt.value = idx + 1;
         opt.textContent = nom;
-        if (idx + 1 === now.getMonth() + 1) opt.selected = true;
+        if (idx + 1 === moisVoulu) opt.selected = true;
         selMois.appendChild(opt);
     });
     selMois.onchange = chargerPaies;
 
     const selAnnee = document.getElementById('paieAnnee');
-    for (let a = now.getFullYear() - 1; a <= now.getFullYear() + 1; a++) {
+    for (let a = Math.min(now.getFullYear() - 1, anneeVoulue); a <= now.getFullYear() + 1; a++) {
         const opt = document.createElement('option');
         opt.value = a;
         opt.textContent = a;
-        if (a === now.getFullYear()) opt.selected = true;
+        if (a === anneeVoulue) opt.selected = true;
         selAnnee.appendChild(opt);
     }
     selAnnee.onchange = chargerPaies;
@@ -277,12 +281,13 @@ function chargerPaies() {
                         <i class="fas fa-calculator"></i> Générer
                     </button>`;
                 } else if (e.statut === 'payee') {
-                    actions = `<a class="btn btn-sm btn-outline-secondary" href="/rh/paie/${e.paie_id}/bulletin" target="_blank">
+                    // ⭐ 2026-10-22 (patron) : même onglet — le bulletin a son bouton « Retour à la paie »
+                    actions = `<a class="btn btn-sm btn-outline-secondary" href="/rh/paie/${e.paie_id}/bulletin?mois=${mois}&annee=${annee}">
                         <i class="fas fa-file-invoice"></i> Bulletin
                     </a>`;
                 } else {
                     actions = `
-                        <a class="btn btn-sm btn-outline-secondary" href="/rh/paie/${e.paie_id}/bulletin" target="_blank">
+                        <a class="btn btn-sm btn-outline-secondary" href="/rh/paie/${e.paie_id}/bulletin?mois=${mois}&annee=${annee}" title="Bulletin">
                             <i class="fas fa-file-invoice"></i>
                         </a>
                         <button class="btn btn-sm btn-outline-primary" onclick="ouvrirGenererPaie(${e.employe_id}, '${(e.nom+' '+e.prenom).replace(/'/g, "\\'")}', ${e.paie_id})" title="Recalculer">

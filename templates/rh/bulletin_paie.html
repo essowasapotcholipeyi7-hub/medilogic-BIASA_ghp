@@ -45,10 +45,20 @@
         .btn-row { text-align: center; margin-top: 20px; }
         .btn-row button { margin: 0 6px; padding: 9px 22px; border: none; border-radius: 6px; color: #fff; font-size: 14px; cursor: pointer; }
         .btn-print { background: #1f2d6b; } .btn-fermer { background: #6c757d; }
+        /* ⭐ 2026-10-22 (patron) : retour et accès rapide aux onglets RH (jamais imprimés) */
+        .barre-rh { position: sticky; top: 0; z-index: 10; max-width: 820px; margin: -24px auto 16px; padding: 10px 0;
+                    background: #eef0f2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .barre-rh a, .barre-rh button { font-size: 13px; text-decoration: none; border-radius: 6px; padding: 6px 12px;
+                    border: 1px solid #cfd6dd; background: #fff; color: #1f2d6b; cursor: pointer; font-family: inherit; }
+        .barre-rh a:hover, .barre-rh button:hover { border-color: #1f2d6b; }
+        .barre-rh .retour { background: #1f2d6b; color: #fff; border-color: #1f2d6b; font-weight: 600; }
+        .barre-rh .imprimer { margin-left: auto; }
+        .barre-rh .titre-rh { font-size: 12px; font-weight: 700; color: #51636D; text-transform: uppercase; letter-spacing: .4px; margin: 0 2px 0 8px; }
+        .barre-rh a.actif { background: #e4e9f7; border-color: #1f2d6b; font-weight: 600; }
         @media print {
             body { background: #fff; padding: 0; }
             .feuille { box-shadow: none; padding: 10px 14px; }
-            .btn-row { display: none; }
+            .btn-row, .barre-rh { display: none !important; }
             .titre, .infos th, .rub th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
         @media (max-width: 640px) {
@@ -58,6 +68,21 @@
     </style>
 </head>
 <body>
+{%- set retour_paie = url_for('rh.page_paie', mois=paie.mois, annee=paie.annee) -%}
+{%- set rh_url = url_for('rh.gestion_rh') -%}
+<nav class="barre-rh" aria-label="Ressources humaines">
+    <a href="{{ retour_paie }}" class="retour" onclick="return retourBulletin()"><i class="fas fa-arrow-left"></i> Retour à la paie · {{ periode_maj|title }}</a>
+    <span class="titre-rh">RH</span>
+    <a href="{{ rh_url }}#dashboardrh">Tableau de bord</a>
+    <a href="{{ rh_url }}#personnel">Personnel</a>
+    <a href="{{ rh_url }}#pointage">Pointage</a>
+    <a href="{{ rh_url }}#conges">Congés</a>
+    <a href="{{ rh_url }}#permissions">Permissions</a>
+    <a href="{{ url_for('rh.page_organigramme') }}">Organigramme</a>
+    <a href="{{ retour_paie }}" class="actif">Paie</a>
+    <a href="{{ url_for('rh.page_declarations') }}">Déclarations</a>
+    <button type="button" class="imprimer" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+</nav>
 <div class="feuille">
     <div class="entete">
         {% if structure and structure.logo_url %}<img src="{{ structure.logo_url }}" alt="Logo">{% endif %}
@@ -136,14 +161,20 @@
     </div>
 
     <div class="btn-row">
-        <button class="btn-fermer" onclick="fermerBulletin()"><i class="fas fa-times"></i> Fermer</button>
+        <button class="btn-fermer" onclick="retourBulletin()"><i class="fas fa-arrow-left"></i> Retour à la paie</button>
         <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
     </div>
 </div>
 <script>
-    function fermerBulletin() {
-        window.close();
-        setTimeout(function () { if (!window.closed) { window.location.href = "{{ url_for('rh.page_paie') }}"; } }, 500);
+    // ⭐ 2026-10-22 : bulletin ouvert dans le même onglet → retour à la paie du mois du bulletin ; ouvert dans un
+    // nouvel onglet (ancien lien, favori) → on le ferme pour revenir à l'onglet d'origine.
+    function retourBulletin() {
+        if (window.opener && !window.opener.closed) {
+            try { window.opener.focus(); } catch (e) { /* onglet d'origine inaccessible */ }
+            window.close();
+        }
+        if (!window.closed) { window.location.href = {{ retour_paie|tojson }}; }
+        return false;
     }
 </script>
 </body>
