@@ -46,14 +46,34 @@ def fiche_pour_gp(p):
     }
 
 
-def pousser_patients_gp(structure_id, patient_ids):
-    """Envoie ces patients à chaque gestion_patients relié à la structure.
+def _poster(url, cle, fiches, essais=(60, 90), pause=20):
+    """Envoi avec deux essais : gestion_patients en veille (hébergement Render) met souvent plus de 15 s
+    à se réveiller — le premier envoi expirait et le patient n'arrivait pas (constaté le 22/10/2026)."""
+    import time
+    for k, delai in enumerate(essais):
+        try:
+            r = requests.post(f"{url}/api/patients/sync-externe", params={'token': cle},
+                              json={'patients': fiches}, timeout=delai)
+            if r.status_code < 500:
+                return r.status_code
+            print(f"⚠️ gestion_patients a répondu {r.status_code} ({url})")
+        except Exception as e:
+            print(f"⚠️ Envoi patients vers gestion_patients échoué ({url}, essai {k + 1}) : {e}")
+        if k + 1 < len(essais):
+            time.sleep(pause)
+    return None   # la recherche périodique de gestion_patients rattrapera ce patient
 
-    La fiche est lue DANS la requête en cours (elle voit le patient qui vient
-    d'être créé ou modifié, pas encore validé), puis envoyée en tâche de fond
-    seulement APRÈS la validation de la transaction (after_commit) : rien ne
-    part si l'enregistrement échoue, et jamais une version périmée."""
-    from sqlalchemy import event
+
+def pousser_patients_gp(structure_id, patient_ids):
+    """Envoie ces patients à chaque gestion_patients relié à la structure, en tâche de fond.
+
+    ⭐ 2026-10-22 (patron : « les patients enregistrés ce soir ne viennent pas dans gestion_patients ») :
+    la fiche est écrite par db.execute_query (connexion à validation automatique) AVANT cet appel — elle
+    est donc déjà enregistrée quand on la lit ici. L'envoi part tout de suite. Avant, il attendait la
+    validation de la session SQLAlchemy (after_commit) : après une modification de fiche, aucune
+    validation ne suivait et rien ne partait ; après une création, seulement si autre chose était
+    validé ensuite (préinscription, compagnie…). La fiche lue ici est celle qui est en base : jamais
+    une version périmée ; si l'écriture a échoué, rien n'est trouvé et rien ne part."""
     from models import db, StructureMapping
     ids = [int(i) for i in patient_ids if i]
     cibles = [(m.api_url.rstrip('/'), m.api_key) for m in StructureMapping.query.filter_by(
@@ -70,14 +90,6 @@ def pousser_patients_gp(structure_id, patient_ids):
 
     def envoyer():
         for url, cle in cibles:
-            try:
-                requests.post(f"{url}/api/patients/sync-externe", params={'token': cle},
-                              json={'patients': fiches}, timeout=15)
-            except Exception as e:
-                # la recherche périodique de gestion_patients rattrapera ce patient
-                print(f"⚠️ Envoi patients vers gestion_patients échoué ({url}) : {e}")
+            _poster(url, cle, fiches)
 
-    def apres_validation(_session):
-        threading.Thread(target=envoyer, daemon=True).start()
-
-    event.listen(db.session(), 'after_commit', apres_validation, once=True)
+    threading.Thread(target=envoyer, daemon=True).start()
