@@ -84,11 +84,12 @@
     <button type="button" class="imprimer" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
 </nav>
 <div class="feuille">
-    <div class="entete">
+    {% include 'partials/entete_a4.html' %}
+    <div class="entete-identite entete">
         {% if structure and structure.logo_url %}<img src="{{ structure.logo_url }}" alt="Logo">{% endif %}
         <div class="nom">{{ structure.nom if structure and structure.nom else 'Structure' }}</div>
     </div>
-    <div class="coord">
+    <div class="entete-identite coord">
         {% if structure and structure.adresse %}{{ structure.adresse }}{% endif %}
         {% if structure and structure.telephone %}<br>Tél. {{ structure.telephone }}{% endif %}
         {% if structure and structure.email %} — {{ structure.email }}{% endif %}

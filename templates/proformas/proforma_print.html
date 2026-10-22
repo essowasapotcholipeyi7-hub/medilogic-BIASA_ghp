@@ -641,9 +641,10 @@
     {% if vente_facturee %}<div class="filigrane-facturee">PROFORMA DÉJÀ FACTURÉE</div>{% endif %}
     <div class="proforma-container">
         <!-- ===== EN-TÊTE ===== -->
+        {% if format != '80mm' %}{% include 'partials/entete_a4.html' %}{% endif %}
         <div class="proforma-header">
             <div class="top-row">
-                <div class="logo-area">
+                <div class="entete-identite logo-area">
                     {% if logo_url %}
                     <img src="{{ logo_url }}" alt="Logo">
                     {% endif %}
@@ -655,9 +656,9 @@
                 </div>
             </div>
             <div class="sub-info" style="white-space: pre-line;">
-                <span>{{ structure.adresse or 'Adresse non renseignée' }}</span>
-                <span>Tel: {{ structure.telephone or 'Non renseigné' }}</span>
-                <span>Email: {{ structure.email or 'Non renseigné' }}</span>
+                <span class="entete-identite">{{ structure.adresse or 'Adresse non renseignée' }}</span>
+                <span class="entete-identite">Tel: {{ structure.telephone or 'Non renseigné' }}</span>
+                <span class="entete-identite">Email: {{ structure.email or 'Non renseigné' }}</span>
                 <span>Date: {{ proforma.created_at.strftime('%d/%m/%Y à %H:%M') if proforma.created_at else '-' }}</span>
             </div>
         </div>

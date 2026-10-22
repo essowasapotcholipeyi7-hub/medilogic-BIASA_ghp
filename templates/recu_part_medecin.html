@@ -26,9 +26,10 @@
         <div class="card" id="recuContenu">
             <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
 
+                {% include 'partials/entete_a4.html' %}
                 <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
                     <div class="col-8">
-                        <div class="d-flex align-items-center gap-3">
+                        <div class="entete-identite d-flex align-items-center gap-3">
                             {% if structure.logo_url %}
                             <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 55px; max-width: 110px; background: white; padding: 4px; border-radius: 6px;">
                             {% endif %}

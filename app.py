@@ -241,6 +241,26 @@ def libelle_taux_pec_amu(articles, taux_assurance):
 app.jinja_env.globals['libelle_taux_pec_amu'] = libelle_taux_pec_amu
 
 
+def entete_impression_a4(structure_id=None):
+    """⭐ 2026-10-22 (patron) : en-tête propre d'une structure — celui de ses comptes rendus d'analyses /
+    d'imagerie, sans le titre d'examen — pour TOUTES ses impressions A4 (reçus, factures, proformas,
+    ordonnances, billets, rapports, documents RH...). Une structure en a un si
+    templates/entetes/structure_<id>.html existe ; sinon '' et chaque document garde son en-tête habituel.
+    Affiché par partials/entete_a4.html, jamais sur les tickets 80 mm."""
+    from markupsafe import Markup
+    try:
+        sid = int(structure_id or session.get('structure_id') or 0)
+    except (TypeError, ValueError):
+        return ''
+    nom = f'entetes/structure_{sid}.html'
+    if sid <= 0 or not os.path.exists(os.path.join(app.root_path, 'templates', 'entetes', f'structure_{sid}.html')):
+        return ''
+    return Markup(render_template(nom, entete_structure_id=sid))
+
+
+app.jinja_env.globals['entete_impression_a4'] = entete_impression_a4
+
+
 # ⭐ Rôles RH cloisonnés (patron, 2026-10-10 : « ces gens n'ont pas besoin de
 # voir les patients, leurs rendez-vous etc. ils ont juste besoin de voir ce
 # qui les concerne ») — liste BLANCHE : la GRH, plus le strict nécessaire
@@ -17066,7 +17086,8 @@ def page_portail_imprimer_resultat(resultat_id):
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
     structure_info['adresse'] = sheets_helper.format_adresse(structure_info.get('adresse', ''))
 
-    return render_template('portail_resultat_imprimer.html', resultat=resultat, demande=demande, structure=structure_info)
+    return render_template('portail_resultat_imprimer.html', resultat=resultat, demande=demande, structure=structure_info,
+                           entete_structure_id=structure_id)   # ⭐ en-tête A4 de la structure (session du portail)
 
 
 

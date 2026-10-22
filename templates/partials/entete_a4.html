@@ -1,0 +1,27 @@
+{#- ⭐ 2026-10-22 (patron) : en-tête propre de la structure (celui de ses comptes rendus d'analyses /
+    d'imagerie) sur toutes les impressions A4. À inclure dans la partie A4 seulement : le ticket 80 mm garde
+    le sien. Quand la structure en a un (templates/entetes/structure_<id>.html, voir entete_impression_a4
+    dans app.py), il s'affiche ici et les éléments d'identité de l'en-tête du document — marqués
+    .entete-identite : logo, nom, adresse — sont masqués ; le titre du document, son numéro et sa date
+    restent. Sans fichier : rien n'est affiché, rien n'est masqué. -#}
+{%- set _entete_a4 = entete_impression_a4(entete_structure_id if entete_structure_id is defined else none) -%}
+{%- if _entete_a4 -%}
+<style>
+    .entete-identite { display: none !important; }
+    .entete-identite ~ .infos-droite, .entete-identite ~ .badge-proforma, .entete-identite ~ .badge-rdv,
+    .entete-identite ~ .header-right, .entete-identite ~ div[style*="text-align: right"] { margin-left: auto; }
+    .entete-a4-structure { margin: 0 0 10px; padding: 0; background: #fff; color: #000; text-align: left; }
+    .entete-a4-structure img { max-width: 100%; }
+    .entete-a4-structure table { width: 100%; border-collapse: collapse; margin: 0; }
+    /* le CSS du document (tableau des articles : montants sans retour à la ligne, largeurs, petite police)
+       ne doit pas déformer l'en-tête : sinon une colonne était coupée et un logo réduit à rien */
+    .entete-a4-structure td { border: 0 !important; padding: 2px 4px !important; background: none !important;
+                              white-space: normal !important; font-size: inherit; }
+    .entete-a4-structure td img { max-width: none !important; }
+    .entete-a4-structure + .row { margin-top: 0 !important; }
+    @media print {
+        .entete-a4-structure { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+</style>
+<div class="entete-a4-structure">{{ _entete_a4 }}</div>
+{%- endif -%}

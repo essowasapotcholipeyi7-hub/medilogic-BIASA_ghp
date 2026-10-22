@@ -329,9 +329,10 @@
                 <!-- En-tête de marque (bleu sombre, même charte que le reste
                      de l'app — patron : "aussi sur l'impression je veux
                      l'entete bleue sombre") -->
+                {% include 'partials/entete_a4.html' %}
                 <div class="recu-header">
                     <div class="top-row">
-                        <div class="logo-area">
+                        <div class="entete-identite logo-area">
                             {% if structure_logo %}
                             <img src="{{ structure_logo }}" alt="Logo">
                             {% endif %}
@@ -362,7 +363,7 @@
                             <div style="font-size: 12px;">Date: {{ date_actuelle or "" }}</div>
                         </div>
                     </div>
-                    <div class="sub-info">
+                    <div class="entete-identite sub-info">
                         {% if structure_adresse %}<span>{{ structure_adresse }}</span>{% endif %}
                         {% if structure_telephone %}<span>Tel: {{ structure_telephone }}</span>{% endif %}
                         {% if structure_email %}<span>Email: {{ structure_email }}</span>{% endif %}

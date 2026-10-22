@@ -64,8 +64,9 @@
         <button type="button" class="imprimer" onclick="window.print()">Imprimer</button>
     </div>
     <div class="page">
+        {% include 'partials/entete_a4.html' %}
         <div class="entete">
-            <div class="structure">
+            <div class="entete-identite structure">
                 {% if structure and structure.logo_url %}<img src="{{ structure.logo_url }}" alt="">{% endif %}
                 <div>
                     <div class="nom">{{ structure.nom if structure else 'Hôpital' }}</div>

@@ -58,9 +58,10 @@
   <div class="col-lg-9">
     <div class="card">
       <div class="card-body">
+        {% include 'partials/entete_a4.html' %}
         <div class="recu-header">
           <div class="top-row">
-            <div class="logo-area">
+            <div class="entete-identite logo-area">
               {% if structure_logo %}<img src="{{ structure_logo }}" alt="Logo">{% endif %}
               <div>
                 <h1>{{ structure_nom }}</h1>
@@ -69,7 +70,7 @@
             </div>
             <div class="infos-droite">FACTURE PROFORMA<br>{{ p.numero_affiche }}</div>
           </div>
-          <div class="sub-info">
+          <div class="entete-identite sub-info">
             {% if structure_adresse %}<span>{{ structure_adresse }}</span>{% endif %}
             {% if structure_telephone %}<span>Tél : {{ structure_telephone }}</span>{% endif %}
             {% if structure_email %}<span>Email : {{ structure_email }}</span>{% endif %}

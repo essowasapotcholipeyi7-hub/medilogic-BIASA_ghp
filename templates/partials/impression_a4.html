@@ -133,6 +133,9 @@ function imprimerA4(mode) {
            avait un texte minuscule (8 à 10px) ; les autres restent sur une
            page sans agrandissement global. */
         #pdfWrapper .card-body { zoom: {{ a4_zoom }}; }
+        /* ⭐ 2026-10-22 : l'en-tête de la structure (partials/entete_a4.html) garde sa taille réelle —
+           agrandi avec le reste, il débordait de la page (colonne des contacts coupée) */
+        #pdfWrapper .card-body .entete-a4-structure { zoom: {{ '%.4f'|format(1 / a4_zoom) }}; }
     }
     {% endif %}
 </style>

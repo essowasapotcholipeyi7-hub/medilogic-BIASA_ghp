@@ -453,9 +453,10 @@
             <!-- ============================================================
                  EN-TÊTE AVEC BANDE BLEUE
                  ============================================================ -->
+            {% include 'partials/entete_a4.html' %}
             <div class="recu-header">
                 <div class="top-row">
-                    <div class="logo-area">
+                    <div class="entete-identite logo-area">
                         {% if structure and structure.logo_url %}
                         <img src="{{ structure.logo_url }}" alt="Logo" id="structureLogo">
                         {% endif %}
@@ -463,7 +464,7 @@
                     </div>
                     <div class="badge-rdv">DOC-{{ "%04d"|format(protocole.id) }}</div>
                 </div>
-                <div class="sub-info" style="white-space: pre-line;">
+                <div class="entete-identite sub-info" style="white-space: pre-line;">
                     {% if structure and structure.adresse %}
                     <span id="structureAdresse">{{ structure.adresse }}</span>
                     {% endif %}

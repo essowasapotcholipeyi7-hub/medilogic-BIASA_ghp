@@ -141,8 +141,9 @@
 </head>
 <body>
     <div class="container" id="billetContenu">
+        {% include 'partials/entete_a4.html' %}
         <div class="header">
-            <div>
+            <div class="entete-identite">
                 <h2>{{ structure_nom }}</h2>
                 {% if structure_adresse %}<p>{{ structure_adresse }}</p>{% endif %}
                 {% if structure_telephone %}<p>Tél. {{ structure_telephone }}</p>{% endif %}

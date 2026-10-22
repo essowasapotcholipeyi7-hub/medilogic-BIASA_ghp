@@ -286,7 +286,8 @@
 <body>
     <div class="document-container">
         <!-- ===== EN-TÊTE ===== -->
-        <div class="recu-header">
+        {% include 'partials/entete_a4.html' %}
+        <div class="entete-identite recu-header">
             <div class="top-row">
                 <div class="logo-area">
                     {% if structure and structure.logo_url %}

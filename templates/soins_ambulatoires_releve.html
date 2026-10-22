@@ -88,9 +88,10 @@
 </head>
 <body>
     <div class="container" id="releveContenu">
+        {% include 'partials/entete_a4.html' %}
         <div class="header">
             <div>
-                <h2>{{ structure_nom }}</h2>
+                <h2 class="entete-identite">{{ structure_nom }}</h2>
                 <p>{{ episode.patient_nom }} — Soins ambulatoires #{{ episode.numero_local or episode.id }}</p>
                 <p>{% if episode.motif %}{{ episode.motif }} — {% endif %}Du {{ episode.date_debut.strftime('%d/%m/%Y') if episode.date_debut else '-' }}
                    au {{ episode.date_fin.strftime('%d/%m/%Y') if episode.date_fin else "aujourd'hui" }}</p>

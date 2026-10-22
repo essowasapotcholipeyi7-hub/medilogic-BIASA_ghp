@@ -88,9 +88,10 @@
 </head>
 <body>
     <div class="container" id="releveContenu">
+        {% include 'partials/entete_a4.html' %}
         <div class="header">
             <div>
-                <h2>{{ structure_nom }}</h2>
+                <h2 class="entete-identite">{{ structure_nom }}</h2>
                 <p>{{ hospit.patient_nom }} — Séjour #{{ hospit.numero_local or hospit.id }}</p>
                 <p>Du {{ hospit.date_entree.strftime('%d/%m/%Y') if hospit.date_entree else '-' }}
                    au {{ hospit.date_sortie.strftime('%d/%m/%Y') if hospit.date_sortie else "aujourd'hui" }}

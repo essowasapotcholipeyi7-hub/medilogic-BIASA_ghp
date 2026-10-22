@@ -289,7 +289,8 @@
     <div class="document-container">
         <!-- ⭐ Lettre de réponse en cas de refus (patron, 2026-10-10), reliée à la demande
              écrite de l'employé par sa référence — voir /rh/dossier/<type>/<id>. -->
-        <div class="recu-header">
+        {% include 'partials/entete_a4.html' %}
+        <div class="entete-identite recu-header">
             <div class="top-row">
                 <div class="logo-area">
                     {% if structure and structure.logo_url %}

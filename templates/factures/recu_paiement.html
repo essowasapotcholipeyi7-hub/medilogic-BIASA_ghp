@@ -457,8 +457,9 @@
 <body>
     <div class="container" id="recuContenu">
         <!-- En-tête -->
+        {% if format != '80mm' %}{% include 'partials/entete_a4.html' %}{% endif %}
         <div class="header">
-            <div>
+            <div class="entete-identite">
                 <h2>{{ structure.nom or 'Medilogic-GHP' }}</h2>
                 <p style="margin: 2px 0; font-size: 10px;">
                     {{ structure.adresse or '' }}<br>

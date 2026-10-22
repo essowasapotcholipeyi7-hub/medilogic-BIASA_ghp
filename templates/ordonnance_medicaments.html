@@ -107,8 +107,9 @@
 <!-- FORMAT A4 -->
 <!-- ═══════════════════════════════════════════ -->
 <div id="formatA4" class="format-a4">
+    {% include 'partials/entete_a4.html' %}
     <div class="header">
-        <div class="header-left">
+        <div class="entete-identite header-left">
             <div class="nom"> {{ structure.nom or 'Établissement médical' }}</div>
             <div class="infos">{{ structure.adresse or '' }} | 📞 {{ structure.telephone or '' }}</div>
         </div>

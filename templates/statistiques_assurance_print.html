@@ -179,8 +179,9 @@
     {% endif %}
 
     <div class="conteneur">
+        {% include 'partials/entete_a4.html' %}
         <div class="entete">
-            <div class="structure">
+            <div class="entete-identite structure">
                 {% if structure and structure.logo_url %}<img src="{{ structure.logo_url }}" alt="logo">{% endif %}
                 <div>
                     <h1>{{ (structure.nom if structure else '') or 'Structure' }}</h1>
