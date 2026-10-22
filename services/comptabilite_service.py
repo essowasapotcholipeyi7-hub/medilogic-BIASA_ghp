@@ -158,6 +158,18 @@ def _log_anomalie(structure_id, source_type, source_id, message):
 # NOYAU COMMUN : CRÉATION D'UNE ÉCRITURE
 # ============================================================
 
+LIBELLE_ECART_ARRONDI = "Écart d'arrondi"
+
+
+def ligne_ecart_arrondi(ecart):
+    """Ligne qui solde un écart d'arrondi (`ecart` = total débit − total crédit) : débit en charges diverses
+    (658) si le crédit dépasse, crédit en produits divers (758) si c'est le débit."""
+    from utils.plan_comptable_syscohada import COMPTE_CHARGE_DIVERSE
+    if ecart < 0:
+        return {'numero_compte': COMPTE_CHARGE_DIVERSE, 'libelle': LIBELLE_ECART_ARRONDI, 'debit': round(-ecart, 2)}
+    return {'numero_compte': COMPTE_PRODUITS_DIVERS, 'libelle': LIBELLE_ECART_ARRONDI, 'credit': round(ecart, 2)}
+
+
 def exercice_cloture(structure_id, d):
     """⭐ 2026-10-22 : True si l'exercice (année civile) de la date `d` est clôturé pour cette structure."""
     if not structure_id or not d:
@@ -197,6 +209,14 @@ def creer_ecriture(structure_id, date_ecriture, libelle, lignes, journal_code,
         if auto:
             _log_anomalie(structure_id, source_type, source_id, message)
         return None
+
+    # ⭐ 2026-10-22 : l'écart d'arrondi toléré (≤ 1 F, parts patient / assurances / TVA arrondies séparément)
+    # entrait tel quel — écriture validée déséquilibrée, bilan faux d'autant (VTE-3202 : 527 F au débit pour
+    # 528 F au crédit). Il est désormais soldé par une ligne d'écart d'arrondi (658 / 758).
+    ecart = round(sum(round(_to_float(l.get('debit')), 2) for l in lignes_valides)
+                  - sum(round(_to_float(l.get('credit')), 2) for l in lignes_valides), 2)
+    if abs(ecart) >= 0.01:
+        lignes_valides = lignes_valides + [ligne_ecart_arrondi(ecart)]
 
     if not isinstance(date_ecriture, date):
         date_ecriture = datetime.utcnow().date()

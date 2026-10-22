@@ -126,6 +126,8 @@
     .exo-flux { padding: 10px 14px; display: grid; gap: 4px; font-variant-numeric: tabular-nums; }
     .exo-flux > div { display: flex; justify-content: space-between; }
     .exo-flux-total { border-top: 1px solid var(--bs-border-color); padding-top: 4px; font-weight: 700; }
+    .exo-erreur { border-color: #D9534F; }
+    .exo-erreur .card-header { background: rgba(217, 83, 79, .08); }
 </style>
 {% endblock %}
 
@@ -3257,6 +3259,8 @@ function rendreApercuExercice(a) {
     h += tuileExo('Ce que nous devons <span class="text-muted">(dettes)</span>', fExo(a.tiers.total_dettes), 'Fournisseurs, personnel, organismes, État', '');
     h += '</div>';
 
+    h += rendreRechercheErreurExo(a);
+
     h += '<div class="row g-3">';
     // ---------- colonne gauche : activité
     h += '<div class="col-lg-7 d-flex flex-column gap-3">';
@@ -3358,6 +3362,69 @@ function rendreApercuExercice(a) {
     return h;
 }
 
+function fEcartExo(m) {
+    // écart : centimes visibles (« 0,40 F »), sinon arrondi au franc
+    const v = Math.abs(Math.round((m || 0) * 100) / 100);
+    return (Number.isInteger(v) ? formatEntier(v) : v.toFixed(2).replace('.', ',')) + ' F';
+}
+
+function rendreRechercheErreurExo(a) {
+    // ⭐ 2026-10-22 (patron) : quand le bilan ne tombe pas juste — trouver l'écriture fautive et la corriger
+    const d = a.diagnostic || {ecritures: [], comptes: []};
+    if (!d.ecritures.length && !d.comptes.length && Math.abs(a.ecart_bilan || 0) < 0.01) return '';
+    let h = `<div class="card exo-carte exo-erreur mb-3"><div class="card-header"><i class="fas fa-magnifying-glass me-1"></i> Rechercher l'erreur
+               ${Math.abs(a.ecart_bilan || 0) >= 0.01 ? `<span class="badge bg-danger ms-2">Bilan déséquilibré de ${fEcartExo(a.ecart_bilan)}</span>` : ''}</div>
+             <div class="card-body">
+               <p class="small mb-2">Chaque écriture doit avoir <strong>total débit = total crédit</strong>. L'écart du bilan est la somme des
+               écarts des écritures qui ne respectent pas cette règle. Un écart d'<strong>au plus 1 F</strong> vient d'un arrondi (parts patient,
+               assurances et TVA arrondies séparément) : <strong>« Corriger l'arrondi »</strong> l'inscrit en charges diverses (658) ou produits
+               divers (758). Au-delà, ce n'est pas un arrondi : ouvrez la pièce et vérifiez les montants.</p>`;
+    if (d.ecritures.length) {
+        h += `<div class="table-responsive"><table class="table table-sm mb-2 exo-table"><thead><tr><th>Date</th><th>Pièce</th><th>Libellé</th>
+                <th class="text-end">Débit</th><th class="text-end">Crédit</th><th class="text-end">Écart</th><th></th></tr></thead><tbody>`;
+        d.ecritures.forEach(e => {
+            let action;
+            if (e.cloturee) action = '<span class="small text-muted">exercice clôturé</span>';
+            else if (e.arrondi) action = `<button class="btn btn-sm btn-outline-success" onclick="corrigerArrondiExo(${e.id})"><i class="fas fa-wand-magic-sparkles"></i> Corriger l'arrondi</button>`;
+            else action = '<span class="small text-danger">à vérifier sur la pièce</span>';
+            h += `<tr><td>${escExo(e.date)}</td><td>${escExo(e.piece)}</td><td>${escExo(e.libelle)}</td>
+                    <td class="text-end">${fEcartExo(e.debit)}</td><td class="text-end">${fEcartExo(e.credit)}</td>
+                    <td class="text-end fw-semibold text-danger">${e.ecart > 0 ? '+' : '−'} ${fEcartExo(e.ecart)}</td><td class="text-end">${action}</td></tr>`;
+        });
+        h += `</tbody></table></div>`;
+    }
+    if (d.comptes.length) {
+        h += `<div class="small fw-semibold mb-1">Comptes mal rangés dans le plan comptable</div><ul class="small mb-2">`;
+        d.comptes.forEach(c => {
+            h += `<li><strong>${escExo(c.numero)} ${escExo(c.nom)}</strong> (solde ${fEcartExo(c.solde)}) : ${escExo(c.probleme)} — corrigez son type dans l'onglet Plan comptable.</li>`;
+        });
+        h += '</ul>';
+    }
+    if (!d.ecritures.length && !d.comptes.length) {
+        h += `<p class="small text-muted mb-0">Aucune écriture déséquilibrée ni compte mal rangé trouvé. Comparez la balance (Journal &amp; Rapports)
+              compte par compte avec vos pièces, ou demandez à l'administrateur de vérifier.</p>`;
+    }
+    return h + '</div></div>';
+}
+
+async function corrigerArrondiExo(id) {
+    const e = ((EXO.apercu && EXO.apercu.diagnostic && EXO.apercu.diagnostic.ecritures) || []).find(x => x.id === id);
+    if (!e) return;
+    const piece = e.piece || ('#' + id), ecart = e.ecart;
+    if (!await demanderConfirmation(
+        `Corriger l'écart d'arrondi de la pièce ${piece} ?\n\n` +
+        `Une ligne « Écart d'arrondi » de ${fEcartExo(ecart)} sera ajoutée en ${ecart < 0 ? 'charges diverses (658)' : 'produits divers (758)'} ` +
+        `pour que débit = crédit. Rien d'autre ne change dans l'écriture ; la correction est notée dans son historique.`)) return;
+    try {
+        const r = await fetch(`/comptabilite/api/ecritures/${id}/corriger-arrondi`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+        const data = await r.json();
+        await afficherMessage(data.message || data.error, {type: data.success ? 'success' : 'danger'});
+        if (data.success) chargerApercuExercice();
+    } catch (e) {
+        await afficherMessage('Erreur : ' + e, {type: 'danger'});
+    }
+}
+
 function _paramsExercice() {
     const annee = document.getElementById('exerciceChoix').value || new Date().getFullYear();
     return `date_debut=${annee}-01-01&date_fin=${annee}-12-31`;
@@ -3441,9 +3508,16 @@ function chargerEtatFinancier() {
             if (data.est_equilibre) {
                 badgeEq.textContent = 'Équilibré';
                 badgeEq.className = 'badge bg-success';
+                badgeEq.onclick = null;
+                badgeEq.style.cursor = '';
+                badgeEq.title = '';
             } else {
-                badgeEq.textContent = 'Déséquilibré';
+                // ⭐ 2026-10-22 : mène à « Rechercher l'erreur » (onglet Exercice comptable)
+                badgeEq.textContent = 'Déséquilibré — rechercher l\'erreur';
                 badgeEq.className = 'badge bg-danger';
+                badgeEq.onclick = ouvrirOngletExercice;
+                badgeEq.style.cursor = 'pointer';
+                badgeEq.title = "Trouver l'écriture fautive et la corriger";
             }
         })
         .catch(err => console.error('Erreur bilan:', err));

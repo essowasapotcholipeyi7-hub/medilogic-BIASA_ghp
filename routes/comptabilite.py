@@ -64,6 +64,7 @@ ENDPOINTS_RESPONSABLE_COMPTA = {
     'api_reset_sequence', 'api_tva_parametrage_post', 'api_sauvegarder_budget',
     # validation et clôture
     'api_valider_ecriture', 'api_cloture', 'api_cloture_exercice_generer', 'api_report_a_nouveau_generer',
+    'api_corriger_arrondi',
     'api_valider_releve',
     # provisions, pertes, amortissements, règlements fournisseurs
     'api_provisionner_creance', 'api_reprendre_provision', 'api_provision_passer_en_perte', 'api_perte_directe',
@@ -1084,6 +1085,57 @@ def _tiers_exercice(structure_id, fin):
     }
 
 
+def diagnostic_bilan(structure_id, fin, debut=None):
+    """⭐ 2026-10-22 (patron) : « rechercher l'erreur » quand le bilan ou la balance ne tombe pas juste.
+    Chaque écriture doit avoir débit = crédit ; l'écart du bilan est la somme des écarts des écritures qui ne
+    le respectent pas. Deux causes possibles, cherchées ici :
+      - écriture déséquilibrée : écart ≤ 1 F = arrondi (parts patient / assurances / TVA arrondies
+        séparément), corrigeable d'un clic (ligne 658 / 758, voir api_corriger_arrondi) ; au-delà, la pièce
+        est à vérifier ;
+      - compte au type inconnu (ni actif, ni passif, ni charge, ni produit) : son solde n'est compté nulle
+        part ; compte dont le type ne correspond pas à sa classe : rangé du mauvais côté."""
+    from sqlalchemy import text
+    rows = db.session.execute(text(f"""
+        SELECT e.id, e.date_ecriture, e.piece_justificative, e.libelle,
+               SUM(l.debit) AS debit, SUM(l.credit) AS credit
+        FROM ecritures_comptables e JOIN lignes_ecritures l ON l.ecriture_id = e.id
+        WHERE {_SQL_ECRITURE_RETENUE} AND e.date_ecriture <= :fin
+          AND (CAST(:debut AS date) IS NULL OR e.date_ecriture >= CAST(:debut AS date))
+        GROUP BY e.id HAVING ABS(SUM(l.debit) - SUM(l.credit)) >= 0.01
+        ORDER BY e.date_ecriture, e.id
+    """), {'structure_id': structure_id, 'fin': fin, 'debut': debut}).fetchall()
+    annees_closes = {c.annee for c in Cloture.query.filter_by(structure_id=structure_id).all()}
+    ecritures = []
+    for r in rows:
+        ecart = round(float(r.debit) - float(r.credit), 2)
+        ecritures.append({
+            'id': r.id, 'date': r.date_ecriture.strftime('%d/%m/%Y'), 'piece': r.piece_justificative or '',
+            'libelle': r.libelle or '', 'debit': round(float(r.debit), 2), 'credit': round(float(r.credit), 2),
+            'ecart': ecart, 'arrondi': abs(ecart) <= 1, 'cloturee': r.date_ecriture.year in annees_closes,
+        })
+    comptes = db.session.execute(text(f"""
+        SELECT c.numero, c.nom, c.classe, c.type, SUM(l.debit - l.credit) AS solde
+        FROM comptes_comptables c
+        JOIN lignes_ecritures l ON l.compte_id = c.id JOIN ecritures_comptables e ON e.id = l.ecriture_id
+        WHERE {_SQL_ECRITURE_RETENUE} AND e.date_ecriture <= :fin
+          AND NOT ((c.classe IN ('1', '2', '3', '4', '5') AND c.type IN ('actif', 'passif'))
+                   OR (c.classe = '6' AND c.type = 'charge') OR (c.classe = '7' AND c.type = 'produit'))
+        GROUP BY c.numero, c.nom, c.classe, c.type
+        HAVING ABS(SUM(l.debit - l.credit)) >= 0.01
+        ORDER BY c.numero
+    """), {'structure_id': structure_id, 'fin': fin}).fetchall()
+    return {
+        'ecritures': ecritures,
+        'ecart_ecritures': round(sum(e['ecart'] for e in ecritures), 2),
+        'comptes': [{'numero': c.numero, 'nom': c.nom, 'classe': c.classe, 'type': c.type or '',
+                     'solde': round(float(c.solde), 2),
+                     'probleme': ("type inconnu : son solde n'apparaît ni au bilan ni au compte de résultat"
+                                  if c.type not in ('actif', 'passif', 'charge', 'produit')
+                                  else f"classe {c.classe} rangée en « {c.type} » : mauvais côté du bilan / du résultat")}
+                    for c in comptes],
+    }
+
+
 def _controles_cloture(structure_id, annee, debut, fin, bilan, tresorerie):
     """Points à vérifier avant de clôturer. niveau : 'bloquant' (la clôture est refusée), 'attention' (à
     regarder, n'empêche pas), 'ok'."""
@@ -1120,26 +1172,22 @@ def _controles_cloture(structure_id, annee, debut, fin, bilan, tresorerie):
     else:
         ajouter('ok', "Aucune écriture en attente de validation")
 
-    totaux = db.session.execute(text("""
-        SELECT COALESCE(SUM(l.debit), 0) AS debit, COALESCE(SUM(l.credit), 0) AS credit
-        FROM ecritures_comptables e JOIN lignes_ecritures l ON l.ecriture_id = e.id
-        WHERE e.structure_id = :structure_id AND e.statut = 'valide'
-          AND e.date_ecriture >= :debut AND e.date_ecriture <= :fin
-    """), {'structure_id': structure_id, 'debut': debut, 'fin': fin}).first()
-    ecart = round(float(totaux.debit) - float(totaux.credit))
-    if abs(ecart) > 1:
-        ajouter('bloquant', "Balance déséquilibrée",
-                f"Total débit {_fmt_montant(float(totaux.debit))} F ≠ total crédit {_fmt_montant(float(totaux.credit))} F "
-                f"(écart {_fmt_montant(ecart)} F).")
+    # ⭐ contrôle écriture par écriture (avant : seul le total de l'année, à 1 F près — un écart d'arrondi passait)
+    desequilibrees = diagnostic_bilan(structure_id, fin, debut)['ecritures']
+    if desequilibrees:
+        ajouter('bloquant', f"{len(desequilibrees)} écriture(s) déséquilibrée(s) (débit ≠ crédit)",
+                f"Écart total {_fmt_ecart(sum(e['ecart'] for e in desequilibrees))} F — voir "
+                f"« Rechercher l'erreur » : un écart d'au plus 1 F est un arrondi, corrigé d'un clic.")
     else:
-        ajouter('ok', "Balance équilibrée (total débit = total crédit)")
+        ajouter('ok', "Toutes les écritures sont équilibrées (débit = crédit)")
 
-    if bilan.get('est_equilibre'):
+    ecart_bilan = round(bilan.get('total_actif', 0) - bilan.get('total_passif_capitaux', 0), 2)
+    if abs(ecart_bilan) < 0.01:
         ajouter('ok', "Bilan équilibré (actif = passif + capitaux propres)")
     else:
-        ajouter('attention', "Bilan déséquilibré",
+        ajouter('attention', f"Bilan déséquilibré de {_fmt_ecart(ecart_bilan)} F",
                 f"Actif {_fmt_montant(bilan.get('total_actif', 0))} F, passif + capitaux propres "
-                f"{_fmt_montant(bilan.get('total_passif_capitaux', 0))} F.")
+                f"{_fmt_montant(bilan.get('total_passif_capitaux', 0))} F — voir « Rechercher l'erreur ».")
 
     nb_anomalies = AnomalieComptable.query.filter(AnomalieComptable.structure_id == structure_id,
                                                   db.or_(AnomalieComptable.resolu.is_(None), AnomalieComptable.resolu.is_(False))).count()
@@ -1227,6 +1275,8 @@ def get_apercu_exercice(structure_id, annee):
         'sig': _sig_et_cafg(structure_id, debut, fin),
         'n1': n1,
         'controles': controles,
+        'diagnostic': diagnostic_bilan(structure_id, fin),
+        'ecart_bilan': round(bilan.get('total_actif', 0) - bilan.get('total_passif_capitaux', 0), 2),
         'peut_cloturer': not cloture and not any(c['niveau'] == 'bloquant' for c in controles),
     }
 
@@ -1246,6 +1296,40 @@ def api_exercice_apercu():
     if not structure_id:
         return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
     return jsonify({'success': True, **get_apercu_exercice(structure_id, annee)})
+
+
+@compta_bp.route('/api/ecritures/<int:id>/corriger-arrondi', methods=['POST'])
+def api_corriger_arrondi(id):
+    """⭐ 2026-10-22 : solde l'écart d'arrondi (≤ 1 F) d'une écriture validée déséquilibrée par une ligne
+    « Écart d'arrondi » en 658 (charges diverses) ou 758 (produits divers) — l'écriture n'est pas modifiée
+    autrement ; la correction est tracée dans son historique."""
+    from services.comptabilite_service import ligne_ecart_arrondi, _get_compte_id
+    structure_id = session.get('structure_id')
+    ecriture = EcritureComptable.query.filter_by(id=id, structure_id=structure_id).first()
+    if not ecriture:
+        return jsonify({'success': False, 'error': 'Écriture introuvable'}), 404
+    if exercice_cloture(structure_id, ecriture.date_ecriture):
+        return jsonify({'success': False, 'error': _message_exercice_cloture(ecriture.date_ecriture)}), 400
+    ecart = round(sum(float(l.debit or 0) for l in ecriture.lignes) - sum(float(l.credit or 0) for l in ecriture.lignes), 2)
+    if abs(ecart) < 0.01:
+        return jsonify({'success': False, 'error': "Cette écriture est déjà équilibrée."}), 400
+    if abs(ecart) > 1:
+        return jsonify({'success': False, 'error': (
+            f"Écart de {_fmt_ecart(ecart)} F : ce n'est pas un arrondi. Vérifiez la pièce {ecriture.piece_justificative or ''} "
+            f"(montants saisis, ligne oubliée) et passez une écriture de correction.")}), 400
+    ligne = ligne_ecart_arrondi(ecart)
+    db.session.add(LigneEcriture(ecriture_id=ecriture.id, compte_id=_get_compte_id(structure_id, ligne['numero_compte']),
+                                 debit=ligne.get('debit', 0), credit=ligne.get('credit', 0), libelle=ligne['libelle']))
+    db.session.add(HistoriqueEcriture(
+        ecriture_id=ecriture.id, action='correction_arrondi', ancien_statut=ecriture.statut, nouveau_statut=ecriture.statut,
+        modifie_par=session.get('user_id'), modifie_par_nom=session.get('user_name', 'System'),
+        commentaire=f"Écart d'arrondi de {_fmt_ecart(ecart)} F soldé en {ligne['numero_compte']} "
+                    f"({'débit' if ligne.get('debit') else 'crédit'})"))
+    db.session.commit()
+    invalidate_cache(structure_id)
+    return jsonify({'success': True, 'message': (
+        f"Écriture {ecriture.piece_justificative or ecriture.id} équilibrée : écart d'arrondi de {_fmt_ecart(ecart)} F "
+        f"passé en {'charges diverses (658)' if ligne.get('debit') else 'produits divers (758)'}.")})
 
 
 @compta_bp.route('/api/cloture', methods=['POST'])
@@ -2521,7 +2605,9 @@ def get_bilan(structure_id, date_fin):
             'total_passif': total_passif,
             'total_capitaux': total_capitaux,
             'total_passif_capitaux': total_passif + total_capitaux,
-            'est_equilibre': abs(total_actif - (total_passif + total_capitaux)) < 1
+            # ⭐ 2026-10-22 : au centime près (avant : < 1 F — l'écart d'arrondi de 0,40 F de Valeo passait inaperçu) ;
+            # l'erreur se cherche et se corrige dans l'onglet Exercice comptable (diagnostic_bilan)
+            'est_equilibre': abs(round(total_actif - (total_passif + total_capitaux), 2)) < 0.01
         }
         
     except Exception as e:
@@ -3467,6 +3553,12 @@ def print_rapport(type_rapport):
 
 def _fmt_montant(m):
     return f"{m:,.0f}".replace(',', ' ')
+
+
+def _fmt_ecart(m):
+    """Écart en valeur absolue : les centimes restent visibles (« 0,40 »), sinon un écart de 0,40 F s'afficherait « 0 »."""
+    m = abs(round(m, 2))
+    return _fmt_montant(m) if m == int(m) else f"{m:,.2f}".replace(',', ' ').replace('.', ',')
 
 
 def _csv_champ(v):
