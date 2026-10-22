@@ -691,7 +691,7 @@
                     <div class="label">Assurance principale</div>
                     <div class="value">
                         {% if assurance_nom and assurance_nom != 'Non assuré' and est_assure %}
-                        <span class="assurance-label">{{ assurance_nom }}</span>
+                        <span class="assurance-label">{{ assurance_libelle or assurance_nom }}</span>
                         <span class="assurance-taux" style="font-size:11px; color:#1a2a3a; margin-left:5px;">
                             ({{ taux_assurance }}%)
                             {% if proforma.numero_assure %} - N° {{ proforma.numero_assure }}{% endif %}
@@ -711,6 +711,8 @@
                             {% if taux_modifie %}
                             <span class="badge-modifie">exceptionnel</span>
                             {% endif %}
+                            {% if numero_assure2 %} - N° {{ numero_assure2 }}{% endif %}
+                            {% if societe_assurance2 %} - Société : {{ societe_assurance2 }}{% endif %}
                         </span>
                         {% else %}
                         <span style="color: #8e9aaf; font-size: 11px; font-family:Arial;">Aucune</span>
@@ -777,7 +779,8 @@
                                article['prix_unitaire']) — repli sur article.prix
                                puis 0 en dernier recours. Repéré en testant
                                l'impression avec plusieurs types d'assurance. #}
-                            {% set prix_unitaire_affiche = article.prix_unitaire|default(article.prix, true)|default(0, true) %}
+                            {# ⭐ 2026-10-22 : prix facturé (tarif de l'assurance privée compris) d'abord, comme la colonne Total #}
+                            {% set prix_unitaire_affiche = article.prix|default(article.prix_unitaire, true)|default(0, true) %}
                             <td class="text-center">{{ article.quantite }}</td>
                             <td class="text-end">{{ prix_unitaire_affiche|round(0)|int }} F</td>
                             {% if est_assure and format != '80mm' %}
@@ -821,7 +824,7 @@
                     
                     {% if prise_en_charge and prise_en_charge > 0 and est_assure %}
                     <div class="ligne principale">
-                        <span>Prise en charge {{ assurance_nom }} ({{ libelle_taux_pec_amu(proforma.articles, taux_assurance) }})</span>
+                        <span>Prise en charge {{ assurance_libelle or assurance_nom }} ({{ libelle_taux_pec_amu(proforma.articles, taux_assurance) }})</span>
                         <span>- {{ prise_en_charge|round(0)|int }} FCFA</span>
                     </div>
                     {% endif %}

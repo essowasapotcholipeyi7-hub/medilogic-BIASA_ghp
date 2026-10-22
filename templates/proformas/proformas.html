@@ -786,6 +786,7 @@ let produitSearchTimeout = null;
 
 let assurance2Active = false;
 let assurance2Nom = '';
+let numeroAssure2Courant = '';   // ⭐ 2026-10-22 : n° de la complémentaire (fiche patient)
 let assurance2TauxOriginal = 0;
 // ⭐ {nom_acte: {pbr_1, pbr_2}} propre à LA compagnie complémentaire du
 // patient en cours de conversion (voir /api/pbr-complementaires,
@@ -1210,6 +1211,7 @@ function chargerInfosPatient() {
     document.getElementById('numeroAssure').value = option.dataset.numero || '';
     
     assurance2Nom = option.dataset.assurance2 || '';
+    numeroAssure2Courant = option.dataset.numero2 || '';
     assurance2TauxOriginal = parseFloat(option.dataset.taux2) || 0;
     assurance2TauxApplique = assurance2TauxOriginal;
     
@@ -2022,7 +2024,7 @@ async function sauvegarderProforma() {
         numero_assure: document.getElementById('numeroAssure').value || '',
         assurance2_nom: assurance2Active ? assurance2Nom : '',
         taux_assurance2: assurance2Active ? tauxComplementaire : 0,
-        numero_assure2: document.getElementById('numeroAssure').value || '',
+        numero_assure2: numeroAssure2Courant,   // ⭐ 2026-10-22 : était le n° AMU (champ numeroAssure)
         assurance2_active: assurance2Active,
         taux_modifie: tauxModifie,
         taux_original: assurance2TauxOriginal,

@@ -20999,7 +20999,9 @@ def api_creer_proforma():
             total = ligne['total']
             article['total'] = total
             article['prix_base'] = prix
-            article['prix'] = ligne['tarif_unitaire']
+            # ⭐ 2026-10-22 : prix_unitaire aussi (il gardait le prix de base : l'impression montrait 4 500 F de P.U.
+            # pour une ligne facturée 8 050 F au tarif OLEA, et un sous-total faux) — comme api_modifier_proforma
+            article['prix'] = article['prix_unitaire'] = ligne['tarif_unitaire']
             article['source_tarif'] = ligne['source_tarif']
             article['pbr'] = pbr
             sous_total += total
@@ -21384,7 +21386,10 @@ def proforma_print(proforma_id):
     est_assure = assurance_nom and assurance_nom != 'Non assuré' and taux_assurance > 0
 
     for a in articles:
-        prix = float(a.get('prix_unitaire', a.get('prix', 0)))
+        # ⭐ 2026-10-22 : prix FACTURÉ (`prix`, tarif de l'assurance privée compris) d'abord — `prix_unitaire` gardait
+        # le prix de base sur les proformas créées avant ce correctif (proforma n° 5 d'Elite : sous-total 56 500 F
+        # imprimé pour 94 480 F enregistrés, net à payer 0 F au lieu de 8 736 F)
+        prix = float(a.get('prix', a.get('prix_unitaire', 0)) or 0)
         pbr = float(a.get('pbr', prix))
         quantite = int(a.get('quantite', 1))
         total = prix * quantite
@@ -21431,7 +21436,22 @@ def proforma_print(proforma_id):
             assurances_print = {}
     pas_arrondi_print = float(((assurances_print or {}).get('arrondi') or {}).get('pas') or 0)
 
+    # ⭐ 2026-10-22 : comme le reçu — « AMU-CNSS » (pas le code « amu_cnss »), n° et société de la complémentaire
+    # lus sur la fiche du patient (les proformas enregistraient le n° AMU à la place du n° de la complémentaire)
+    assurance_libelle = TYPE_AMU_LABELS.get(str(assurance_nom or '').lower(), assurance_nom)
+    numero_assure2_print, societe_assurance2_print = proforma.get('numero_assure2') or '', ''
+    if proforma.get('patient_id'):
+        fiche = db.execute_query("SELECT numero_assure2, societe_assurance2 FROM patients WHERE id = %s AND structure_id = %s",
+                                 (proforma.get('patient_id'), structure_id))
+        if fiche:
+            numero_assure2_print = fiche[0].get('numero_assure2') or numero_assure2_print
+            societe_assurance2_print = fiche[0].get('societe_assurance2') or ''
+    if numero_assure2_print and numero_assure2_print == proforma.get('numero_assure'):
+        numero_assure2_print = ''
+
     return render_template('proformas/proforma_print.html', vente_facturee=vente_facturee,
+                         assurance_libelle=assurance_libelle,
+                         numero_assure2=numero_assure2_print, societe_assurance2=societe_assurance2_print,
                          pas_arrondi=pas_arrondi_print,
                          # ⭐ 2026-10-21 (patron) : A4 par défaut, ticket 80 mm au choix
                          format='80mm' if request.args.get('format') == '80mm' else 'A4',
