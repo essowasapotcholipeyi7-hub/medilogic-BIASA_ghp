@@ -4,6 +4,10 @@
 
 {% block extra_css %}
 <style>
+/* ⭐ 2026-10-22 : « payé par … » à côté du nom (vente non payée en espèces) */
+.badge-paye-par { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; font-size: .78rem; font-weight: 600;
+                  background: #e7f1fa; color: #0b5a8c; border: 1px solid #9cc3e3; white-space: nowrap; }
+[data-bs-theme="dark"] .badge-paye-par { background: rgba(110, 168, 254, .12); color: #9ec5fe; border-color: rgba(110, 168, 254, .35); }
     /* Choix de la période : encadré bien visible (patron, 2026-10-19) */
     .zone-periode {
         border: 2px solid var(--bs-primary, #0d6efd);
@@ -1110,7 +1114,7 @@ function afficherPageVentes(page) {
         html += '<tr>';
         html += '<td><strong>#' + (v.numero_local || v.ID || (start + i + 1)) + '</strong></td>';
         html += '<td>' + dateStr + '</td>';
-        html += '<td><strong>' + (v.patient_nom || 'Patient') + '</strong></td>';
+        html += '<td><strong>' + (v.patient_nom || 'Patient') + '</strong>' + mentionPaiement(v) + '</td>';
         html += '<td><span class="badge ' + badgeClass + '">' + typeLabel + '</span>';
         if (v.applique_tva) {
             html += ' <span class="badge bg-light text-dark border" title="Décomposition HT/TVA/TTC affichée sur le reçu/la facture">TVA</span>';
@@ -1722,6 +1726,26 @@ function styleImpressionNB() {
 // patient revenu dans la journée garde son numéro ; une vente sans patient enregistré a le sien.
 var NOM_STRUCTURE = {{ (session.get('structure_nom') or '')|tojson }};
 var _ordresDuJour = null;
+// ⭐ 2026-10-22 (patron) : à côté du nom du patient, « payé par Mixx by Yas » (Flooz, carte, chèque, virement…)
+// quand la vente n'est pas payée en espèces ; espèces (le cas par défaut) : rien.
+function moyenPaiementAutre(v) {
+    var m = String(v.mode_paiement || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (!m || m === 'especes' || m === 'espèces' || m === 'cash') return '';
+    if (m.indexOf('mixx') !== -1 || m === 'tmoney' || m === 't_money') return 'Mixx by Yas (T-Money)';
+    if (m.indexOf('moov') !== -1 || m === 'flooz') return 'Flooz (Moov Money)';
+    if (m.indexOf('mobile') !== -1) return 'Mobile Money';
+    if (m === 'carte') return 'carte bancaire';
+    if (m === 'cheque' || m === 'chèque') return 'chèque';
+    if (m.indexOf('virement') !== -1) return 'virement';
+    return String(v.mode_paiement).replace(/_/g, ' ');
+}
+function mentionPaiement(v, impression) {
+    var moyen = moyenPaiementAutre(v);
+    if (!moyen) return '';
+    return impression
+        ? ' <em style="white-space:nowrap;">— payé par ' + escFR(moyen) + '</em>'
+        : ' <span class="badge-paye-par"><i class="fas fa-mobile-screen-button me-1"></i>payé par ' + escFR(moyen) + '</span>';
+}
 function _jourVente(v) {
     var d = v.date_vente ? new Date(v.date_vente) : null;
     return d && !isNaN(d) ? d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() : '';
@@ -2126,7 +2150,7 @@ async function imprimerHistorique() {
         html += '<td>' + dateStr + '</td>';
         // ⭐ 2026-10-21 (patron) : n° d'ordre du jour du patient (1, 2, 3... selon sa première vente de la journée)
         var ordreJour = numeroOrdreDuJour(v);
-        html += '<td>' + escFR(v.patient_nom || 'Patient') + (ordreJour ? ' <strong>(n° ' + ordreJour + ')</strong>' : '') + '</td>';
+        html += '<td>' + escFR(v.patient_nom || 'Patient') + (ordreJour ? ' <strong>(n° ' + ordreJour + ')</strong>' : '') + mentionPaiement(v, true) + '</td>';
         html += '<td><span class="' + assureBadgeClass + '">' + assureLabel + '</span>' + cacHtml + aideHtml + '</td>';
         html += '<td><span class="' + badgeClass + '">' + typeLabel + '</span></td>';
         html += '<td class="detail-cell">' + details + '</td>';
