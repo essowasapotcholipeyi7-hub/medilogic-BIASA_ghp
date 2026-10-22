@@ -533,10 +533,30 @@ function marquerHorsNormes(zone) {
         if (!el.getAttribute('style')) el.removeAttribute('style');
     });
 }
+// ⭐ 2026-10-22 (patron, VS : « moins de 20 : VS normale, 20 ou plus : VS accélérée, sans le faire à la main ») :
+// interprétation choisie d'après la valeur de la case .mf-auto-source et le seuil du modèle (data-auto-seuil,
+// data-auto-bas, data-auto-haut). Un texte écrit à la main dans l'interprétation n'est jamais remplacé.
+function interpretationAuto(zone) {
+    zone.querySelectorAll('.mf-interpretation[data-auto-seuil]').forEach(bloc => {
+        const src = zone.querySelector('.mf-auto-source');
+        const libre = bloc.querySelector('.mf-libre');
+        if (!src || !libre) return;
+        const bas = bloc.dataset.autoBas, haut = bloc.dataset.autoHaut;
+        const actuel = libre.textContent.trim();
+        if (actuel && actuel !== bas && actuel !== haut) return;
+        const brut = (src.textContent || '').replace(/[\s  ]/g, '').replace(',', '.');
+        if (!/^\d+(\.\d+)?$/.test(brut)) return;
+        const texte = parseFloat(brut) < parseFloat(bloc.dataset.autoSeuil) ? bas : haut;
+        const p = libre.querySelector('p');
+        if (p) p.textContent = texte; else libre.textContent = texte;
+    });
+}
 document.addEventListener('input', e => {
     const zone = document.getElementById('zoneFormulaire');
-    if (zone && zone.contains(e.target) && e.target.closest && (e.target.closest('.mf-resultat') || e.target.closest('[data-id="sexe"]')))
+    if (zone && zone.contains(e.target) && e.target.closest && (e.target.closest('.mf-resultat') || e.target.closest('[data-id="sexe"]'))) {
         marquerHorsNormes(zone);
+        interpretationAuto(zone);
+    }
 });
 
 // retirer / remettre une ligne : petit bouton au survol
