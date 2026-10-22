@@ -443,6 +443,7 @@ function revenirPageOrigine() {
     setTimeout(function() { if (!window.closed && RETOUR_URL) location.href = RETOUR_URL; }, 300);
 }
 const HOSPIT_PREREMPLI = {{ 'true' if hospit_prerempli else 'false' }};
+const LIGNES_PREREMPLI = {{ (lignes_prerempli or [])|tojson|safe }};   // ⭐ acte / médicament venu de la vente
 const HOSPITALISATION_ID_PREREMPLI = {{ hospitalisation_id_prerempli|tojson|safe if hospitalisation_id_prerempli else 'null' }};
 const HOSPIT_DATE_ADMISSION_PREREMPLI = {{ hospit_date_admission_prerempli|tojson|safe if hospit_date_admission_prerempli else 'null' }};
 const DEMANDES_DETAIL = {{ demandes_detail|tojson|safe }};
@@ -930,6 +931,18 @@ toggleHospitAutre();
 // date d'entrée telle quelle (patron : "que cette date d'hospitalisation
 // soit récupérée en même temps") — pas de ressaisie.
 if (PATIENT_PREREMPLI) { appliquerPatient(PATIENT_PREREMPLI); }
+// ⭐ 2026-10-22 (patron) : depuis la vente d'actes / la pharmacie, l'acte ou le médicament sous EP est déjà
+// dans sa section (cochée) — il ne reste qu'à saisir le motif.
+(async () => {
+    for (const l of LIGNES_PREREMPLI) {
+        const section = l.type === 'acte' ? 'Actes' : 'Produits';
+        const chk = document.getElementById('chk' + section);
+        if (!chk.checked) { chk.checked = true; toggleSection(section); }
+        await ajouterLigne({type: l.type, nom: l.nom});
+    }
+    const motif = document.querySelector('.ep-ligne-motif-input');
+    if (LIGNES_PREREMPLI.length && motif) motif.focus();
+})();
 if (HOSPIT_PREREMPLI) {
     document.getElementById('chkHospitalisation').checked = true;
     toggleSection('Hospitalisation');

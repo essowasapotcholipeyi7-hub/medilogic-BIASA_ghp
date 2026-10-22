@@ -1299,6 +1299,16 @@ def page_amu_entente_prealable():
                 'numero_assure': p.numero_assure, 'type_assurance': p.type_assurance,
             }
 
+    # ⭐ 2026-10-22 (patron) : l'acte / le médicament sous EP qui a déclenché la demande depuis la vente
+    # (?acte=<nom>, ?produit=<nom>) arrive déjà en ligne — « on n'aura qu'à remplir le motif », comme
+    # l'hospitalisation. Noms seulement (texte), bornés : 3 actes / 4 produits comme la fiche.
+    lignes_prerempli = []
+    for type_ligne, cle, maxi in (('acte', 'acte', 3), ('produit', 'produit', 4)):
+        for nom in request.args.getlist(cle)[:maxi]:
+            nom = (nom or '').strip()[:255]
+            if nom:
+                lignes_prerempli.append({'type': type_ligne, 'nom': nom})
+
     hospitalisation_id_param = request.args.get('hospitalisation_id', type=int)
     hospit_date_admission_prerempli = ''
     if hospitalisation_id_param:
@@ -1342,6 +1352,7 @@ def page_amu_entente_prealable():
         structure_nom=session.get('structure_nom') or '',
         patient_prerempli=patient_prerempli,
         hospit_prerempli=request.args.get('hospit') == '1',
+        lignes_prerempli=lignes_prerempli,
         hospitalisation_id_prerempli=hospitalisation_id_param,
         hospit_date_admission_prerempli=hospit_date_admission_prerempli,
     )

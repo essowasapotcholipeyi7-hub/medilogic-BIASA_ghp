@@ -1487,7 +1487,9 @@ async function ajouterProduitAuPanier(produit, quantite) {
             // suffit : la page EP pré-remplit déjà le régime depuis
             // patient.type_assurance.
             if (await demanderConfirmation("Voulez-vous remplir l'Entente Préalable maintenant pour ce patient ?")) {
-                window.open('/amu/entente-prealable?patient_id=' + patientId + '&retour=' + encodeURIComponent(location.pathname), '_blank');
+                // ⭐ 2026-10-22 : le médicament sous EP part avec le patient (ligne déjà remplie sur la fiche EP)
+                window.open('/amu/entente-prealable?patient_id=' + patientId + '&produit=' + encodeURIComponent(produitNom)
+                            + '&retour=' + encodeURIComponent(location.pathname), '_blank');
             }
             return false;
         }

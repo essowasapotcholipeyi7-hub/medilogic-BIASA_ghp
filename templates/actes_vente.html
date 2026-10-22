@@ -1550,7 +1550,9 @@ async function ajouterActeDepuisDonnees(acte, quantite, medecinId, medecinNom, m
             // avec son régime d'amu" — patient_id suffit : la page EP
             // pré-remplit déjà le régime depuis patient.type_assurance.
             if (await demanderConfirmation("Voulez-vous remplir l'Entente Préalable maintenant pour ce patient ?")) {
-                window.open('/amu/entente-prealable?patient_id=' + patientId + '&retour=' + encodeURIComponent(location.pathname), '_blank');
+                // ⭐ 2026-10-22 : l'acte sous EP part avec le patient (ligne déjà remplie sur la fiche EP)
+                window.open('/amu/entente-prealable?patient_id=' + patientId + '&acte=' + encodeURIComponent(acteNom)
+                            + '&retour=' + encodeURIComponent(location.pathname), '_blank');
             }
             return;  // Bloque l'ajout
         }
