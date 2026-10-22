@@ -442,6 +442,72 @@ document.addEventListener('input', e => {
     verifierDatesHeures(zone, false);
 });
 
+// ⭐ 2026-10-22 (patron : « laisser une place pour joindre la photo de la courbe », électrophorèse) : un
+// emplacement .mf-photo du modèle reçoit une photo (réduite à 1400 px, JPEG) — gardée dans le compte rendu
+// enregistré et imprimée ; laissé vide, l'emplacement disparaît à l'enregistrement (figerFormulaire).
+function _imageReduite(fichier, cote, qualite) {
+    return new Promise((ok, ko) => {
+        const lecteur = new FileReader();
+        lecteur.onerror = ko;
+        lecteur.onload = () => {
+            const img = new Image();
+            img.onerror = ko;
+            img.onload = () => {
+                const r = Math.min(1, cote / Math.max(img.width, img.height));
+                const cv = document.createElement('canvas');
+                cv.width = Math.round(img.width * r);
+                cv.height = Math.round(img.height * r);
+                const ctx = cv.getContext('2d');
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, cv.width, cv.height);
+                ctx.drawImage(img, 0, 0, cv.width, cv.height);
+                ok(cv.toDataURL('image/jpeg', qualite));
+            };
+            img.src = lecteur.result;
+        };
+        lecteur.readAsDataURL(fichier);
+    });
+}
+document.addEventListener('click', e => {
+    const cadre = e.target.closest && e.target.closest('#zoneFormulaire .mf-photo');
+    if (!cadre || !formulaireActif) return;
+    const vide = cadre.querySelector('.mf-photo-vide');
+    if (e.target.closest('.mf-photo-retirer')) {
+        cadre.querySelectorAll('img, .mf-photo-retirer').forEach(x => x.remove());
+        if (vide) vide.textContent = vide.dataset.texte || vide.textContent;
+        return;
+    }
+    if (!e.target.closest('.mf-photo-vide') && !e.target.closest('img')) return;
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*';
+    inp.onchange = async () => {
+        const f = inp.files && inp.files[0];
+        if (!f) return;
+        try {
+            const url = await _imageReduite(f, 1400, 0.85);
+            cadre.querySelectorAll('img, .mf-photo-retirer').forEach(x => x.remove());
+            const img = document.createElement('img');
+            img.src = url;
+            img.alt = 'Photo jointe';
+            img.style.cssText = 'display:block;max-width:100%;max-height:10cm;margin:0 auto';
+            cadre.appendChild(img);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'mf-photo-retirer btn btn-sm btn-outline-danger mt-1';
+            btn.textContent = 'Retirer la photo';
+            cadre.appendChild(btn);
+            if (vide) {
+                vide.dataset.texte = vide.dataset.texte || vide.textContent;
+                vide.textContent = '📷 Changer la photo';
+            }
+        } catch (err) {
+            afficherMessage("Cette image n'a pas pu être lue. Essayez une photo JPG ou PNG.", { type: 'danger' });
+        }
+    };
+    inp.click();
+});
+
 function marquerHorsNormes(zone) {
     if (!zone) return;
     let sexe = zone.dataset.sexe || '';
@@ -569,6 +635,11 @@ function figerFormulaire() {
     });
     c.querySelectorAll('.mf-libre').forEach(d => { d.removeAttribute('contenteditable'); d.removeAttribute('spellcheck'); d.classList.remove('mf-libre'); });
     c.querySelectorAll('.mf-suggestions').forEach(d => d.remove());
+    // emplacement photo : l'invitation à cliquer n'est jamais enregistrée ; sans photo, l'emplacement disparaît
+    c.querySelectorAll('.mf-photo').forEach(p => {
+        p.querySelectorAll('.mf-photo-vide').forEach(x => x.remove());
+        if (!p.querySelector('img')) p.remove();
+    });
     c.querySelectorAll('tr.mf-retiree').forEach(tr => tr.remove());
     if (document.getElementById('mfMasquerVides').checked) {
         // cadre d'identification : une case vide disparaît avec son intitulé (ex. pas d'hypothèse)
