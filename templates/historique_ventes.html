@@ -4,6 +4,7 @@
 
 {% block extra_css %}
 <style>
+.ordre-jour { font-weight: 700; white-space: nowrap; }
 /* ⭐ 2026-10-22 : « payé par … » à côté du nom (vente non payée en espèces) */
 .badge-paye-par { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; font-size: .78rem; font-weight: 600;
                   background: #e7f1fa; color: #0b5a8c; border: 1px solid #9cc3e3; white-space: nowrap; }
@@ -565,6 +566,7 @@ function chargerHistorique() {
     ])
         .then(function(resultats) {
             toutesLesVentes = resultats[0] || [];
+            _ordresDuJour = null;   // ventes rechargées : numéros d'ordre du jour recalculés
             var c = resultats[1];
             if (c) {
                 toutesLesReglements = c.reglements || [];
@@ -1114,7 +1116,11 @@ function afficherPageVentes(page) {
         html += '<tr>';
         html += '<td><strong>#' + (v.numero_local || v.ID || (start + i + 1)) + '</strong></td>';
         html += '<td>' + dateStr + '</td>';
-        html += '<td><strong>' + (v.patient_nom || 'Patient') + '</strong>' + mentionPaiement(v) + '</td>';
+        // ⭐ 2026-10-22 (patron) : n° d'ordre du jour du patient, comme sur la liste imprimée
+        var ordreJourEcran = numeroOrdreDuJour(v);
+        html += '<td><strong>' + (v.patient_nom || 'Patient') + '</strong>'
+            + (ordreJourEcran ? ' <span class="ordre-jour" title="N° d&rsquo;ordre du patient ce jour-là">(n° ' + ordreJourEcran + ')</span>' : '')
+            + mentionPaiement(v) + '</td>';
         html += '<td><span class="badge ' + badgeClass + '">' + typeLabel + '</span>';
         if (v.applique_tva) {
             html += ' <span class="badge bg-light text-dark border" title="Décomposition HT/TVA/TTC affichée sur le reçu/la facture">TVA</span>';
