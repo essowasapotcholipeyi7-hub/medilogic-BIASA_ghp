@@ -1749,7 +1749,7 @@ function mentionPaiement(v, impression) {
     var moyen = moyenPaiementAutre(v);
     if (!moyen) return '';
     return impression
-        ? ' <em style="white-space:nowrap;">— payé par ' + escFR(moyen) + '</em>'
+        ? '<em style="display:block; font-size:.78em; line-height:1.2; white-space:normal; overflow-wrap:anywhere;">payé par ' + escFR(moyen) + '</em>'   // ⭐ 2026-10-22 : sous le nom, petit, revient à la ligne (ne déborde plus sur la colonne voisine)
         : ' <span class="badge-paye-par"><i class="fas fa-mobile-screen-button me-1"></i>payé par ' + escFR(moyen) + '</span>';
 }
 function _jourVente(v) {
@@ -1899,8 +1899,9 @@ async function imprimerHistorique() {
     var libelleMode = function(m) {
         m = (m || 'especes').toLowerCase();
         if (m === 'especes' || m === 'espèces' || m === 'cash') return 'Espèces';
-        if (m.indexOf('mobile') !== -1 || m === 'flooz' || m === 'tmoney') return 'Mobile Money';
-        return m.charAt(0).toUpperCase() + m.slice(1);
+        // ⭐ 2026-10-22 : mêmes libellés que « payé par … » (plus de « Mixx_by_yas », « Moov_money »)
+        var autre = moyenPaiementAutre({ mode_paiement: m });
+        return autre.charAt(0).toUpperCase() + autre.slice(1);
     };
     var parMode = {};
     ventesFiltrees.forEach(function(v) {
