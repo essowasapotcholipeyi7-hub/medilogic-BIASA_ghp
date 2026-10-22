@@ -38,12 +38,13 @@
     <div class="card-body border-bottom py-2">
         <div class="input-group input-group-sm" style="max-width: 380px;">
             <span class="input-group-text bg-white"><i class="fas fa-search"></i></span>
-            <input type="text" class="form-control" id="rechercheResultats" placeholder="Rechercher un patient, un acte, un interprète..." oninput="filtrerResultats()">
+            <input type="text" class="form-control" id="rechercheResultats" placeholder="Rechercher un patient, un acte, un interprète..." oninput="pageResultats = 1; filtrerResultats()">
         </div>
         <div class="small text-muted mt-1"><i class="fas fa-layer-group me-1"></i>Plusieurs analyses d'un même patient dans un seul document : cochez-les (ou bouton <i class="fas fa-layer-group"></i> sur une ligne), puis « Imprimer ensemble ».</div>
     </div>
     {# ⭐ 2026-10-22 (patron : « NFS, CRP, GE, hépatite C… en un seul fichier, une seule en-tête ») #}
-    <div id="barreRegroupement" class="alert alert-primary rounded-0 mb-0 py-2 d-flex flex-wrap align-items-center gap-2" style="display:none !important;">
+    <div id="barreRegroupement" class="alert alert-primary rounded-0 mb-0 py-2 d-flex flex-wrap align-items-center gap-2"
+         style="display:none !important; position:sticky; top:0; z-index:20; box-shadow:0 3px 8px rgba(0,0,0,.12);">
         <span><i class="fas fa-layer-group me-1"></i><strong id="nbRegroupement">0</strong> résultat(s) coché(s)</span>
         <span class="small" id="aideRegroupement"></span>
         <span class="ms-auto d-flex gap-2">
@@ -64,8 +65,16 @@
                 </tbody>
             </table>
         </div>
+        {# ⭐ 2026-10-22 (patron : « au plus 10 résultats, les autres en pages ») #}
+        <nav id="paginationResultats" class="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 py-2 border-top small" style="display:none !important;"></nav>
     </div>
 </div>
+<style>
+    /* résultats cochés pour « Imprimer ensemble » : ligne en gris, bien visible */
+    #corpsResultats tr.ligne-cochee > td { background: #dfe1e4 !important; }
+    [data-bs-theme="dark"] #corpsResultats tr.ligne-cochee > td { background: #3a4049 !important; }
+    #corpsResultats tr.ligne-cochee > td:first-child { box-shadow: inset 4px 0 0 #6c757d; }
+</style>
 
 <!-- Modal saisie résultat -->
 <div class="modal fade" id="modalResultat" tabindex="-1">
@@ -1070,6 +1079,7 @@ function _resultatsDuJour(l) {
 }
 function cocherResultat(id, coche) {
     if (coche) RESULTATS_COCHES.add(id); else RESULTATS_COCHES.delete(id);
+    filtrerResultats();
     majBarreRegroupement();
 }
 function regrouperDuJour(id) {
@@ -1079,6 +1089,8 @@ function regrouperDuJour(id) {
     _resultatsDuJour(l).forEach(x => RESULTATS_COCHES.add(x.resultat_id));
     filtrerResultats();
     majBarreRegroupement();
+    // la barre « Imprimer ensemble » tout de suite sous les yeux
+    document.getElementById('barreRegroupement').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 function viderRegroupement() {
     RESULTATS_COCHES.clear();
@@ -1110,6 +1122,35 @@ function chargerResultats() {
     });
 }
 
+// ⭐ 2026-10-22 (patron) : 10 résultats par page
+const RESULTATS_PAR_PAGE = 10;
+let pageResultats = 1;
+function allerPageResultats(n) {
+    pageResultats = n;
+    filtrerResultats();
+    document.getElementById('corpsResultats').closest('.card').scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+function afficherPagination(total) {
+    const nav = document.getElementById('paginationResultats');
+    const nbPages = Math.max(1, Math.ceil(total / RESULTATS_PAR_PAGE));
+    if (nbPages <= 1) { nav.style.setProperty('display', 'none', 'important'); return; }
+    nav.style.setProperty('display', 'flex', 'important');
+    const debut = (pageResultats - 1) * RESULTATS_PAR_PAGE + 1, fin = Math.min(total, pageResultats * RESULTATS_PAR_PAGE);
+    const pages = [];
+    for (let p = 1; p <= nbPages; p++) {
+        if (p === 1 || p === nbPages || Math.abs(p - pageResultats) <= 2) pages.push(p);
+        else if (pages[pages.length - 1] !== '…') pages.push('…');
+    }
+    const bouton = (p, libelle, actif, inactif) => `<li class="page-item${actif ? ' active' : ''}${inactif ? ' disabled' : ''}">`
+        + (inactif || actif ? `<span class="page-link">${libelle}</span>` : `<a class="page-link" href="#" onclick="allerPageResultats(${p}); return false;">${libelle}</a>`) + '</li>';
+    nav.innerHTML = `<span class="text-muted">${debut} à ${fin} sur ${total}</span>`
+        + '<ul class="pagination pagination-sm mb-0">'
+        + bouton(pageResultats - 1, '‹ Précédent', false, pageResultats === 1)
+        + pages.map(p => p === '…' ? bouton(0, '…', false, true) : bouton(p, p, p === pageResultats, false)).join('')
+        + bouton(pageResultats + 1, 'Suivant ›', false, pageResultats === nbPages)
+        + '</ul>';
+}
+
 function filtrerResultats() {
     const q = (document.getElementById('rechercheResultats').value || '').trim().toLowerCase();
     const lignes = !q ? TOUS_RESULTATS : TOUS_RESULTATS.filter(l =>
@@ -1122,9 +1163,15 @@ function filtrerResultats() {
         const corps = document.getElementById('corpsResultats');
         if (!lignes.length) {
             corps.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Aucun acte réalisé.</td></tr>';
+            afficherPagination(0);
             return;
         }
-        corps.innerHTML = lignes.map(l => {
+        const nbPages = Math.max(1, Math.ceil(lignes.length / RESULTATS_PAR_PAGE));
+        if (pageResultats > nbPages) pageResultats = nbPages;
+        if (pageResultats < 1) pageResultats = 1;
+        afficherPagination(lignes.length);
+        const lignesPage = lignes.slice((pageResultats - 1) * RESULTATS_PAR_PAGE, pageResultats * RESULTATS_PAR_PAGE);
+        corps.innerHTML = lignesPage.map(l => {
             const filiereBadge = l.type_prestation === 'analyse'
                 ? '<span class="badge bg-primary"><i class="fas fa-vial"></i> Biologie</span>'
                 : '<span class="badge bg-success"><i class="fas fa-x-ray"></i> Imagerie</span>';
@@ -1150,7 +1197,7 @@ function filtrerResultats() {
                 ? `<input type="checkbox" class="form-check-input" ${RESULTATS_COCHES.has(l.resultat_id) ? 'checked' : ''} onchange="cocherResultat(${l.resultat_id}, this.checked)" title="Cocher pour imprimer avec d'autres résultats de ce patient">`
                 : '';
             return `
-                <tr>
+                <tr class="${l.resultat_id && RESULTATS_COCHES.has(l.resultat_id) ? 'ligne-cochee' : ''}">
                     <td>${caseRegroupement}</td>
                     <td><strong><span class="notranslate">${l.patient_nom}</span></strong></td>
                     <td>${l.acte_nom}</td>
