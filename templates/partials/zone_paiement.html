@@ -100,7 +100,46 @@ function majBoutonFinaliser(netAPayer, montantDonne) {
     btn.classList.toggle('pret', panierPlein && donne > 0 && donne >= net);
 }
 
+// ⭐ 2026-10-22 (patron) : Mixx by Yas, Flooz, carte, chèque… on paie le montant exact, il n'y a pas de monnaie
+// à rendre -> « Montant donné » = net à payer, rempli tout seul et suivi quand le panier change ; jamais plus que
+// le net. Un montant plus petit tapé à la main (paiement partiel) est respecté. Espèces : rien ne change.
+let montantAutoPaiement = null;   // dernier montant posé automatiquement
+function paiementSansMonnaie() {
+    const mode = document.getElementById('modePaiement');
+    return !!mode && mode.value !== '' && mode.value.toLowerCase() !== 'especes';
+}
+function montantSelonModePaiement(netAPayer, montantDonne) {
+    const champ = document.getElementById('montantDonne');
+    if (!champ || !paiementSansMonnaie()) return montantDonne;
+    const net = Math.max(0, Math.round(netAPayer || 0)), donne = Math.round(montantDonne || 0);
+    if (donne === 0 || donne > net || donne === montantAutoPaiement) {
+        if (donne !== net) {
+            champ.value = net;
+            setTimeout(() => { if (typeof calculerRendu === 'function') calculerRendu(); }, 0);   // reste / rendu recalculés
+        }
+        montantAutoPaiement = net;
+        return net;
+    }
+    return montantDonne;
+}
+document.addEventListener('DOMContentLoaded', () => {
+    const mode = document.getElementById('modePaiement');
+    if (!mode) return;
+    mode.addEventListener('change', () => {
+        const champ = document.getElementById('montantDonne');
+        if (paiementSansMonnaie()) {
+            montantAutoPaiement = Math.round(parseFloat(champ.value) || 0);   // remplacé par le net à payer
+        } else if (Math.round(parseFloat(champ.value) || 0) === montantAutoPaiement) {
+            champ.value = 0;   // retour aux espèces : la caissière saisit ce que le patient donne
+            montantAutoPaiement = null;
+            setTimeout(() => { champ.focus(); champ.select(); }, 50);
+        }
+        if (typeof calculerRendu === 'function') calculerRendu();
+    });
+});
+
 function afficherRenduPatient(netAPayer, montantDonne) {
+    montantDonne = montantSelonModePaiement(netAPayer, montantDonne);
     majBoutonFinaliser(netAPayer, montantDonne);
     const el = document.getElementById('montantRendu');
     if (!el) return;
