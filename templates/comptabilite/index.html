@@ -1307,6 +1307,8 @@
                                     <button class="btn btn-outline-light btn-sm" onclick="document.getElementById('crsDetailCarte').style.display='none'"><i class="fas fa-times"></i></button>
                                 </span>
                             </div>
+                            <!-- ⭐ 2026-10-23 (patron) : sous-groupes du service -->
+                            <div class="d-flex flex-wrap gap-2 p-2 border-bottom" id="crsDetailSousGroupes"></div>
                             <div class="table-responsive">
                                 <table class="table table-sm table-hover mb-0">
                                     <thead class="table-light"><tr><th>Date et heure</th><th>N° vente</th><th>Patient</th><th>Acte / produit</th><th class="text-end">Qté</th><th class="text-end">Prix</th><th class="text-end">Montant</th>
@@ -4226,17 +4228,29 @@ function voirDetailRecettesService(serviceId, serviceNom) {
     document.getElementById('crsDetailTitre').textContent = serviceNom;
     document.getElementById('crsDetailPeriode').textContent = '';
     corps.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> Chargement...</td></tr>';
+    document.getElementById('crsDetailSousGroupes').innerHTML = '';
     ['crsDetailTotal', 'crsDetailEncaisse', 'crsDetailAssur', 'crsDetailPatient'].forEach(id => document.getElementById(id).textContent = '');
     fetch(`/comptabilite/api/recettes-service/detail?${crsParametres()}&service=${encodeURIComponent(serviceId)}`)
         .then(r => r.json())
         .then(d => {
             if (!d.success) { corps.innerHTML = `<tr><td colspan="10" class="text-danger text-center">${crsEsc(d.error || 'Erreur')}</td></tr>`; return; }
             document.getElementById('crsDetailPeriode').textContent = '— ' + d.periode;
-            corps.innerHTML = d.lignes.length ? d.lignes.map(l => `<tr>
+            const ligneHtml = l => `<tr>
                 <td class="text-nowrap">${crsEsc(l.date)}</td><td>${crsEsc(l.numero)}</td><td><span class="notranslate">${crsEsc(l.patient)}</span></td><td>${crsEsc(l.acte)}</td>
                 <td class="text-end">${l.quantite}</td><td class="text-end">${crsF(l.prix)}</td><td class="text-end">${crsF(l.montant)}</td>
-                <td class="text-end text-success">${crsF(l.encaisse)}</td><td class="text-end text-warning">${crsF(l.du_assurances)}</td><td class="text-end text-danger">${crsF(l.du_patients)}</td></tr>`).join('')
-                : '<tr><td colspan="10" class="text-center text-muted py-3">Aucune recette pour ce service sur la période.</td></tr>';
+                <td class="text-end text-success">${crsF(l.encaisse)}</td><td class="text-end text-warning">${crsF(l.du_assurances)}</td><td class="text-end text-danger">${crsF(l.du_patients)}</td></tr>`;
+            // ⭐ 2026-10-23 (patron) : lignes rangées par sous-groupe, avec un sous-total chacun
+            const groupes = d.sous_groupes || [];
+            document.getElementById('crsDetailSousGroupes').innerHTML = groupes.map(g =>
+                `<span class="badge bg-light text-dark border fs-6 fw-normal">${crsEsc(g.groupe)} : <strong>${crsF(g.montant)}</strong> <span class="text-muted small">(${g.nb_lignes})</span></span>`).join('');
+            corps.innerHTML = !d.lignes.length
+                ? '<tr><td colspan="10" class="text-center text-muted py-3">Aucune recette pour ce service sur la période.</td></tr>'
+                : groupes.length ? groupes.map(g =>
+                    `<tr class="table-secondary"><td colspan="10" class="fw-bold">${crsEsc(g.groupe)} <span class="fw-normal small">— ${g.nb_lignes} ligne(s)</span></td></tr>`
+                    + d.lignes.filter(l => l.groupe === g.groupe).map(ligneHtml).join('')
+                    + `<tr class="fst-italic"><td colspan="6" class="text-end">Sous-total ${crsEsc(g.groupe)}</td><td class="text-end">${crsF(g.montant)}</td>
+                       <td class="text-end text-success">${crsF(g.encaisse)}</td><td class="text-end text-warning">${crsF(g.du_assurances)}</td><td class="text-end text-danger">${crsF(g.du_patients)}</td></tr>`).join('')
+                : d.lignes.map(ligneHtml).join('');
             const t = d.totaux || {};
             document.getElementById('crsDetailTotal').textContent = crsF(d.total);
             document.getElementById('crsDetailEncaisse').textContent = crsF(t.encaisse);

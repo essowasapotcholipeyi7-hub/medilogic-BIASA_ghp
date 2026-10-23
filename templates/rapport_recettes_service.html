@@ -76,6 +76,8 @@
             <button class="btn btn-outline-light btn-sm" onclick="document.getElementById('rrsDetailCarte').style.display='none'"><i class="fas fa-times"></i></button>
         </span>
     </div>
+    <!-- ⭐ 2026-10-23 (patron) : sous-groupes du service (consultations, hospitalisation, pharmacie...) -->
+    <div class="d-flex flex-wrap gap-2 p-2 border-bottom" id="rrsDetailSousGroupes"></div>
     <div class="table-responsive">
         <table class="table table-sm table-hover mb-0">
             <thead class="table-light"><tr><th>Date et heure</th><th>N° vente</th><th>Patient</th><th>Acte / produit</th><th class="text-end">Qté</th><th class="text-end">Prix</th><th class="text-end">Montant</th>
@@ -197,6 +199,7 @@ function voirDetailService(serviceId, serviceNom) {
     document.getElementById('rrsDetailPeriode').textContent = '';
     document.getElementById('rrsDetailLignes').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> Chargement...</td></tr>';
     document.getElementById('rrsDetailTotal').textContent = '';
+    document.getElementById('rrsDetailSousGroupes').innerHTML = '';
     fetch(`/api/rapports/recettes-service/detail?${parametresPeriode()}&service=${encodeURIComponent(serviceId)}`)
         .then(r => r.json())
         .then(d => {
@@ -204,11 +207,22 @@ function voirDetailService(serviceId, serviceNom) {
             const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
             const f = n => Math.round(n).toLocaleString('fr-FR') + ' F';
             document.getElementById('rrsDetailPeriode').textContent = '— ' + d.periode;
-            document.getElementById('rrsDetailLignes').innerHTML = d.lignes.length ? d.lignes.map(l => `<tr>
+            const ligneHtml = l => `<tr>
                 <td class="text-nowrap">${esc(l.date)}</td><td>${esc(l.numero)}</td><td><span class="notranslate">${esc(l.patient)}</span></td><td>${esc(l.acte)}</td>
                 <td class="text-end">${l.quantite}</td><td class="text-end">${f(l.prix)}</td><td class="text-end">${f(l.montant)}</td>
-                <td class="text-end text-success">${f(l.encaisse)}</td><td class="text-end text-warning">${f(l.du_assurances)}</td><td class="text-end text-danger">${f(l.du_patients)}</td></tr>`).join('')
-                : '<tr><td colspan="10" class="text-center text-muted py-3">Aucune recette pour ce service sur la période.</td></tr>';
+                <td class="text-end text-success">${f(l.encaisse)}</td><td class="text-end text-warning">${f(l.du_assurances)}</td><td class="text-end text-danger">${f(l.du_patients)}</td></tr>`;
+            // ⭐ 2026-10-23 (patron) : lignes rangées par sous-groupe, avec un sous-total chacun
+            const groupes = d.sous_groupes || [];
+            document.getElementById('rrsDetailSousGroupes').innerHTML = groupes.map(g =>
+                `<span class="badge bg-light text-dark border fs-6 fw-normal">${esc(g.groupe)} : <strong>${f(g.montant)}</strong> <span class="text-muted small">(${g.nb_lignes})</span></span>`).join('');
+            document.getElementById('rrsDetailLignes').innerHTML = !d.lignes.length
+                ? '<tr><td colspan="10" class="text-center text-muted py-3">Aucune recette pour ce service sur la période.</td></tr>'
+                : groupes.length ? groupes.map(g =>
+                    `<tr class="table-secondary"><td colspan="10" class="fw-bold">${esc(g.groupe)} <span class="fw-normal small">— ${g.nb_lignes} ligne(s)</span></td></tr>`
+                    + d.lignes.filter(l => l.groupe === g.groupe).map(ligneHtml).join('')
+                    + `<tr class="fst-italic"><td colspan="6" class="text-end">Sous-total ${esc(g.groupe)}</td><td class="text-end">${f(g.montant)}</td>
+                       <td class="text-end text-success">${f(g.encaisse)}</td><td class="text-end text-warning">${f(g.du_assurances)}</td><td class="text-end text-danger">${f(g.du_patients)}</td></tr>`).join('')
+                : d.lignes.map(ligneHtml).join('');
             document.getElementById('rrsDetailTotal').textContent = f(d.total);
             const t = d.totaux || {};
             document.getElementById('rrsDetailEncaisse').textContent = f(t.encaisse || 0);

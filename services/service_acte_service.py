@@ -130,6 +130,14 @@ def _charger_classification_manuelle(structure_id):
 # n'a pas ce service, la règle ne tranche pas et on passe aux suivantes (un écho-doppler
 # cardiaque sans service de cardiologie retombe ainsi en radiologie, par son code Q).
 _REGLES_DOMAINE = [
+    # ⭐ 2026-10-23 (patron) : tout ce qui concerne la bouche et les dents (consultation dentaire,
+    # extraction, soins dentaires...) -> service odonto-stomatologie / chirurgie dentaire.
+    ([r'\bdentaires?\b', r'\bdents?\b', r'\bstomato', r'\bodonto', r'\bbuccal', r'\bbouche\b', r'\bgingiv',
+      r'\bdetartrage', r'\bcaries?\b', r'\bparodont', r'\bpulpe', r'\bpulpotomie', r'\bmolaire',
+      r'\bavulsion', r'\bextraction dentaire'],
+     None, ['odonto', 'stomato', 'dentaire'], []),
+    # ⭐ 2026-10-23 (patron) : infiltrations -> rhumatologie.
+    ([r'\binfiltrations?\b'], None, ['rhumato'], []),
     # Petit matériel vendu comme un acte (spéculum, gants...) : c'est de la pharmacie.
     ([r'\bspeculum', r'\bgants?\b', r'\bthermometre', r'\bseringues?\b', r'\bcompresses?\b',
       r'\bsparadrap', r'\bcatheter', r'\bperfuseur', r'\bepicranien'],
@@ -414,14 +422,17 @@ SERVICES_DE_REFERENCE = [
     ('ORL', 'clinique'), ('GENETIQUE MEDICALE', 'clinique'), ('TRAUMATOLOGIE', 'clinique'),
     ('ORTHOPEDIE', 'clinique'), ('PSYCHIATRIE', 'clinique'), ('HEMATOLOGIE', 'clinique'),
     ('ONCOLOGIE', 'clinique'), ('MEDECINE INTERNE', 'clinique'), ('CHIRURGIE', 'clinique'),
-    ('CHIRURGIE DENTAIRE', 'clinique'),
+    ('ODONTO-STOMATOLOGIE / CHIRURGIE DENTAIRE', 'clinique'),
+    ('NEUROCHIRURGIE', 'clinique'), ('ANESTHESIE-REANIMATION', 'clinique'), ('INFECTIOLOGIE', 'clinique'),
 ]
 
 
 def _deja_couvert(nom_ref, type_ref, existants):
     """Un service existant (actif ou non) tient déjà ce rôle : même nom aux accents/espaces
-    près, l'un contenant l'autre en mots entiers (« SERVICE MEDECINE INTERNE »), l'un début de
-    l'autre (« MEDECINE GENERAL »), ou même type pour labo / imagerie / pharmacie."""
+    près, le nom de référence contenu en mots entiers dans le sien (« SERVICE MEDECINE
+    INTERNE »), l'un début de l'autre (« MEDECINE GENERAL »), ou même type pour labo / imagerie /
+    pharmacie. (Pas l'inverse : « CHIRURGIE » ne couvre pas « ODONTO-STOMATOLOGIE / CHIRURGIE
+    DENTAIRE ».) Un service dentaire déjà là couvre l'odonto-stomatologie."""
     ref = _mots(nom_ref)
     for s in existants:
         nom = _mots(s.nom)
@@ -430,9 +441,61 @@ def _deja_couvert(nom_ref, type_ref, existants):
         if type_ref in TYPES_SANS_HOSPITALISATION and s.type_service == type_ref:
             return True
         if nom == ref or nom.startswith(ref) or ref.startswith(nom) \
-                or re.search(r'\b' + re.escape(ref) + r'\b', nom) or re.search(r'\b' + re.escape(nom) + r'\b', ref):
+                or re.search(r'\b' + re.escape(ref) + r'\b', nom):
+            return True
+        if 'odonto' in ref and re.search(r'\b(odonto|stomato|dentaire)', nom):
             return True
     return False
+
+
+SPECIALITES = [nom for nom, type_ref in SERVICES_DE_REFERENCE if type_ref == 'clinique']
+
+
+def creer_specialites(structure_id):
+    """⭐ 2026-10-23 (patron : « crée toutes les spécialités possibles ») : crée dans la
+    structure chaque service de SERVICES_DE_REFERENCE qui lui manque — les spécialités
+    (pédiatrie, gynécologie, obstétrique, odonto-stomatologie...) et les services de base
+    (soins, laboratoire, pharmacie, radiologie) — sans case Hospitalisation, pour que le choix
+    de la spécialité d'une « consultation spécialisée » ait toujours de quoi répondre et que les
+    règles automatiques trouvent toujours leur service. Puis reclasse les recettes.
+    Renvoie (noms créés, lignes reclassées)."""
+    existants = ServiceHospitalisation.query.filter_by(structure_id=structure_id).all()
+    crees = []
+    for nom, type_ref in SERVICES_DE_REFERENCE:
+        if _deja_couvert(nom, type_ref, existants):
+            continue
+        service = ServiceHospitalisation(structure_id=structure_id, nom=nom, actif=True,
+                                         type_service=type_ref, hospitalisation=False)
+        db.session.add(service)
+        existants.append(service)
+        crees.append(nom)
+    if crees:
+        db.session.commit()
+    return crees, reclasser_recettes_service(structure_id)
+
+
+def choix_service_requis(nom_acte, services, classification=None):
+    """⭐ 2026-10-23 (patron) : à la vente d'actes, le service à préciser OBLIGATOIREMENT —
+      'specialite'      : « consultation spécialisée » sans spécialité reconnaissable ;
+      'hospitalisation' : journée / chambre d'hospitalisation (P160...) vendue hors du module
+                          d'hospitalisation : le service qui a hospitalisé le patient ;
+      None              : rien à demander (le classement automatique ou manuel tranche).
+    `services` : charger_services() ; `classification` : {nom_acte: service_id}."""
+    if not nom_acte:
+        return None
+    # Test bon marché d'abord (appelé pour tout le catalogue à l'ouverture de la vente d'actes)
+    nom_mots = _mots(nom_acte)
+    if re.match(r'^s101\b', nom_mots) or (re.search(r'\bconsultation', nom_mots) and re.search(r'\bspeciali', nom_mots)):
+        requis = 'specialite'
+    elif re.search(r'\bp160\b', nom_mots) or re.search(r'\bhospitali', nom_mots) or re.search(r'\bhospi\b', nom_mots):
+        requis = 'hospitalisation'
+    else:
+        return None
+    if classification and classification.get(nom_acte):
+        return None
+    if deviner_service_acte(nom_acte, services):
+        return None
+    return requis
 
 
 def services_manquants(structure_id):
@@ -617,6 +680,75 @@ def situation_ventes(structure_id, vente_ids):
 CLES_SITUATION = ('encaisse', 'du_assurances', 'du_patients', 'rembourse', 'aides')
 
 
+# ⭐ 2026-10-23 (patron) : sous-groupes à l'intérieur d'un service (« en cardiologie, on voit
+# le groupe consultation, le groupe hospitalisation, le groupe pharmacie... »), dans cet ordre.
+SOUS_GROUPES = ['Consultations', 'Hospitalisation', 'Pharmacie', 'Analyses de laboratoire',
+                'Examens', 'Soins', 'Actes et interventions', 'Autres']
+
+_MOTIFS_EXAMENS = _MOTIFS_IMAGERIE + [
+    r'\becg\b', r'\belectrocardiogra', r'\bmapa\b', r'\bholter', r'\bepreuve d effort', r'\bpression systolique',
+    r'\bkeratometr', r'\bpachymetr', r'\bpio\b', r'\btonometr', r'\btonograph', r'\bfonds? d oeil',
+    r'\bchamp visuel', r'\brefraction', r'\bbiomicroscop', r'\bgonioscop', r'\bacuite visuelle',
+    r'\bendoscop', r'\bfibroscop', r'\bcoloscop', r'\bspirometr', r'\beeg\b', r'\bemg\b',
+]
+_MOTIFS_SOINS = [
+    r'\binjections?\b', r'\bperfusions?\b', r'\bmise en observation', r'\bsalle d observation',
+    r'\bsoins?\b', r'\bpansements?\b', r'\boxygenotherapie', r'\bnebulisation', r'\baerosol', r'\bsondage',
+    r'\bacte im\b', r'\bprise de (la )?tension', r'\bcontrole (de la )?tension', r'^ta tension arterielle',
+]
+
+
+def sous_groupe_recette(nom_acte, type_source=None):
+    """Sous-groupe d'une ligne de recette (voir SOUS_GROUPES), d'après sa nature : produit
+    vendu, séjour, consultation, analyse, examen, soin, acte / intervention."""
+    nom = _mots(nom_acte)
+    if type_source == 'produit':
+        return 'Pharmacie'
+    if re.search(r'\bcarnets?\b', nom):
+        return 'Autres'
+    if re.search(r'\bconsultation', nom) or re.match(r'^s1\d{2}\b', nom):
+        return 'Consultations'
+    if re.search(r'\bp160\b', nom) or re.search(r'\bhospitali', nom) or re.search(r'\bhospi\b', nom) \
+            or re.search(r'\bchambre', nom) or re.search(r'\bsejour', nom):
+        return 'Hospitalisation'
+    if re.match(r'^r\d', nom) or _contient(nom, _MOTIFS_LABORATOIRE):
+        return 'Analyses de laboratoire'
+    if re.match(r'^q\d', nom) or _contient(nom, _MOTIFS_EXAMENS):
+        return 'Examens'
+    if _contient(nom, _MOTIFS_SOINS):
+        return 'Soins'
+    if _contient(nom, [p for regle in _REGLES_DOMAINE if regle[2] == ['pharmacie'] for p in regle[0]]):
+        return 'Pharmacie'
+    if type_source == 'hospitalisation':
+        # séjour facturé par le module d'hospitalisation : médicaments, consommables, chambre...
+        return 'Hospitalisation'
+    if re.match(r'^[a-z]{1,3}\d', nom) or _contient(nom, [r'\bcesarienne', r'\baccouchement', r'\boperation',
+                                                          r'\bintervention', r'\bchirurg', r'\bextraction',
+                                                          r'\binfiltration', r'\bponction', r'\bsuture',
+                                                          r'\bcristallin', r'\bglaucom']):
+        return 'Actes et interventions'
+    return 'Autres'
+
+
+def sous_groupes_de(lignes, cle_nom='acte', cle_type='type'):
+    """Totaux par sous-groupe d'une liste de lignes de detail_recettes_service(), dans l'ordre de
+    SOUS_GROUPES : [{groupe, nb_lignes, montant, encaisse, du_assurances, du_patients, ...}]."""
+    groupes = {}
+    for l in lignes:
+        g = l.get('groupe') or sous_groupe_recette(l.get(cle_nom), l.get(cle_type))
+        t = groupes.setdefault(g, {'groupe': g, 'nb_lignes': 0, 'montant': 0.0, **{k: 0.0 for k in CLES_SITUATION}})
+        t['nb_lignes'] += 1
+        t['montant'] += float(l.get('montant') or 0)
+        for k in CLES_SITUATION:
+            t[k] += float(l.get(k) or 0)
+    ordre = {g: i for i, g in enumerate(SOUS_GROUPES)}
+    resultat = sorted(groupes.values(), key=lambda t: ordre.get(t['groupe'], 99))
+    for t in resultat:
+        for k in ('montant',) + CLES_SITUATION:
+            t[k] = round(t[k], 2)
+    return resultat
+
+
 def bornes_periode_heures(args):
     """Période du rapport « Recettes par service », heures possibles (prise de service, ex. du
     17/10 16:00 au 18/10 09:00). Renvoie (début, fin EXCLUE, libellé « du … au … »). Sans
@@ -659,6 +791,7 @@ def detail_recettes_service(structure_id, date_debut, date_fin, service_id=None)
         'date': l['created_at'].strftime('%d/%m/%Y %H:%M') if l['created_at'] else '',
         'vente_id': l['vente_id'], 'numero': l['numero_local'] or l['vente_id'],
         'patient': l['patient_nom'] or '', 'acte': l['nom_acte'], 'type': l['type_source'] or '',
+        'groupe': sous_groupe_recette(l['nom_acte'], l['type_source']),
         'quantite': int(l['quantite'] or 1), 'prix': float(l['prix'] or 0), 'montant': float(l['montant'] or 0),
         **{k: round(v, 2) for k, v in _repartir(l['montant'], situations.get(l['vente_id'])).items()},
     } for l in lignes]

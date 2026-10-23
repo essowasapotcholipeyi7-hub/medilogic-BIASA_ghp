@@ -42,10 +42,15 @@
             césarienne, accouchement → <strong>Obstétrique</strong> (sinon Gynécologie) ;
             échographie obstétricale, consultation prénatale (CPN), DIU, hydrotubation → <strong>Gynécologie</strong> ;
             spéculum, gants, thermomètre → <strong>Pharmacie</strong> ;
+            infiltrations → <strong>Rhumatologie</strong> ;
+            consultations dentaires, extractions, soins des dents et de la bouche → <strong>Odonto-stomatologie / Chirurgie dentaire</strong> ;
             NFS, CRP et autres analyses, même sans code R → <strong>Laboratoire</strong>.</li>
         <li>Les consultations vont au service de la spécialité indiquée dans leur nom. Le reste se range avec la
             {% if session.is_admin %}<a href="{{ url_for('page_classification_services') }}">classification des actes</a>{% else %}classification des actes{% endif %},
             sinon il va dans « Autre » (carnets CPN, carnets de consultation...).</li>
+        <li>À la vente d'actes, une « consultation spécialisée » sans spécialité dans son nom demande <strong>obligatoirement</strong>
+            la spécialité ; une chambre d'hospitalisation (P160) vendue hors du module d'hospitalisation demande le service
+            qui a hospitalisé le patient.</li>
         <li>Créer un service ou changer la classification met aussi à jour les recettes déjà enregistrées.</li>
     </ul>
 </div>

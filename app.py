@@ -4579,6 +4579,10 @@ def _contexte_vente_actes(structure_id):
         'choix_service_actif': choix_service_actif,
         'services': [{'id': r['id'], 'nom': r['nom'], 'type': r.get('type') or 'clinique'} for r in ligne['services']] if choix_service_actif else [],
         'classification_service': {r['n']: r['s'] for r in ligne['classification_service']} if choix_service_actif else {},
+        # ⭐ 2026-10-23 : toujours chargés — servent au choix OBLIGATOIRE de la spécialité / du service
+        # d'hospitalisation (choix_service_requis), même sans le sélecteur facultatif ci-dessus.
+        'services_tous': [{'id': r['id'], 'nom': r['nom'], 'type': r.get('type') or 'clinique'} for r in ligne['services']],
+        'classification_service_tous': {r['n']: r['s'] for r in ligne['classification_service']},
         'tarif_nuit_actif': tarif_nuit_actif,
         'medecin_du_jour': ({'id': medecins_jour[0]['id'], 'nom_complet': medecins_jour[0]['nom_complet']}
                             if len(medecins_jour) == 1 else None),
@@ -4627,6 +4631,14 @@ def actes_vente():
     choix_service_actif = ctx['choix_service_actif']
     services_liste_vente = ctx['services']
     classification_service_par_acte = ctx['classification_service']
+    # ⭐ 2026-10-23 (patron) : « consultation spécialisée » sans spécialité, ou chambre
+    # d'hospitalisation vendue ici -> le service est à préciser obligatoirement (voir
+    # choix_service_requis) ; listes proposées dans la fenêtre de choix.
+    from services.service_acte_service import choix_service_requis, TYPES_SANS_HOSPITALISATION
+    services_tous = ctx['services_tous']
+    classification_service_tous = ctx['classification_service_tous']
+    services_specialites = [s for s in services_tous if s['type'] == 'clinique']
+    services_hospitalisation_vente = [s for s in services_tous if s['type'] not in TYPES_SANS_HOSPITALISATION]
 
     # Filtrer par structure
     actes_filtres = []
@@ -4709,8 +4721,9 @@ def actes_vente():
                     classification_service_par_acte.get(a.get('nom', ''))
                     or (deviner_service_acte(a.get('nom', ''), services_liste_vente) or {}).get('id')
                 ) if choix_service_actif else None,
+                'choix_service_requis': choix_service_requis(a.get('nom', ''), services_tous, classification_service_tous),
             })
-    
+
     # ⭐ (patron, 2026-10-12 : « Vente acte met du temps à s'ouvrir, la pharmacie passe vite »)
     # la feuille Google Sheets des patients était relue ici à CHAQUE ouverture (~0,7 s, de plus
     # en plus long avec le nombre de patients) pour rien : la page ne s'en sert pas (le patient
@@ -4850,7 +4863,9 @@ def actes_vente():
                           medecin_du_jour=medecin_du_jour,
                           medecins_du_jour=ctx.get('medecins_du_jour', []),
                           choix_service_actif=choix_service_actif,
-                          services_liste=services_liste_vente)
+                          services_liste=services_liste_vente,
+                          services_specialites=services_specialites,
+                          services_hospitalisation_vente=services_hospitalisation_vente)
 
 
 @app.route('/pharma_vente')
@@ -14317,7 +14332,7 @@ def _bornes_periode_heures(args):
 @admin_required
 def api_detail_recettes_service():
     """⭐ 2026-10-17 : lignes d'un service (service=<id> ou 'non_classe') sur la période."""
-    from services.service_acte_service import detail_recettes_service
+    from services.service_acte_service import detail_recettes_service, sous_groupes_de
     try:
         debut, fin, libelle = _bornes_periode_heures(request.args)
     except (TypeError, ValueError):
@@ -14328,7 +14343,8 @@ def api_detail_recettes_service():
     from services.service_acte_service import CLES_SITUATION
     return jsonify({'success': True, 'lignes': lignes, 'periode': libelle,
                     'total': round(sum(l['montant'] for l in lignes), 2),
-                    'totaux': {k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION}})
+                    'totaux': {k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION},
+                    'sous_groupes': sous_groupes_de(lignes)})   # ⭐ 2026-10-23
 
 
 @app.route('/api/rapports/recettes-service', methods=['GET'])
@@ -14365,12 +14381,13 @@ def print_rapport_recettes_service():
     # ⭐ 2026-10-17 : impression du DÉTAIL d'un seul service (service=<id> ou 'non_classe')
     sv = request.args.get('service')
     if sv:
-        from services.service_acte_service import detail_recettes_service
+        from services.service_acte_service import detail_recettes_service, sous_groupes_de
         service_id = int(sv) if sv.isdigit() else None
         lignes = detail_recettes_service(structure_id, date_debut, date_fin_bornee, service_id)
         service_nom = request.args.get('service_nom') or ('Autre' if not service_id else f'Service {service_id}')
         from services.service_acte_service import CLES_SITUATION
         return render_template('rapport_recettes_service_print.html', services=[], lignes=lignes,
+                               sous_groupes=sous_groupes_de(lignes),
                                totaux={k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION},
                                service_nom=service_nom, total=round(sum(l['montant'] for l in lignes), 2),
                                libelle_periode=libelle_periode, date_debut=None, date_fin=None, now=datetime.now())

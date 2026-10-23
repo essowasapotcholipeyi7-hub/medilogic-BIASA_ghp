@@ -3860,7 +3860,7 @@ def api_recettes_service():
 
 @compta_bp.route('/api/recettes-service/detail')
 def api_recettes_service_detail():
-    from services.service_acte_service import detail_recettes_service, CLES_SITUATION
+    from services.service_acte_service import detail_recettes_service, CLES_SITUATION, sous_groupes_de
     try:
         debut, fin, libelle = _periode_recettes_service()
     except (TypeError, ValueError):
@@ -3869,14 +3869,15 @@ def api_recettes_service_detail():
     lignes = detail_recettes_service(session.get('structure_id'), debut, fin, service_id)
     return jsonify({'success': True, 'lignes': lignes, 'periode': libelle,
                     'total': round(sum(l['montant'] for l in lignes), 2),
-                    'totaux': {k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION}})
+                    'totaux': {k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION},
+                    'sous_groupes': sous_groupes_de(lignes)})   # ⭐ 2026-10-23
 
 
 @compta_bp.route('/recettes-service/print')
 def print_recettes_service():
     """Même état imprimable que l'écran administrateur (rapport_recettes_service_print.html)."""
     from services.service_acte_service import (generer_rapport_recettes_service, detail_recettes_service,
-                                               CLES_SITUATION)
+                                               CLES_SITUATION, sous_groupes_de)
     structure_id = session.get('structure_id')
     try:
         debut, fin, libelle = _periode_recettes_service()
@@ -3887,6 +3888,7 @@ def print_recettes_service():
     if un_service:
         lignes = detail_recettes_service(structure_id, debut, fin, service_id)
         return render_template('rapport_recettes_service_print.html', services=[], lignes=lignes,
+                               sous_groupes=sous_groupes_de(lignes),
                                totaux={k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION},
                                service_nom=request.args.get('service_nom') or ('Autre' if not service_id else f'Service {service_id}'),
                                total=round(sum(l['montant'] for l in lignes), 2),
@@ -3933,18 +3935,24 @@ def export_recettes_service():
     if contenu_demande == 'detail':
         a_traiter = ([(service_id, request.args.get('service_nom') or '')] if un_service
                      else [(s['service_id'], s['service_nom']) for s in services])
-        lignes_csv.append(ligne('Service', 'Date et heure', 'N° vente', 'Patient', 'Acte / produit', 'Type',
+        # ⭐ 2026-10-23 (patron) : colonne « Sous-groupe » (consultations, hospitalisation,
+        # pharmacie...) ; lignes rangées par sous-groupe dans chaque service
+        from services.service_acte_service import SOUS_GROUPES
+        ordre_groupes = {g: i for i, g in enumerate(SOUS_GROUPES)}
+        lignes_csv.append(ligne('Service', 'Sous-groupe', 'Date et heure', 'N° vente', 'Patient', 'Acte / produit', 'Type',
                                 'Quantité', 'Prix', 'Montant', 'Encaissé', 'Dû assurances', 'Dû patients',
                                 'Remboursé', 'Aides / remises'))
         totaux = [0.0] * 6
         for sid, snom in a_traiter:
-            for l in detail_recettes_service(structure_id, debut, fin, sid):
-                lignes_csv.append(ligne(snom or 'Autre', l['date'], str(l['numero'] or ''), l['patient'], l['acte'],
+            lignes_service = sorted(detail_recettes_service(structure_id, debut, fin, sid),
+                                    key=lambda l: ordre_groupes.get(l['groupe'], 99))
+            for l in lignes_service:
+                lignes_csv.append(ligne(snom or 'Autre', l['groupe'], l['date'], str(l['numero'] or ''), l['patient'], l['acte'],
                                         l['type'], l['quantite'], l['prix'], l['montant'], l['encaisse'],
                                         l['du_assurances'], l['du_patients'], l['rembourse'], l['aides']))
                 for i, k in enumerate(('montant', 'encaisse', 'du_assurances', 'du_patients', 'rembourse', 'aides')):
                     totaux[i] += l[k]
-        lignes_csv.append(ligne('TOTAL', '', '', '', '', '', '', '', *totaux))
+        lignes_csv.append(ligne('TOTAL', '', '', '', '', '', '', '', '', *totaux))
     else:
         total = sum(s['montant_total'] for s in services)
         lignes_csv.append(ligne('Service', 'Nombre de lignes', 'Recettes', '% du total', 'Encaissé',

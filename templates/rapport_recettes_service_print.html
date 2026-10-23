@@ -319,7 +319,24 @@
         </div>
 
         {% if lignes is defined %}
-        {# ⭐ 2026-10-17 : détail d'un service #}
+        {# ⭐ 2026-10-17 : détail d'un service ; 2026-10-23 (patron) : par sous-groupe
+           (consultations, hospitalisation, pharmacie, analyses...), avec un sous-total chacun #}
+        {% if sous_groupes is defined and sous_groupes %}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr><th>Sous-groupe</th><th>Lignes</th><th class="text-end">Montant</th>
+                        <th class="text-end">Encaissé</th><th class="text-end">Dû assur.</th><th class="text-end">Dû patient</th></tr>
+                </thead>
+                <tbody>
+                    {% for g in sous_groupes %}
+                    <tr><td>{{ g.groupe }}</td><td>{{ g.nb_lignes }}</td><td class="text-end">{{ g.montant|round(0)|int }} F</td>
+                        <td class="text-end">{{ g.encaisse|round(0)|int }} F</td><td class="text-end">{{ g.du_assurances|round(0)|int }} F</td><td class="text-end">{{ g.du_patients|round(0)|int }} F</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
         <div class="table-container">
             <table>
                 <thead>
@@ -327,6 +344,20 @@
                         <th class="text-end">Encaissé</th><th class="text-end">Dû assur.</th><th class="text-end">Dû patient</th></tr>
                 </thead>
                 <tbody>
+                    {% if sous_groupes is defined and sous_groupes %}
+                    {% for g in sous_groupes %}
+                    <tr style="background:#eef2f8; font-weight:bold;"><td colspan="10">{{ g.groupe }}</td></tr>
+                    {% for l in lignes if l.groupe == g.groupe %}
+                    <tr>
+                        <td>{{ l.date }}</td><td>{{ l.numero or '' }}</td><td><span class="notranslate">{{ l.patient }}</span></td><td>{{ l.acte }}</td>
+                        <td>{{ l.quantite }}</td><td class="text-end">{{ l.prix|round(0)|int }} F</td><td class="text-end">{{ l.montant|round(0)|int }} F</td>
+                        <td class="text-end">{{ l.encaisse|round(0)|int }} F</td><td class="text-end">{{ l.du_assurances|round(0)|int }} F</td><td class="text-end">{{ l.du_patients|round(0)|int }} F</td>
+                    </tr>
+                    {% endfor %}
+                    <tr style="font-style:italic;"><td colspan="6" class="text-end">Sous-total {{ g.groupe }}</td><td class="text-end">{{ g.montant|round(0)|int }} F</td>
+                        <td class="text-end">{{ g.encaisse|round(0)|int }} F</td><td class="text-end">{{ g.du_assurances|round(0)|int }} F</td><td class="text-end">{{ g.du_patients|round(0)|int }} F</td></tr>
+                    {% endfor %}
+                    {% else %}
                     {% for l in lignes %}
                     <tr>
                         <td>{{ l.date }}</td><td>{{ l.numero or '' }}</td><td><span class="notranslate">{{ l.patient }}</span></td><td>{{ l.acte }}</td>
@@ -336,6 +367,7 @@
                     {% else %}
                     <tr><td colspan="10" style="text-align:center;">Aucune recette pour ce service sur la période.</td></tr>
                     {% endfor %}
+                    {% endif %}
                 </tbody>
                 <tfoot style="font-weight:bold; background:#f5f7fb;">
                     <tr><td colspan="6" class="text-end">TOTAL</td><td class="text-end">{{ total|round(0)|int }} F</td>
