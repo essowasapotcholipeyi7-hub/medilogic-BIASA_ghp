@@ -765,7 +765,7 @@
                         <tr>
                             {% if format != '80mm' %}<td>{{ loop.index }}</td>{% endif %}
                             <td>
-                                {{ article.nom|sans_code }}
+                                {{ (article.nom_periode or article.nom)|sans_code }}
                                 {% if article.prise_en_charge_amu == false and article.prise_en_charge_cac == false %}
                                     <span class="badge-prise-en-charge cac-amu-zero">AMU=0 CAC=0</span>
                                 {% elif article.prise_en_charge_cac == false %}

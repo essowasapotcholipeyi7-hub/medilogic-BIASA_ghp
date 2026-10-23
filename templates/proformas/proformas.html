@@ -4,6 +4,7 @@
 
 {% block content %}
 <script src="{{ url_for('static', filename='js/doublons_amu.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chambres_p160.js') }}"></script>
 <script src="{{ url_for('static', filename='js/listes_tarifs.js') }}"></script>
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
@@ -738,6 +739,27 @@ function chargerPbrCacProforma() {
         .then(m => { if (pbrCacMapProformaPour === nom) { pbrCacMapProforma = m || {}; afficherPanier(); } })
         .catch(() => {});
 }
+// ⭐ 2026-10-23 (patron) : chambre P160 d'un assuré AMU découpée par période, même calcul qu'à
+// l'hospitalisation et qu'en vente d'actes (static/js/chambres_p160.js) — création et modification.
+function estAmuProforma(nomAssurance, tauxAMU) { return /^amu/i.test(String(nomAssurance || '').trim()) && tauxAMU > 0; }
+function planifierChambresProforma() {
+    const ctx = contexteTarifProforma();
+    planifierDecoupageChambres('proforma', () => panierArticles,
+        estAmuProforma(document.getElementById('assuranceNom').value, ctx.tauxAMU),
+        nouveau => { panierArticles = nouveau; afficherPanier(); });
+}
+function planifierChambresModif() {
+    const ctx = contexteTarifModif();
+    const nom = (document.getElementById('modifAssuranceNom') || {}).value;
+    planifierDecoupageChambres('modif', () => window.modifArticles || [], estAmuProforma(nom, ctx.tauxAMU || ctx.taux_amu || 0),
+        nouveau => { window.modifArticles = nouveau; calculerTotalModif(); });
+}
+function libelleNomLigne(item) {
+    return item.nom_periode
+        ? item.nom_periode + '<div class="small text-muted">PBR AMU de cette période (même calcul qu\'à l\'hospitalisation)</div>'
+        : item.nom;
+}
+
 function contexteTarifProforma() {
     const typeA = document.getElementById('assuranceNom').value;
     const estAssure = typeA && typeA !== '' && typeA !== 'Non assuré';
@@ -1662,7 +1684,13 @@ function ajouterAuPanier(nom, type, prix, qte) {
 }
 
 function supprimerArticlePanier(index) {
-    panierArticles.splice(index, 1);
+    const item = panierArticles[index];
+    if (estChambreP160(item) && item.nom_periode) {   // chambre découpée : on la retire entière
+        const groupe = new Set(lignesChambreP160(panierArticles, item));
+        panierArticles = panierArticles.filter(x => !groupe.has(x));
+    } else {
+        panierArticles.splice(index, 1);
+    }
     afficherPanier();
 }
 
@@ -1685,9 +1713,12 @@ async function modifierPrixPanier(index, nouveauPrix) {
         afficherPanier();
         return;
     }
-    item.prix = prix;
-    item.prix_modifie = true;   // ⭐ 2026-10-15 : le prix saisi prime sur tout tarif automatique
-    item.total = item.quantite * prix;
+    // ⭐ chambre découpée par période : le prix vaut pour toutes ses lignes
+    (estChambreP160(item) ? lignesChambreP160(panierArticles, item) : [item]).forEach(l => {
+        l.prix = prix;
+        l.prix_modifie = true;   // ⭐ 2026-10-15 : le prix saisi prime sur tout tarif automatique
+        l.total = l.quantite * prix;
+    });
     afficherPanier();
 }
 
@@ -1783,7 +1814,7 @@ function afficherPanier() {
 
         const row = tbody.insertRow();
         row.innerHTML = `
-            <td>${item.nom}${libelleServiceLigne(item, 'changerServiceDeLigne(panierArticles[' + index + '], afficherPanier)')}${celluleCouvertureProforma(item, index, estAssurePourPanier && tauxAMUPourPanier > 0, assurance2Active)}</td>
+            <td>${libelleNomLigne(item)}${libelleServiceLigne(item, 'changerServiceDeLigne(panierArticles[' + index + '], afficherPanier)')}${celluleCouvertureProforma(item, index, estAssurePourPanier && tauxAMUPourPanier > 0, assurance2Active)}</td>
             <td>
                 <span class="badge ${item.type === 'acte' ? 'bg-primary' : 'bg-success'}">
                     ${item.type === 'acte' ? 'Acte' : 'Produit'}
@@ -1858,6 +1889,7 @@ function onChangeTypeAideProforma() {
 }
 
 function calculerTotal() {
+    planifierChambresProforma();   // ⭐ chambre P160 : découpage par période (assuré AMU)
     // ⭐ 2026-10-15 : lignes calculées comme au serveur (repartirLigneProforma)
     chargerPbrCacProforma();
     const ctxTotal = contexteTarifProforma();
@@ -2001,7 +2033,9 @@ async function sauvegarderProforma() {
         commentaire_amu: item.commentaire_amu || '',
         commentaire_cac: item.commentaire_cac || '',
         prix_modifie: !!item.prix_modifie,   // ⭐ 2026-10-15 : sinon le serveur remplaçait le prix saisi
-        liste_tarif: groupeListeActif() ? (item.liste_tarif || null) : null
+        liste_tarif: groupeListeActif() ? (item.liste_tarif || null) : null,
+        nom_periode: item.nom_periode || null,   // ⭐ 2026-10-23 : chambre découpée par période
+        pbr_catalogue: item.pbr_catalogue !== undefined ? item.pbr_catalogue : null
     }));
     
     let tauxComplementaire = 0;
@@ -2325,6 +2359,8 @@ async function convertirEnVente(proformaId) {
                 liste_tarif: a.liste_tarif || null,   // ⭐ 2026-10-19 : tarif d'une liste (Valeo)
                 reduction_liste: parseFloat(a.reduction_liste) || 0,   // SMA après l'AMU (calculée par le serveur)
                 nuit: !!a.nuit,
+                nom_periode: a.nom_periode || null,       // ⭐ 2026-10-23 : chambre découpée par période
+                pbr_catalogue: a.pbr_catalogue ?? null,
                 _prix_proforma: a.prix || a.prix_unitaire || 0
             })) : [];
             
@@ -2436,16 +2472,16 @@ function afficherModalConversion(data) {
                                 '<tr><td colspan="6" class="text-center text-muted">Aucun article</td></tr>' :
                                 panierConversion.map((item, index) => `
                                     <tr>
-                                        <td>${item.nom}${formatDatePrestationConversion(item)}${libelleServiceLigne(item)}<div class="convert-couv">${celluleCouvertureConversion(item, index)}</div></td>
+                                        <td>${libelleNomLigne(item)}${formatDatePrestationConversion(item)}${libelleServiceLigne(item)}<div class="convert-couv">${celluleCouvertureConversion(item, index)}</div></td>
                                         <td><span class="badge ${item.type === 'acte' ? 'bg-primary' : 'bg-success'}">${item.type === 'acte' ? 'Acte' : 'Produit'}</span></td>
                                         <td>
-                                            <input type="number" class="form-control form-control-sm" value="${item.quantite}" 
-                                                   style="width:60px; display:inline-block;" 
+                                            <input type="number" class="form-control form-control-sm" value="${item.quantite}"
+                                                   style="width:60px; display:inline-block;" ${item.nom_periode ? 'readonly title="Chambre découpée par période : changez la durée en modifiant la proforma"' : ''}
                                                    onchange="modifierArticleConversion(${index}, 'quantite', this.value)">
                                         </td>
                                         <td>
-                                            <input type="number" class="form-control form-control-sm" value="${item.prix}" 
-                                                   style="width:100px; display:inline-block;" 
+                                            <input type="number" class="form-control form-control-sm" value="${item.prix}"
+                                                   style="width:100px; display:inline-block;" ${item.nom_periode ? 'readonly title="Chambre découpée par période : changez le prix en modifiant la proforma"' : ''}
                                                    onchange="modifierArticleConversion(${index}, 'prix', this.value)">
                                         </td>
                                         <td class="text-end fw-bold">${Math.round(item.total).toLocaleString('fr-FR')} F</td>
@@ -3019,7 +3055,7 @@ function rafraichirPartAssurance() {
         const partCAC = avecCAC ? partCACArticleConversion(item, taux2) : 0;
         return `
             <tr>
-                <td>${item.nom}</td>
+                <td>${item.nom_periode || item.nom}</td>
                 <td class="text-end">${Math.round(item.prix).toLocaleString('fr-FR')} F</td>
                 <td class="text-end">${pbr > 0 ? Math.round(pbr).toLocaleString('fr-FR') + ' F' : '<span class="text-muted">-</span>'}</td>
                 <td class="text-end text-success">${partAMU > 0 ? Math.round(partAMU).toLocaleString('fr-FR') + ' F' : '<span class="text-muted">-</span>'}</td>
@@ -3470,6 +3506,8 @@ async function finaliserConversionVente() {
         // attaché, donc jamais de part médecin générée (patron, 2026-09-30).
         medecin_id: item.medecin_id || null,
         medecin_nom: item.medecin_nom || null,
+        nom_periode: item.nom_periode || null,   // ⭐ 2026-10-23 : chambre découpée par période
+        pbr_catalogue: item.pbr_catalogue ?? null,
         liste_tarif: item.liste_tarif || null,   // ⭐ 2026-10-19 : tarif d'une liste (Valeo)
         nuit: !!item.nuit
     }));
@@ -3744,7 +3782,7 @@ function modifierProforma(id) {
                                 <tbody id="modifPanierBody">
                                     ${data.articles && data.articles.length > 0 ? data.articles.map((item, index) => `
                                         <tr>
-                                            <td>${item.nom}</td>
+                                            <td>${item.nom_periode || item.nom}</td>
                                             <td><span class="badge ${item.type === 'acte' ? 'bg-primary' : 'bg-success'}">${item.type === 'acte' ? 'Acte' : 'Produit'}</span></td>
                                             <td>
                                                 <input type="number" class="form-control form-control-sm" value="${item.quantite}" 
@@ -3928,7 +3966,7 @@ function afficherArticlesModif(lignes) {
         const libelle = l.source === 'prive' ? 'tarif ' + (contexteTarifModif().nom2 || 'privé')
             : (l.source === 'non_assure' ? 'prix non assuré' : (item.prix_modifie ? 'prix saisi' : ''));
         return `<tr>
-            <td>${item.nom}${libelleServiceLigne(item, 'changerServiceDeLigne(window.modifArticles[' + index + '], calculerTotalModif)')}</td>
+            <td>${libelleNomLigne(item)}${libelleServiceLigne(item, 'changerServiceDeLigne(window.modifArticles[' + index + '], calculerTotalModif)')}</td>
             <td><span class="badge ${item.type === 'produit' ? 'bg-success' : 'bg-primary'}">${item.type === 'produit' ? 'Produit' : 'Acte'}</span></td>
             <td><input type="number" class="form-control form-control-sm" value="${item.quantite}"
                        style="width:60px;" onchange="modifierArticleModif(${index}, 'quantite', this.value)"></td>
@@ -3942,6 +3980,7 @@ function afficherArticlesModif(lignes) {
 }
 
 function calculerTotalModif() {
+    planifierChambresModif();   // ⭐ chambre P160 : découpage par période (assuré AMU)
     const articles = window.modifArticles || [];
     chargerPbrCacModif();
     const ctxModif = contexteTarifModif();
@@ -4047,15 +4086,24 @@ function modifierArticleModif(index, champ, valeur) {
     if (champ === 'quantite') {
         articles[index].quantite = parseInt(valeur) || 1;
     } else if (champ === 'prix') {
-        articles[index].prix = parseFloat(valeur) || 0;
-        articles[index].prix_modifie = true;   // ⭐ prix saisi : prime sur le tarif automatique
+        // ⭐ chambre découpée par période : le prix vaut pour toutes ses lignes
+        (estChambreP160(articles[index]) ? lignesChambreP160(articles, articles[index]) : [articles[index]]).forEach(l => {
+            l.prix = parseFloat(valeur) || 0;
+            l.prix_modifie = true;   // ⭐ prix saisi : prime sur le tarif automatique
+        });
     }
     calculerTotalModif();   // ⭐ recalcule et réaffiche les lignes (même moteur que la création)
 }
 
 async function supprimerArticleModif(index) {
     if (!await demanderConfirmation('Supprimer cet article ?')) return;
-    window.modifArticles.splice(index, 1);
+    const item = window.modifArticles[index];
+    if (estChambreP160(item) && item.nom_periode) {   // chambre découpée : on la retire entière
+        const groupe = new Set(lignesChambreP160(window.modifArticles, item));
+        window.modifArticles = window.modifArticles.filter(x => !groupe.has(x));
+    } else {
+        window.modifArticles.splice(index, 1);
+    }
     calculerTotalModif();
 }
 

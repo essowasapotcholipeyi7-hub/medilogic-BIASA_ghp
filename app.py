@@ -21386,6 +21386,12 @@ def api_creer_proforma():
         # compagnie, prix non assuré), part AMU, part privée avec/sans PBR.
         # base_cac_articles cumule désormais directement la PART privée.
         est_assure_amu_proforma = bool(data.get('assurance_nom')) and data.get('assurance_nom') != 'Non assuré' and taux_assurance > 0
+        # ⭐ 2026-10-23 (patron) : chambre P160 d'un assuré AMU découpée par période (1re semaine / 8e-14e jour /
+        # 15 jours et plus), PBR de la grille AMU — même calcul qu'à l'hospitalisation et qu'en vente d'actes
+        from services.hospitalisation_service import decouper_chambres_vente, est_assure_amu_nom
+        articles = decouper_chambres_vente(structure_id, articles, est_assure_amu_nom(data.get('assurance_nom'), taux_assurance))
+        for article in articles:
+            article.pop('_chambre_decoupee', None)
         taux2_lignes = float(data.get('taux_assurance2') or 0) if data.get('assurance2_active', False) else 0
         contexte_proforma = {
             'amu': est_assure_amu_proforma, 'taux_amu': taux_assurance,
@@ -21985,7 +21991,13 @@ def api_convertir_proforma():
         # franchit un palier dégressif. Voir
         # utils/grille_amu_hospitalisation.py.
         est_assure_amu_conversion = est_assure and str(assurance_nom).lower().startswith('amu') and taux_assurance > 0
+        # ⭐ 2026-10-23 (patron) : chambre P160 découpée par période comme à l'hospitalisation (plus de refus
+        # au-delà de 7 jours) ; la ligne prend le nom de sa période sur la vente (voir 'nom' plus bas)
+        from services.hospitalisation_service import decouper_chambres_vente
+        articles = decouper_chambres_vente(structure_id, articles, est_assure_amu_conversion)
         for a in articles:
+            if a.pop('_chambre_decoupee', None) or a.get('nom_periode'):
+                continue
             erreur_p160 = erreur_p160_quantite_hors_hospitalisation(
                 a.get('nom'), a.get('quantite'), a.get('prise_en_charge_amu', True), est_assure_amu_conversion
             )
@@ -22090,7 +22102,7 @@ def api_convertir_proforma():
             # 🔥 Transformer l'article pour la vente
             article = {
                 'id': a.get('id', None),
-                'nom': a.get('nom', 'Article'),
+                'nom': a.get('nom_periode') or a.get('nom', 'Article'),   # chambre : nom de sa période
                 'prix': prix,
                 'prix_unitaire': prix,
                 'pbr': pbr,
@@ -24696,6 +24708,11 @@ def _calculer_montants_proforma(structure_id, data, articles, applique_pbr_cac=T
         'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_active and assurance2_nom) else {},
         'applique_pbr_prive': bool(applique_pbr_cac), 'variante': pbr_cac_variante or 'defaut',
     }
+    # ⭐ 2026-10-23 (patron) : chambre P160 d'un assuré AMU découpée par période (comme à la création)
+    from services.hospitalisation_service import decouper_chambres_vente, est_assure_amu_nom
+    articles = decouper_chambres_vente(structure_id, articles, est_assure_amu_nom(assurance_nom, taux_assurance))
+    for article in articles:
+        article.pop('_chambre_decoupee', None)
     # ⭐ 2026-10-19 : liste de prix (Valeo) — choisie à l'écran, sinon retrouvée d'après les lignes
     appliquer_liste_tarif(structure_id, data.get('liste_tarif'), articles, contexte, taux_assurance2, taux_assurance2 > 0)
     cartes_na = {'acte': charger_prix_non_assure(structure_id, 'acte'),

@@ -285,6 +285,11 @@ def lignes_chambre_vente(structure_id, article, nb_jours):
     return [{'nom_periode': l['nom'], 'pbr': l['pbr'], 'quantite': l['quantite']} for l in lignes]
 
 
+def est_assure_amu_nom(assurance_nom, taux):
+    """Assurance principale AMU (CNSS, INAM, TNS) active avec un taux."""
+    return str(assurance_nom or '').strip().lower().startswith('amu') and float(taux or 0) > 0
+
+
 def est_chambre_p160(article):
     return 'P160' in str(article.get('nom') or '')
 
@@ -294,12 +299,15 @@ def decouper_chambres_vente(structure_id, actes, est_assure_amu):
     les redécoupe par période avec lignes_chambre_vente() — le serveur refait le découpage du panier, il ne
     reprend pas le PBR envoyé par le navigateur. Chaque ligne découpée garde le nom du catalogue (pour les
     tarifs) et porte `nom_periode` (nom de la ligne sur la vente, comme au module d'hospitalisation) et
-    `_chambre_decoupee`. Patient non assuré AMU ou chambre non prise en charge : lignes inchangées."""
+    `_chambre_decoupee`. Patient non assuré AMU ou chambre non prise en charge : lignes inchangées.
+    Lignes venues d'une hospitalisation (datées, ou déjà « 8e jour au 14e jour » / « 15 jours et plus ») :
+    jamais touchées, le module d'hospitalisation les a déjà découpées."""
     if not est_assure_amu:
         return actes
     groupes, ordre = {}, []
     for a in actes:
-        if est_chambre_p160(a) and a.get('prise_en_charge_amu', True) is not False:
+        if (est_chambre_p160(a) and a.get('prise_en_charge_amu', True) is not False
+                and not a.get('date_prestation') and not est_ligne_semaine_suivante(a.get('nom'))):
             cle = (a.get('nom'), str(a.get('service_id') or ''), str(a.get('medecin_id') or ''))
             if cle not in groupes:
                 groupes[cle] = []
