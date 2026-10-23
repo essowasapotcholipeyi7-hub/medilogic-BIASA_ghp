@@ -61,12 +61,12 @@
                     Ou, si votre appareil ne le permet pas, un code à 4-6 chiffres à saisir vous-même :
                 </p>
                 <form id="ppFormDefinirPin" autocomplete="on" onsubmit="event.preventDefault(); definirPin();" class="row g-2 align-items-end">
-                    <div class="col-8 col-sm-6">
+                    <div class="col-7 col-sm-6">
                         <label class="form-label mb-1 small">Nouveau code rapide</label>
                         <input type="password" inputmode="numeric" class="form-control" id="ppNouveauPin" placeholder="4 à 6 chiffres" maxlength="6" autocomplete="new-password">
                     </div>
-                    <div class="col-4 col-sm-6">
-                        <button type="submit" class="btn btn-outline-success w-100"><i class="fas fa-check me-1"></i> Enregistrer</button>
+                    <div class="col-5 col-sm-6">
+                        <button type="submit" class="btn btn-outline-success w-100 text-nowrap"><i class="fas fa-check me-1"></i> Enregistrer</button>
                     </div>
                 </form>
                 <div id="ppPinMsg" class="small mt-2"></div>

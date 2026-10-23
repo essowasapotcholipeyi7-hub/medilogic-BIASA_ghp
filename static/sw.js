@@ -16,7 +16,7 @@
 // remplacement silencieux d'une donnée à jour.
 // ============================================================
 
-const CACHE_NAME = 'ssoftone-portail-v2'   // ⭐ v2 (2026-10-23) : icône « Rs », couleurs SS;
+const CACHE_NAME = 'ssoftone-portail-v3'   // ⭐ v3 (2026-10-23) : icône « Rs », pages en thème clair;
 const ASSETS_STATIQUES = [
     '/portail-manifest.json',
     '/static/images/portail-icon-192.png',

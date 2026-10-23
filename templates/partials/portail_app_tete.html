@@ -1,44 +1,46 @@
-{# ⭐ 2026-10-23 (patron) : l'application « Rs » des résultats, aux couleurs de « Ss » (fond noir,
-   lettres vertes). À inclure dans {% block extra_css %} des pages du portail patient.
+{# ⭐ 2026-10-23 (patron) : l'application « Rs » des résultats, aux couleurs de « Ss » — icône noire aux
+   lettres vertes, accent vert ; pages en thème CLAIR (le fond noir de la 1re version ne plaisait pas :
+   « si on peut rendre ça un peu thème clair »). À inclure dans {% block extra_css %} des pages du portail patient.
    garde=True : dans l'application installée, la page n'est ouverte qu'après déverrouillage
    (empreinte / Face ID / code du téléphone) depuis la page de connexion — voir portail_patient.html. #}
 <link rel="manifest" href="{{ url_for('portail_manifest') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/portail-icon-192.png') }}">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#ffffff">
 <!-- ⭐ Sans ces balises, iOS ouvre le raccourci comme un simple onglet Safari (barre d'adresse
      visible, page qui ne cadre pas l'écran). Android suit déjà le manifest (display: standalone). -->
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Rs">
 <style>
-    html body { background: #000 !important; color: #e8f5ec; }
+    html body { background: #f4f7f5 !important; color: #1f2933; }
+    /* Le cadre blanc de l'application du personnel et son filigrane n'ont rien à faire ici */
+    html body::after { display: none !important; }
+    .app-wrapper, .main-content { background: transparent !important; box-shadow: none !important;
+                                  backdrop-filter: none !important; border-radius: 0 !important; }
+    .main-content { max-height: none !important; overflow: visible !important; }
     .rs-page { padding-top: env(safe-area-inset-top); }
     .rs-logo { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px;
-               border-radius: 10px; background: #000; border: 1px solid #1f3a2a; color: #4ADE80;
+               border-radius: 10px; background: #000; color: #4ADE80;
                font: 800 22px/1 Arial, Helvetica, sans-serif; letter-spacing: -1px; }
-    .rs-titre { color: #4ADE80; }
-    [data-bs-theme="dark"] .card { background: #0b0f0c; border-color: #1c2b21; }
-    [data-bs-theme="dark"] .card-header { background: #101812 !important; border-color: #1c2b21; color: #e8f5ec !important; }
-    [data-bs-theme="dark"] .list-group-item { background: transparent; border-color: #1c2b21; }
-    [data-bs-theme="dark"] .modal-content { background: #0b0f0c; border: 1px solid #1c2b21; }
-    [data-bs-theme="dark"] .form-control, [data-bs-theme="dark"] .form-select { background-color: #050806; border-color: #24382b; }
-    [data-bs-theme="dark"] .form-control:focus, [data-bs-theme="dark"] .form-select:focus { border-color: #4ADE80; box-shadow: 0 0 0 .2rem rgba(74,222,128,.2); }
+    .rs-titre { color: #15803d; }
+    .card { background: #fff; border: 1px solid #e3ebe6; border-radius: 14px; box-shadow: 0 2px 10px rgba(16, 24, 20, .05); }
+    .card-header { background: #f0f7f2 !important; border-color: #e3ebe6; color: #14532d !important; font-weight: 600; }
+    .card-header:first-child { border-radius: 14px 14px 0 0; }
+    .modal-content { border-radius: 14px; }
+    .form-control:focus, .form-select:focus { border-color: #22c55e; box-shadow: 0 0 0 .2rem rgba(34, 197, 94, .18); }
     /* base.html donne aux boutons un style pâle (fond pastel) : on remet l'aplat vert de SS. */
-    html body .btn-primary, html body .btn-success { background: #4ADE80; border: 1px solid #4ADE80; color: #000; font-weight: 600; }
+    html body .btn-primary, html body .btn-success { background: #16a34a; border: 1px solid #16a34a; color: #fff; font-weight: 600; }
     html body .btn-primary:hover, html body .btn-success:hover,
-    html body .btn-primary:focus, html body .btn-success:focus { background: #22c55e; border-color: #22c55e; color: #000; }
-    html body .btn-outline-primary, html body .btn-outline-success { background: transparent; border: 1.5px solid #4ADE80; color: #4ADE80; }
-    html body .btn-outline-primary:hover, html body .btn-outline-success:hover { background: #4ADE80; border-color: #4ADE80; color: #000; }
-    .nav-pills { --bs-nav-pills-link-active-bg: #4ADE80; --bs-nav-pills-link-active-color: #000; --bs-nav-link-color: #4ADE80; --bs-nav-link-hover-color: #86efac; }
-    .bg-primary { background-color: #14532d !important; }
-    .alert-info, .alert-primary { --bs-alert-bg: #0f2418; --bs-alert-border-color: #1f4d2e; --bs-alert-color: #bbf7d0; }
-    .rs-install { border: 1px solid #4ADE80; border-radius: 12px; background: #07140c; }
+    html body .btn-primary:focus, html body .btn-success:focus { background: #15803d; border-color: #15803d; color: #fff; }
+    html body .btn-outline-primary, html body .btn-outline-success { background: #fff; border: 1.5px solid #16a34a; color: #15803d; }
+    html body .btn-outline-primary:hover, html body .btn-outline-success:hover { background: #16a34a; border-color: #16a34a; color: #fff; }
+    .nav-pills { --bs-nav-pills-link-active-bg: #16a34a; --bs-nav-pills-link-active-color: #fff; --bs-nav-link-color: #15803d; --bs-nav-link-hover-color: #166534; }
+    .bg-primary { background-color: #16a34a !important; }
+    .alert-info, .alert-primary { --bs-alert-bg: #ecfdf3; --bs-alert-border-color: #bbf7d0; --bs-alert-color: #14532d; }
+    .rs-install { border: 1px solid #86efac; border-radius: 14px; background: #fff; box-shadow: 0 2px 10px rgba(16, 24, 20, .05); }
 </style>
 <script>
-    // Thème sombre de Bootstrap (textes d'aide, formulaires, fenêtres lisibles sur fond noir).
-    document.documentElement.setAttribute('data-bs-theme', 'dark');
-
     // Petits outils partagés par les pages du portail.
     window.RsApp = {
         // Ouverte depuis l'icône « Rs » de l'écran d'accueil (et non dans le navigateur) ?
