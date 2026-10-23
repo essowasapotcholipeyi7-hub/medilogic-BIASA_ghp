@@ -33,7 +33,7 @@ from services.part_medecin_service import (charger_taux_part_medecin, creer_lign
                                            charger_affectations, charger_medecins_affectes_csv, parametres_rsps, parametres_rsps_structure,
                                            montant_net_periode, point_prestations, rsps_a_verser, enregistrer_versement_rsps)
 from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service, reclasser_recettes_service_sans_echec, contexte_choix_service
-from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION
+from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION, est_service_non_precise
 from models import ConsommableLabo, UsageConsommable, MouvementConsommable, ParametrageStockLabo
 from services import comptes_service   # ⭐ 2026-10-18 : comptes (structures, personnel) dans Neon
 from services.modele_formulaire import est_formulaire, docx_a_des_controles, docx_vers_formulaire, proposer_modele, mots_modele, adapter_entete, profil_patient, note_profil
@@ -4579,7 +4579,8 @@ def _contexte_vente_actes(structure_id):
         'medecins_affectes': {nom: ','.join(str(x) for x in ids) for nom, ids in affectations.items()},
         'classification_examens': {r['n']: r['t'] for r in ligne['classification']},
         'choix_service_actif': choix_service_actif,
-        'services': [{'id': r['id'], 'nom': r['nom'], 'type': r.get('type') or 'clinique'} for r in ligne['services']] if choix_service_actif else [],
+        'services': [{'id': r['id'], 'nom': r['nom'], 'type': r.get('type') or 'clinique'} for r in ligne['services']
+                     if not est_service_non_precise(r)] if choix_service_actif else [],
         'classification_service': {r['n']: r['s'] for r in ligne['classification_service']} if choix_service_actif else {},
         # ⭐ 2026-10-23 : toujours chargés — servent au choix OBLIGATOIRE de la spécialité / du service
         # d'hospitalisation (choix_service_requis), même sans le sélecteur facultatif ci-dessus.
@@ -4636,11 +4637,12 @@ def actes_vente():
     # ⭐ 2026-10-23 (patron) : « consultation spécialisée » sans spécialité, ou chambre
     # d'hospitalisation vendue ici -> le service est à préciser obligatoirement (voir
     # choix_service_requis) ; listes proposées dans la fenêtre de choix.
-    from services.service_acte_service import choix_service_requis, TYPES_SANS_HOSPITALISATION
+    from services.service_acte_service import choix_service_requis, TYPES_SANS_HOSPITALISATION, est_service_non_precise
     services_tous = ctx['services_tous']
     classification_service_tous = ctx['classification_service_tous']
     services_specialites = [s for s in services_tous if s['type'] == 'clinique']
-    services_hospitalisation_vente = [s for s in services_tous if s['type'] not in TYPES_SANS_HOSPITALISATION]
+    services_hospitalisation_vente = [s for s in services_tous if s['type'] not in TYPES_SANS_HOSPITALISATION
+                                      and not est_service_non_precise(s)]
 
     # Filtrer par structure
     actes_filtres = []

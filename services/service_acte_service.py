@@ -73,11 +73,13 @@ TYPES_SERVICE = {
 TYPES_SANS_HOSPITALISATION = ('laboratoire', 'imagerie', 'pharmacie')
 
 
-def charger_services(structure_id, usage=None):
+def charger_services(structure_id, usage=None, avec_non_precise=False):
     """Services actifs de cette structure — [{id, nom, type, hospitalisation}] — pour peupler le
     sélecteur "Service" et pour la détection automatique.
     usage='hospitalisation' : seulement ceux qui reçoivent des hospitalisés (admission d'un séjour) ;
-    usage='soins' : sans laboratoire / imagerie / pharmacie (épisode de soins ambulatoires)."""
+    usage='soins' : sans laboratoire / imagerie / pharmacie (épisode de soins ambulatoires).
+    Le service « CONSULTATIONS SPECIALISEES NON PRECISEES » n'est jamais proposé au choix : seulement
+    pour le classement (avec_non_precise=True)."""
     q = ServiceHospitalisation.query.filter_by(structure_id=structure_id, actif=True)
     if usage == 'hospitalisation':
         q = q.filter(db.or_(ServiceHospitalisation.hospitalisation.is_(None), ServiceHospitalisation.hospitalisation.is_(True)))
@@ -86,7 +88,8 @@ def charger_services(structure_id, usage=None):
                             ~ServiceHospitalisation.type_service.in_(TYPES_SANS_HOSPITALISATION)))
     services = q.order_by(ServiceHospitalisation.nom).all()
     return [{'id': s.id, 'nom': s.nom, 'type': s.type_service or 'clinique',
-             'hospitalisation': s.hospitalisation is not False} for s in services]
+             'hospitalisation': s.hospitalisation is not False} for s in services
+            if avec_non_precise or not est_service_non_precise(s)]
 
 
 def _trouver_service_par_mot_cle(services, mots_cles):
@@ -136,6 +139,11 @@ _REGLES_DOMAINE = [
       r'\bdetartrage', r'\bcaries?\b', r'\bparodont', r'\bpulpe', r'\bpulpotomie', r'\bmolaire',
       r'\bavulsion', r'\bextraction dentaire'],
      None, ['odonto', 'stomato', 'dentaire'], []),
+    # ⭐ 2026-10-23 (patron) : consultation d'un enfant de 0 à 5 ans ou de 5 ans et plus (S102, S111,
+    # S113 « consultation spécialisée interne pour enfant… ») -> pédiatrie.
+    ([r'^s102\b', r'^s111\b', r'^s113\b', r'\bconsultation\b.*\b(enfants?|nourrissons?|pediatr)',
+      r'\b0 a 0?5 ans\b', r'\b0?5 ans et plus\b'],
+     None, ['pediatr'], []),
     # ⭐ 2026-10-23 (patron) : infiltrations -> rhumatologie.
     ([r'\binfiltrations?\b'], None, ['rhumato'], []),
     # Petit matériel vendu comme un acte (spéculum, gants...) : c'est de la pharmacie.
@@ -242,6 +250,22 @@ def _service_vise(services, type_service, mots_cles):
     return None
 
 
+# ⭐ 2026-10-23 (patron) : consultations spécialisées vendues sans leur spécialité (anciennes ventes) —
+# un service à part plutôt que « Autre ». Pas une spécialité : jamais proposé au choix de la
+# spécialité ni de l'hospitalisation à la vente, et la vente demande toujours la spécialité.
+NOM_SERVICE_NON_PRECISE = 'CONSULTATIONS SPECIALISEES NON PRECISEES'
+
+
+def est_service_non_precise(service):
+    nom = service.get('nom') if isinstance(service, dict) else getattr(service, 'nom', '')
+    return _mots(nom).startswith('consultations specialisees non precise')
+
+
+def _est_consultation_specialisee(nom_mots):
+    return bool(re.match(r'^s101\b', nom_mots) or (re.search(r'\bconsultation', nom_mots)
+                                                   and re.search(r'\bspeciali', nom_mots)))
+
+
 def deviner_service_acte(nom_acte, services):
     """Détection automatique (niveau 3) — retourne un dict de `services`
     (voir charger_services) ou None si non déterminable (la ligne va alors
@@ -290,7 +314,13 @@ def deviner_service_acte(nom_acte, services):
         if re.search(r'\bdentaire', nom_mots):
             s = _trouver_service_par_mot_cle(services, ['dentaire', 'stomato', 'odonto'])
         else:
-            s = _service_dans_le_nom(nom, services)
+            s = _service_dans_le_nom(nom, [x for x in services if not est_service_non_precise(x)])
+        if s:
+            return s
+    # ⭐ 2026-10-23 (patron) : consultation spécialisée dont la spécialité n'est pas dite -> service
+    # « CONSULTATIONS SPECIALISEES NON PRECISEES » (plus dans « Autre »).
+    if _est_consultation_specialisee(nom_mots):
+        s = next((x for x in services if est_service_non_precise(x)), None)
         if s:
             return s
 
@@ -326,7 +356,7 @@ def resoudre_service_acte(structure_id, nom_acte, service_id_choisi=None, servic
     `services_cache` : passer le résultat déjà chargé de
     _charger_classification_manuelle()/charger_services() pour éviter de
     les recharger à chaque ligne d'un même panier."""
-    services = services_cache if services_cache is not None else charger_services(structure_id)
+    services = services_cache if services_cache is not None else charger_services(structure_id, avec_non_precise=True)
     services_par_id = {s['id']: s['nom'] for s in services}
 
     if service_id_force:
@@ -388,7 +418,7 @@ def reclasser_recettes_service(structure_id):
     ligne d'hospitalisation (toujours au service du séjour). Renvoie le nombre de lignes
     dont le service a changé."""
     completer_lignes_manquantes(structure_id)   # ⭐ 2026-10-23 : ventes sans aucune ligne (voir plus bas)
-    services = charger_services(structure_id)
+    services = charger_services(structure_id, avec_non_precise=True)
     classification = _charger_classification_manuelle(structure_id)
     lignes = db.session.query(RecetteService.id, RecetteService.nom_acte, RecetteService.type_source,
                               RecetteService.service_id, RecetteService.origine).filter(
@@ -431,6 +461,7 @@ SERVICES_DE_REFERENCE = [
     ('ONCOLOGIE', 'clinique'), ('MEDECINE INTERNE', 'clinique'), ('CHIRURGIE', 'clinique'),
     ('ODONTO-STOMATOLOGIE / CHIRURGIE DENTAIRE', 'clinique'),
     ('NEUROCHIRURGIE', 'clinique'), ('ANESTHESIE-REANIMATION', 'clinique'), ('INFECTIOLOGIE', 'clinique'),
+    (NOM_SERVICE_NON_PRECISE, 'autre'),
 ]
 
 
@@ -492,7 +523,7 @@ def choix_service_requis(nom_acte, services, classification=None):
         return None
     # Test bon marché d'abord (appelé pour tout le catalogue à l'ouverture de la vente d'actes)
     nom_mots = _mots(nom_acte)
-    if re.match(r'^s101\b', nom_mots) or (re.search(r'\bconsultation', nom_mots) and re.search(r'\bspeciali', nom_mots)):
+    if _est_consultation_specialisee(nom_mots):
         requis = 'specialite'
     elif re.search(r'\bp160\b', nom_mots) or re.search(r'\bhospitali', nom_mots) or re.search(r'\bhospi\b', nom_mots):
         requis = 'hospitalisation'
@@ -500,7 +531,8 @@ def choix_service_requis(nom_acte, services, classification=None):
         return None
     if classification and classification.get(nom_acte):
         return None
-    if deviner_service_acte(nom_acte, services):
+    devine = deviner_service_acte(nom_acte, services)
+    if devine and not est_service_non_precise(devine):
         return None
     return requis
 
@@ -523,7 +555,8 @@ def contexte_choix_service(structure_id, noms_actes, services=None, classificati
                 par_acte[nom] = requis
     return {
         'services_specialites': [s for s in services if s['type'] == 'clinique'],
-        'services_hospitalisation_vente': [s for s in services if s['type'] not in TYPES_SANS_HOSPITALISATION],
+        'services_hospitalisation_vente': [s for s in services if s['type'] not in TYPES_SANS_HOSPITALISATION
+                                           and not est_service_non_precise(s)],
         'choix_service_par_acte': par_acte,
     }
 
@@ -538,7 +571,7 @@ def services_manquants(structure_id):
                  if not _deja_couvert(nom, type_ref, existants)]
     if not candidats:
         return {}
-    services = charger_services(structure_id)
+    services = charger_services(structure_id, avec_non_precise=True)
     classification = _charger_classification_manuelle(structure_id)
     lignes = RecetteService.query.filter(
         RecetteService.structure_id == structure_id, RecetteService.service_id.is_(None),
@@ -594,7 +627,7 @@ def creer_lignes_service(structure_id, articles, vente_id, service_id_force=None
     if not articles:
         return []
 
-    services = charger_services(structure_id)
+    services = charger_services(structure_id, avec_non_precise=True)
     classification = _charger_classification_manuelle(structure_id)
     lignes = []
 
