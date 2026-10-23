@@ -144,6 +144,9 @@ _REGLES_DOMAINE = [
     ([r'^s102\b', r'^s111\b', r'^s113\b', r'\bconsultation\b.*\b(enfants?|nourrissons?|pediatr)',
       r'\b0 a 0?5 ans\b', r'\b0?5 ans et plus\b'],
      None, ['pediatr'], []),
+    # ⭐ 2026-10-23 (patron) : « consultation PERMANENCE » (garde) -> médecine générale.
+    ([r'\bconsultation\b.*\bpermanence\b', r'\bpermanence\b.*\bconsultation\b'],
+     None, ['medecine generale', 'generaliste'], []),
     # ⭐ 2026-10-23 (patron) : infiltrations -> rhumatologie.
     ([r'\binfiltrations?\b'], None, ['rhumato'], []),
     # Petit matériel vendu comme un acte (spéculum, gants...) : c'est de la pharmacie.
