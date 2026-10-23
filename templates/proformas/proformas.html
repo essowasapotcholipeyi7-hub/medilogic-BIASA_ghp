@@ -3425,6 +3425,7 @@ async function finaliserConversionVente() {
         id: item.id,
         nom: item.nom,
         type: item.type,
+        service_id: item.service_id || null,   // ⭐ 2026-10-23 : spécialité choisie sur la proforma (recettes par service)
         quantite: item.quantite,
         prix_unitaire: item.prix,
         prix: item.prix,

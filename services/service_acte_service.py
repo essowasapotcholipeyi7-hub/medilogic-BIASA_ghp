@@ -156,7 +156,8 @@ _REGLES_DOMAINE = [
     ([r'\bcesarienne', r'\baccouchement'], None, ['obstetri', 'gyneco', 'maternite'], []),
     # Échographie obstétricale, consultation prénatale (CPN, code S115), actes gynécologiques :
     # gynécologie. (Le CARNET CPN, lui, va en « Autre » : règle des carnets, vue avant.)
-    ([r'\bech\w* obstetric', r'\bobstetricale', r'\bprenatale?\b', r'\bcpn\b', r'^s115\b',
+    # (pas « obstetricale » seul : une « consultation obstétricale » va en Obstétrique, par la spécialité)
+    ([r'\bech\w* obstetric', r'\bprenatale?\b', r'\bcpn\b', r'^s115\b',
       r'\bhydrotubation', r'\bdiu\b', r'\bsterilet', r'\bcolposcop', r'\bhysteroscop'],
      None, ['gyneco', 'obstetri', 'maternite'], []),
     # Soins infirmiers vendus directement (injections, perfusions, mises en observation...).
@@ -193,12 +194,16 @@ _MOTIFS_IMAGERIE = [
 
 
 def _racine_service(nom_service):
-    """« CARDIOLOGIE » -> « cardiolog » (reconnaît aussi « cardiologique »),
-    « PEDIATRIE » -> « pediatr » ; les autres noms sont gardés entiers."""
+    """« CARDIOLOGIE » -> « cardiolog » (reconnaît aussi « cardiologique »), « PEDIATRIE » ->
+    « pediatr », « ORTHOPEDIE » -> « orthoped » (« orthopedique »), « OBSTETRIQUE » -> « obstetr »
+    (« obstetricale »), « CHIRURGIE » -> « chirurg » ; les noms de plusieurs mots ou courts
+    (ORL, SOINS) sont gardés entiers."""
     nom = _mots(nom_service)
-    if nom.endswith('ologie'):
-        return nom[:-2]
-    if nom.endswith('iatrie'):
+    if ' ' in nom or len(nom) < 7:
+        return nom
+    if nom.endswith('ique'):
+        return nom[:-4]
+    if nom.endswith('ie'):
         return nom[:-2]
     return nom
 
@@ -382,9 +387,11 @@ def reclasser_recettes_service(structure_id):
     (origine 'auto' / 'non_classe' / 'classification') : jamais un choix fait à la vente, ni une
     ligne d'hospitalisation (toujours au service du séjour). Renvoie le nombre de lignes
     dont le service a changé."""
+    completer_lignes_manquantes(structure_id)   # ⭐ 2026-10-23 : ventes sans aucune ligne (voir plus bas)
     services = charger_services(structure_id)
     classification = _charger_classification_manuelle(structure_id)
-    lignes = RecetteService.query.filter(
+    lignes = db.session.query(RecetteService.id, RecetteService.nom_acte, RecetteService.type_source,
+                              RecetteService.service_id, RecetteService.origine).filter(
         RecetteService.structure_id == structure_id,
         db.or_(RecetteService.origine.is_(None),
                RecetteService.origine.in_(['auto', 'non_classe', 'classification'])),
@@ -551,7 +558,8 @@ def reclasser_recettes_service_sans_echec(structure_id):
         return 0
 
 
-def creer_lignes_service(structure_id, articles, vente_id, service_id_force=None, type_source_defaut=None):
+def creer_lignes_service(structure_id, articles, vente_id, service_id_force=None, type_source_defaut=None,
+                         date_vente=None, commit=True):
     """Parcourt les articles d'une vente tout juste créée et crée une
     RecetteService pour chaque ligne — même principe que
     creer_lignes_part_medecin (part_medecin_service.py). Ne fait RIEN si
@@ -580,8 +588,8 @@ def creer_lignes_service(structure_id, articles, vente_id, service_id_force=None
         prix = a.get('prix')
         if prix is None:
             prix = a.get('prix_unitaire') or a.get('prix_reel') or 0
-        prix = float(prix or 0)
-        quantite = int(a.get('quantite') or 1)
+        prix = _nombre(prix)
+        quantite = int(_nombre(a.get('quantite')) or 1)
         montant = round(prix * quantite, 2)
 
         ligne = RecetteService(
@@ -596,12 +604,79 @@ def creer_lignes_service(structure_id, articles, vente_id, service_id_force=None
             quantite=quantite,
             montant=montant,
         )
+        if date_vente:
+            ligne.created_at = date_vente
         db.session.add(ligne)
         lignes.append(ligne)
 
-    if lignes:
+    if lignes and commit:
         db.session.commit()
     return lignes
+
+
+# Mise en service des recettes par service : les ventes antérieures n'ont jamais eu de lignes
+# (et le patron n'a pas demandé de reconstituer le passé) — completer_lignes_manquantes ne
+# regarde qu'à partir de cette date.
+DATE_DEBUT_RECETTES_SERVICE = '2026-09-30'
+
+
+def _nombre(valeur):
+    """Nombre lu de façon tolérante (« 1 boite », « 2 500 », « 3,5 ») — une quantité saisie en
+    texte faisait planter toute la vente dans creer_lignes_service (aucune ligne créée)."""
+    if valeur is None or valeur == '':
+        return 0.0
+    try:
+        return float(valeur)
+    except (TypeError, ValueError):
+        m = re.search(r'\d+(?:[.,]\d+)?', str(valeur).replace(' ', ''))
+        return float(m.group(0).replace(',', '.')) if m else 0.0
+
+
+def completer_lignes_manquantes(structure_id):
+    """⭐ 2026-10-23 (audit) : 58 ventes depuis le 30/09 n'avaient AUCUNE ligne de recette par
+    service (ventes du jour du lancement, et quelques échecs silencieux de creer_lignes_service)
+    — invisibles dans le rapport. Recrée leurs lignes d'après les articles enregistrés sur la
+    vente (actes + produits), datées de la vente (le rapport filtre sur created_at), au service
+    du séjour si la vente vient d'une hospitalisation / d'un épisode de soins. Lancé au début de
+    chaque reclassement. Renvoie le nombre de ventes complétées."""
+    import json
+    from sqlalchemy import text
+    from models import Hospitalisation, SoinsAmbulatoires
+    ventes = db.session.execute(text("""
+        SELECT v.id, v.date_vente, v.actes, v.produits, v.type, v.proforma_id
+        FROM ventes v
+        WHERE v.structure_id = :s AND (v.statut IS NULL OR v.statut != 'annulee')
+          AND v.date_vente >= :depuis
+          AND NOT EXISTS (SELECT 1 FROM recettes_service r WHERE r.vente_id = v.id)
+    """), {'s': structure_id, 'depuis': DATE_DEBUT_RECETTES_SERVICE}).mappings().all()
+    nb = 0
+    for v in ventes:
+        def liste(col, type_article):
+            val = v[col]
+            if isinstance(val, str):
+                try:
+                    val = json.loads(val)
+                except ValueError:
+                    val = []
+            return [dict(x, type=x.get('type') or type_article) for x in (val or []) if isinstance(x, dict)]
+        articles = liste('actes', 'acte') + liste('produits', 'produit')
+        if not articles:
+            continue
+        service_id_force = None
+        if v['proforma_id']:
+            h = Hospitalisation.query.filter_by(structure_id=structure_id, proforma_id=v['proforma_id']).first()
+            if h:
+                service_id_force = h.service_id
+            else:
+                e = SoinsAmbulatoires.query.filter_by(structure_id=structure_id, proforma_id=v['proforma_id']).first()
+                if e:
+                    service_id_force = e.service_id
+        if creer_lignes_service(structure_id, articles, v['id'], service_id_force=service_id_force,
+                                date_vente=v['date_vente'], commit=False):
+            nb += 1
+    if nb:
+        db.session.commit()   # un seul commit pour toutes les ventes complétées
+    return nb
 
 
 def situation_ventes(structure_id, vente_ids):
@@ -617,31 +692,30 @@ def situation_ventes(structure_id, vente_ids):
     Même calcul de « payé par le patient » que services/remboursement_service.py."""
     import json
     from collections import defaultdict
-    from models import Vente, Recette, Depense, Facture
+    from sqlalchemy import text as _text
     ids = [int(i) for i in set(vente_ids or []) if i]
     if not ids:
         return {}
-    ventes = {v.id: v for v in Vente.query.filter(Vente.structure_id == structure_id, Vente.id.in_(ids)).all()}
-    non_annulee = db.or_(Recette.est_annulation.is_(None), Recette.est_annulation.is_(False))
-    paye_vente = dict(db.session.query(Recette.source_id, db.func.sum(Recette.montant)).filter(
-        Recette.structure_id == structure_id, Recette.source == 'patients', non_annulee,
-        Recette.source_id.in_(ids), Recette.source_type.in_(['vente_acte', 'vente_pharma', 'vente_proforma'])
-    ).group_by(Recette.source_id).all())
-    facture_vente = dict(db.session.query(Facture.id, Facture.vente_id).filter(
-        Facture.structure_id == structure_id, Facture.vente_id.in_(ids)).all())
-    paye_creance = defaultdict(float)
-    if facture_vente:
-        for fid, total in db.session.query(Recette.source_id, db.func.sum(Recette.montant)).filter(
-                Recette.structure_id == structure_id, Recette.source == 'patients', non_annulee,
-                Recette.source_type == 'facture', Recette.source_id.in_(list(facture_vente))).group_by(Recette.source_id).all():
-            paye_creance[facture_vente[fid]] += float(total or 0)
-    rembourse = dict(db.session.query(Depense.vente_id, db.func.sum(Depense.montant)).filter(
-        Depense.structure_id == structure_id, Depense.motif == 'remboursement_patient',
-        Depense.vente_id.in_(ids)).group_by(Depense.vente_id).all())
+    # ⭐ 2026-10-23 : 2 requêtes au lieu de 5, et seulement les colonnes utiles des ventes (avant :
+    # objets Vente complets, avec leurs colonnes JSON actes/produits — ~1 s rien que pour les
+    # charger). Chaque aller-retour vers la base coûte ~0,15 s : c'est leur nombre qui compte.
+    ventes = {r['id']: r for r in db.session.execute(_text("""
+        SELECT v.id, v.sous_total, v.prise_en_charge, v.prise_en_charge2, v.net_a_payer,
+               COALESCE((SELECT SUM(r.montant) FROM recettes r
+                         WHERE r.structure_id = :s AND r.source = 'patients' AND r.source_id = v.id
+                           AND r.source_type IN ('vente_acte', 'vente_pharma', 'vente_proforma')
+                           AND COALESCE(r.est_annulation, false) = false), 0) AS paye_vente,
+               COALESCE((SELECT SUM(r.montant) FROM recettes r JOIN factures f ON f.id = r.source_id
+                         WHERE r.structure_id = :s AND r.source = 'patients' AND r.source_type = 'facture'
+                           AND COALESCE(r.est_annulation, false) = false
+                           AND f.structure_id = :s AND f.vente_id = v.id), 0) AS paye_creance,
+               COALESCE((SELECT SUM(d.montant) FROM depenses d
+                         WHERE d.structure_id = :s AND d.motif = 'remboursement_patient' AND d.vente_id = v.id), 0) AS rembourse
+        FROM ventes v WHERE v.structure_id = :s AND v.id = ANY(:ids)
+    """), {'s': structure_id, 'ids': ids}).mappings()}
     # paiements des assurances : chaque facture assurance liste ses ventes ; ce qu'elle a réglé est
     # réparti sur ses ventes au prorata de leur part
     paye_assurance = defaultdict(float)
-    from sqlalchemy import text as _text
     for f in db.session.execute(_text("""SELECT details, montant_total, montant_rembourse FROM factures_assurance
                                          WHERE structure_id = :s AND COALESCE(montant_rembourse, 0) > 0"""),
                                 {'s': structure_id}).mappings():
@@ -659,11 +733,11 @@ def situation_ventes(structure_id, vente_ids):
                 paye_assurance[x['id']] += float(x.get('montant_assurance') or 0) * ratio
     res = {}
     for vid, v in ventes.items():
-        base = float(v.sous_total or 0)
-        part_assurances = max(float(v.prise_en_charge or 0), 0) + max(float(v.prise_en_charge2 or 0), 0)
-        net = float(v.net_a_payer or 0)
-        paye_patient = float(paye_vente.get(vid) or 0) + paye_creance.get(vid, 0.0)
-        remb = float(rembourse.get(vid) or 0)
+        base = float(v['sous_total'] or 0)
+        part_assurances = max(float(v['prise_en_charge'] or 0), 0) + max(float(v['prise_en_charge2'] or 0), 0)
+        net = float(v['net_a_payer'] or 0)
+        paye_patient = float(v['paye_vente'] or 0) + float(v['paye_creance'] or 0)
+        remb = float(v['rembourse'] or 0)
         assur_payee = min(paye_assurance.get(vid, 0.0), part_assurances)
         du_patients = max(net - paye_patient, 0.0)
         res[vid] = {
@@ -777,19 +851,23 @@ def detail_recettes_service(structure_id, date_debut, date_fin, service_id=None)
     """⭐ 2026-10-17 (patron) : lignes d'UN service sur la période (service_id None = non classé),
     avec la vente et le patient — pour le détail et l'impression. Mêmes filtres que le rapport."""
     from sqlalchemy import text
-    filtre = 'r.service_id = :sv' if service_id else 'r.service_id IS NULL'
+    # ⭐ 2026-10-23 : service_id='tous' = toutes les lignes de la période, chacune avec son service
+    # (export du détail complet en UNE requête au lieu d'une par service).
+    filtre = 'TRUE' if service_id == 'tous' else ('r.service_id = :sv' if service_id else 'r.service_id IS NULL')
     lignes = db.session.execute(text(f"""
         SELECT r.created_at, r.vente_id, v.numero_local, v.patient_nom, r.nom_acte, r.type_source,
-               r.quantite, r.prix, r.montant
+               r.quantite, r.prix, r.montant, r.service_id, COALESCE(s.nom, r.service_nom) AS service_nom
         FROM recettes_service r LEFT JOIN ventes v ON v.id = r.vente_id
+             LEFT JOIN services_hospitalisation s ON s.id = r.service_id
         WHERE r.structure_id = :s AND r.created_at >= :d AND r.created_at < :f AND {filtre}
           AND (r.vente_id IS NULL OR v.statut IS NULL OR v.statut != 'annulee')
         ORDER BY r.created_at, r.id
-    """), {'s': structure_id, 'd': date_debut, 'f': date_fin, 'sv': service_id}).mappings().all()
+    """), {'s': structure_id, 'd': date_debut, 'f': date_fin, 'sv': service_id if service_id != 'tous' else None}).mappings().all()
     situations = situation_ventes(structure_id, [l['vente_id'] for l in lignes])
     return [{
         'date': l['created_at'].strftime('%d/%m/%Y %H:%M') if l['created_at'] else '',
         'vente_id': l['vente_id'], 'numero': l['numero_local'] or l['vente_id'],
+        'service_id': l['service_id'], 'service_nom': (l['service_nom'] or LIBELLE_AUTRE) if l['service_id'] else LIBELLE_AUTRE,
         'patient': l['patient_nom'] or '', 'acte': l['nom_acte'], 'type': l['type_source'] or '',
         'groupe': sous_groupe_recette(l['nom_acte'], l['type_source']),
         'quantite': int(l['quantite'] or 1), 'prix': float(l['prix'] or 0), 'montant': float(l['montant'] or 0),
@@ -801,32 +879,31 @@ def generer_rapport_recettes_service(structure_id, date_debut, date_fin):
     """Agrège les RecetteService de la période par service — le rapport
     "Recettes par service" (comparaison + décision de ristourne)."""
     # ⭐ 2026-10-14 : hors ventes annulées (elles restaient comptées dans le rapport)
-    from models import Vente
-    ventes_annulees = db.session.query(Vente.id).filter(Vente.structure_id == structure_id,
-                                                        Vente.statut == 'annulee')
-    lignes = RecetteService.query.filter(
-        RecetteService.structure_id == structure_id,
-        RecetteService.created_at >= date_debut,
-        RecetteService.created_at < date_fin,
-        db.or_(RecetteService.vente_id.is_(None), ~RecetteService.vente_id.in_(ventes_annulees)),
-    ).all()
+    # ⭐ 2026-10-23 : lignes lues en brut (4 colonnes) plutôt qu'en objets RecetteService complets,
+    # et nom actuel du service pris dans la même requête : le rapport passait 5 s (structure 9).
+    from sqlalchemy import text
+    lignes = db.session.execute(text("""
+        SELECT r.vente_id, r.service_id, COALESCE(s.nom, r.service_nom) AS service_nom, r.montant
+        FROM recettes_service r
+        LEFT JOIN services_hospitalisation s ON s.id = r.service_id
+        WHERE r.structure_id = :s AND r.created_at >= :d AND r.created_at < :f
+          AND (r.vente_id IS NULL OR NOT EXISTS (
+                SELECT 1 FROM ventes v WHERE v.id = r.vente_id AND v.statut = 'annulee'))
+    """), {'s': structure_id, 'd': date_debut, 'f': date_fin}).mappings().all()
 
     # ⭐ 2026-10-17 (patron) : encaissé / dû assurances / dû patients par service
-    situations = situation_ventes(structure_id, [l.vente_id for l in lignes])
-    # nom ACTUEL du service (il a pu être renommé depuis la vente)
-    noms_actuels = {s.id: s.nom for s in ServiceHospitalisation.query.filter_by(structure_id=structure_id).all()}
+    situations = situation_ventes(structure_id, [l['vente_id'] for l in lignes])
     agrege = {}
     for l in lignes:
-        cle = l.service_id if l.service_id else 'non_classe'
+        cle = l['service_id'] if l['service_id'] else 'non_classe'
         if cle not in agrege:
-            agrege[cle] = {'service_id': l.service_id,
-                           'service_nom': (noms_actuels.get(l.service_id) or l.service_nom or LIBELLE_AUTRE)
-                                          if l.service_id else LIBELLE_AUTRE,
+            agrege[cle] = {'service_id': l['service_id'],
+                           'service_nom': (l['service_nom'] or LIBELLE_AUTRE) if l['service_id'] else LIBELLE_AUTRE,
                            'montant_total': 0.0,
                            'nb_lignes': 0, **{k: 0.0 for k in CLES_SITUATION}}
-        agrege[cle]['montant_total'] += float(l.montant or 0)
+        agrege[cle]['montant_total'] += float(l['montant'] or 0)
         agrege[cle]['nb_lignes'] += 1
-        for k, v in _repartir(l.montant, situations.get(l.vente_id)).items():
+        for k, v in _repartir(l['montant'], situations.get(l['vente_id'])).items():
             agrege[cle][k] += v
 
     resultat = sorted(agrege.values(), key=lambda r: r['montant_total'], reverse=True)

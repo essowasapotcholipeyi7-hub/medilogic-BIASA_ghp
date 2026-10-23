@@ -3943,9 +3943,16 @@ def export_recettes_service():
                                 'Quantité', 'Prix', 'Montant', 'Encaissé', 'Dû assurances', 'Dû patients',
                                 'Remboursé', 'Aides / remises'))
         totaux = [0.0] * 6
+        # ⭐ 2026-10-23 : toutes les lignes en UNE requête (service_id='tous'), puis réparties par
+        # service — avant : une requête (et tout le calcul de situation) par service, ~6 s.
+        if un_service:
+            par_service = {service_id: detail_recettes_service(structure_id, debut, fin, service_id)}
+        else:
+            par_service = {}
+            for l in detail_recettes_service(structure_id, debut, fin, 'tous'):
+                par_service.setdefault(l['service_id'], []).append(l)
         for sid, snom in a_traiter:
-            lignes_service = sorted(detail_recettes_service(structure_id, debut, fin, sid),
-                                    key=lambda l: ordre_groupes.get(l['groupe'], 99))
+            lignes_service = sorted(par_service.get(sid, []), key=lambda l: ordre_groupes.get(l['groupe'], 99))
             for l in lignes_service:
                 lignes_csv.append(ligne(snom or 'Autre', l['groupe'], l['date'], str(l['numero'] or ''), l['patient'], l['acte'],
                                         l['type'], l['quantite'], l['prix'], l['montant'], l['encaisse'],

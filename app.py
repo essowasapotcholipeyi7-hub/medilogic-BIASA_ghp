@@ -21964,6 +21964,7 @@ def api_convertir_proforma():
                 'prise_en_charge_amu': prise_amu,
                 'prise_en_charge_cac': prise_cac,
                 'type': a.get('type', 'acte'),
+                'service_id': a.get('service_id') or None,   # ⭐ 2026-10-23 : recettes par service (spécialité choisie)
                 # ⭐ Date(s) de prestation — portées par les articles venant
                 # d'une hospitalisation (voir api_facturer_hospitalisation,
                 # app.py) pour qu'un même acte répété à des jours différents
