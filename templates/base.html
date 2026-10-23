@@ -3140,12 +3140,18 @@ async function appliquerPropositionTheme() {
         {% endif %}
         <script>
         window.ENTETE_A4_HTML = {{ (_entete_page or '')|string|tojson }};
+        // ⭐ 2026-10-23 : en-tête court (logo, nom, adresse, téléphone) des documents internes — liste des ventes
+        window.ENTETE_A4_COURT_HTML = {{ ((entete_impression_a4(court=True) if _entete_page else '') or '')|string|tojson }};
         // Rapport imprimé dans une nouvelle fenêtre : en-tête de la structure juste après <body> (adresses
         // d'images rendues complètes : la fenêtre vide n'a pas l'adresse du site). Sans en-tête : html inchangé.
-        window.ajouterEnteteA4 = function (html) {
-            if (!window.ENTETE_A4_HTML || typeof html !== 'string') return html;
-            const entete = '<div class="entete-a4-structure" style="margin:0 0 4px;">'
-                + window.ENTETE_A4_HTML.replace(/(src|href)="\//g, '$1="' + location.origin + '/') + '</div>';
+        window.ajouterEnteteA4 = function (html, court) {
+            const source = (court && window.ENTETE_A4_COURT_HTML) || window.ENTETE_A4_HTML;
+            if (!source || typeof html !== 'string') return html;
+            // le style des tableaux du rapport (bordures, petite police) ne doit pas toucher l'en-tête
+            const entete = '<style>.entete-a4-structure table{width:100%;border-collapse:collapse;margin:0;}'
+                + '.entete-a4-structure td{border:0 !important;padding:1px 6px 1px 0 !important;background:none !important;white-space:normal !important;}</style>'
+                + '<div class="entete-a4-structure" style="margin:0 0 4px;">'
+                + source.replace(/(src|href)="\//g, '$1="' + location.origin + '/') + '</div>';
             const m = html.match(/<body[^>]*>/i);
             return m ? html.replace(m[0], m[0] + entete) : entete + html;
         };

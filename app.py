@@ -260,20 +260,27 @@ def modes_complementaires_structure():
 app.jinja_env.globals['modes_complementaires_structure'] = modes_complementaires_structure
 
 
-def entete_impression_a4(structure_id=None):
+def entete_impression_a4(structure_id=None, court=False):
     """⭐ 2026-10-22 (patron) : en-tête propre d'une structure — celui de ses comptes rendus d'analyses /
     d'imagerie, sans le titre d'examen — pour TOUTES ses impressions A4 (reçus, factures, proformas,
     ordonnances, billets, rapports, documents RH...). Une structure en a un si
     templates/entetes/structure_<id>.html existe ; sinon '' et chaque document garde son en-tête habituel.
-    Affiché par partials/entete_a4.html, jamais sur les tickets 80 mm."""
+    Affiché par partials/entete_a4.html, jamais sur les tickets 80 mm.
+    ⭐ 2026-10-23 : court=True -> structure_<id>_court.html s'il existe (documents internes comme la liste des
+    ventes : logo, nom, adresse, téléphone), sinon l'en-tête complet."""
     from markupsafe import Markup
     try:
         sid = int(structure_id or session.get('structure_id') or 0)
     except (TypeError, ValueError):
         return ''
-    nom = f'entetes/structure_{sid}.html'
-    if sid <= 0 or not os.path.exists(os.path.join(app.root_path, 'templates', 'entetes', f'structure_{sid}.html')):
+    if sid <= 0:
         return ''
+    dossier = os.path.join(app.root_path, 'templates', 'entetes')
+    fichier = f'structure_{sid}_court.html' if court and os.path.exists(os.path.join(dossier, f'structure_{sid}_court.html')) \
+        else f'structure_{sid}.html'
+    if not os.path.exists(os.path.join(dossier, fichier)):
+        return ''
+    nom = f'entetes/{fichier}'
     return Markup(render_template(nom, entete_structure_id=sid))
 
 

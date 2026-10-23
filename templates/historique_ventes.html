@@ -2235,7 +2235,7 @@ async function imprimerHistorique() {
     
     html += '</body></html>';
     
-    printWindow.document.write(ajouterEnteteA4(html));
+    printWindow.document.write(ajouterEnteteA4(html, true));
     printWindow.document.close();
     setTimeout(function() { printWindow.print(); }, 500);
 }
@@ -2269,7 +2269,7 @@ function imprimerStats() {
     html += '<h4>Top actes</h4><table><thead><tr><th>Acte</th><th>Quantité</th></tr></thead><tbody>' + document.getElementById('topActesTable').innerHTML + '</tbody></table>';
     html += '<h4>Top produits</h4><table><thead><tr><th>Produit</th><th>Quantité</th></tr></thead><tbody>' + document.getElementById('topProduitsTable').innerHTML + '</tbody></table>';
     html += '</body></html>';
-    printWindow.document.write(ajouterEnteteA4(html));
+    printWindow.document.write(ajouterEnteteA4(html, true));
     printWindow.document.close();
     setTimeout(function() { printWindow.print(); }, 500);
 }
@@ -2376,7 +2376,7 @@ async function imprimerAides() {
     
     html += '</body></html>';
     
-    printWindow.document.write(ajouterEnteteA4(html));
+    printWindow.document.write(ajouterEnteteA4(html, true));
     printWindow.document.close();
     setTimeout(function() { printWindow.print(); }, 500);
 }
