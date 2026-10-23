@@ -1682,6 +1682,106 @@ def conge_modifier_reprise(structure_id, id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ============================================================
+# LETTRE D'AUTORISATION (permission / congé) — patron, 2026-10-23
+# ============================================================
+# Présentation reprise d'une autorisation d'absence de la CNSS : en-tête de la structure (celui de ses
+# résultats, partials/entete_a4.html), référence, « RÉGULARISATION » si accordée après coup, titre souligné,
+# « <ville>, le <date> », destinataire, « Faisant suite à votre lettre du …, nous portons à votre
+# connaissance qu'il vous est accordé … », date de reprise, ampliations, signature.
+
+MOIS_LETTRE = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre',
+               'octobre', 'novembre', 'décembre']
+VILLES_LETTRE = ('Aného', 'Aneho', 'Kara', 'Sokodé', 'Sokode', 'Atakpamé', 'Atakpame', 'Kpalimé', 'Kpalime',
+                 'Tsévié', 'Tsevie', 'Dapaong', 'Bassar', 'Notsè', 'Notse', 'Vogan', 'Tabligbo', 'Baguida')
+
+
+def _date_lettre(d):
+    return f"{d.day} {MOIS_LETTRE[d.month - 1]} {d.year}" if d else ''
+
+
+def _ville_lettre(structure):
+    """Ville de « …, le <date> » d'après l'adresse de la structure ; Lomé par défaut."""
+    adresse = (structure or {}).get('adresse') or ''
+    for v in VILLES_LETTRE:
+        if v.lower() in adresse.lower():
+            return {'Aneho': 'Aného', 'Sokode': 'Sokodé', 'Atakpame': 'Atakpamé', 'Kpalime': 'Kpalimé',
+                    'Tsevie': 'Tsévié', 'Notse': 'Notsè'}.get(v, v)
+    return 'Lomé'
+
+
+def _duree_lettre(jours):
+    """« deux (2) jours », « un (1) jour », « une demi-journée »."""
+    from utils.nombres_lettres import nombre_en_lettres
+    j = float(jours or 0)
+    if j == 0.5:
+        return 'une demi-journée'
+    if j != int(j):
+        return f"{str(j).replace('.', ',')} jours"
+    n = int(j)
+    lettres = 'un' if n == 1 else nombre_en_lettres(n).lower()
+    return f"{lettres} ({n}) jour{'s' if n > 1 else ''}"
+
+
+def _reprise_apres(structure_id, fin):
+    """Lendemain de la fin, avancé s'il tombe un dimanche ou un jour férié (même règle que les congés)."""
+    if not fin:
+        return None
+    feries = _feries(structure_id)
+    jour = fin + timedelta(days=1)
+    while jour.weekday() == 6 or jour in feries:
+        jour += timedelta(days=1)
+    return jour
+
+
+def _numero_document(structure_id, type_document, suffixe, employe_id):
+    """N° d'ordre AAAA/NNN/SUFFIXE, compté PAR STRUCTURE (avant : toutes structures confondues)."""
+    annee = datetime.now().year
+    count = DocumentRH.query.filter(
+        DocumentRH.structure_id == structure_id, DocumentRH.type_document == type_document,
+        extract('year', DocumentRH.created_at) == annee).count() + 1
+    numero = f"{annee}/{str(count).zfill(3)}/{suffixe}"
+    try:
+        db.session.add(DocumentRH(structure_id=structure_id, type_document=type_document, numero_ordre=numero,
+                                  employe_id=employe_id, statut='genere'))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ Erreur enregistrement DocumentRH ({type_document}) : {e}")
+    return numero
+
+
+def _contexte_lettre_autorisation(structure_id, objet, employe, numero, titre_document, accorde, reprise,
+                                  regularisation, ampliations_service=True):
+    from utils.structure_info import get_structure_info
+    structure = get_structure_info(structure_id)
+    feminin = (employe.sexe or '').lower().startswith('f')
+    if objet.demande_ecrite_date:
+        intro = f"Faisant suite à votre lettre du {objet.demande_ecrite_date.strftime('%d/%m/%Y')}"
+    elif getattr(objet, 'created_at', None):
+        intro = f"Faisant suite à votre demande du {objet.created_at.strftime('%d/%m/%Y')}"
+    else:
+        intro = "Faisant suite à votre demande"
+    date_decision = objet.date_approbation or date.today()
+    return {
+        'structure': structure, 'employe': employe, 'objet': objet,
+        'titre_document': titre_document, 'regularisation': regularisation,
+        'reference': numero, 'demande_reference': objet.demande_reference,
+        'imprime_le': datetime.now().strftime('%d/%m/%Y %H:%M'),
+        'lieu_date': f"{_ville_lettre(structure)}, le {_date_lettre(date_decision)}",
+        'civilite': 'Madame' if feminin else 'Monsieur',
+        'destinataire': [f"{'MADAME' if feminin else 'MONSIEUR'} {(employe.nom or '').upper()} {(employe.prenom or '').upper()}".strip(),
+                         (employe.poste or '').upper(),
+                         (employe.service.nom.upper() if employe.service else '')],
+        'paragraphe': f"{intro}, nous portons à votre connaissance qu'il vous est accordé {accorde}.",
+        'motif': getattr(objet, 'motif', None),
+        'reprise': reprise,
+        'ampliations': ['Direction', "Service de l'intéressé" if not feminin else "Service de l'intéressée",
+                        'Intéressée' if feminin else 'Intéressé', 'Dossier', 'Chrono'],
+        'signataire': objet.signataire,
+    }
+
+
 @rh_bp.route('/conge/<int:id>/autorisation')
 @require_structure
 def conge_autorisation(structure_id, id):
@@ -1705,63 +1805,19 @@ def conge_autorisation(structure_id, id):
         flash('Aucun signataire défini pour ce congé', 'danger')
         return redirect(url_for('rh.conges'))
     
-    # Génération du numéro d'ordre
-    annee = datetime.now().year
-    count = DocumentRH.query.filter(
-        DocumentRH.type_document == 'conge',
-        extract('year', DocumentRH.created_at) == annee
-    ).count() + 1
-    numero_ordre = f"{annee}/{str(count).zfill(3)}/CONGE"
-
-    # ⭐ Enregistrer le document généré (le compteur ci-dessus n'a de sens
-    # que si chaque autorisation imprimée est réellement tracée)
-    try:
-        db.session.add(DocumentRH(
-            structure_id=structure_id, type_document='conge',
-            numero_ordre=numero_ordre, employe_id=employe.id,
-            statut='genere'
-        ))
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        print(f"⚠️ Erreur enregistrement DocumentRH (congé #{conge.id}): {e}")
-
-    # Détermination des pronoms
-    if employe.sexe == 'Feminin':
-        titre = 'Madame'
-        pronom = 'elle'
-        autorisee = 'autorisee'
-        interessee = 'interessee'
-        reprise = 'Elle reprendra'
-    else:
-        titre = 'Monsieur'
-        pronom = 'il'
-        autorisee = 'autorise'
-        interessee = 'interesse'
-        reprise = 'Il reprendra'
-    
-    # ⭐ En-tête bleu sombre imprimable — voir commentaire équivalent sur
-    # employe_detail(). Remplace le mécanisme localStorage/JS précédent
-    # (structure jamais transmise par la route, donc dépendait de ce
-    # qu'un AUTRE onglet avait pu stocker) par la source de vérité
-    # utilisée partout ailleurs pour l'impression.
-    from utils.structure_info import get_structure_info
-    structure = get_structure_info(structure_id)
-
-    return render_template('rh/autorisation_conge.html',
-        conge=conge,
-        employe=employe,
-        titre=titre,
-        pronom=pronom,
-        autorisee=autorisee,
-        interessee=interessee,
-        reprise=reprise,
-        numero_ordre=numero_ordre,
-        date_actuelle=datetime.now().strftime('%d/%m/%Y'),
-        datetime=datetime,
-        signataire=conge.signataire,
-        structure=structure,
-    )
+    # ⭐ 2026-10-23 (patron) : lettre façon autorisation d'absence de la CNSS — rh/lettre_autorisation.html
+    numero_ordre = _numero_document(structure_id, 'conge', 'CONGE', employe.id)
+    libelle = LIBELLES_TYPE_CONGE.get(conge.type_conge, f"congé ({conge.type_conge})")
+    accorde = (f"un {libelle} de {_duree_lettre(conge.nombre_jours)} à compter du "
+               f"{conge.date_debut.strftime('%d/%m/%Y')} au {conge.date_fin.strftime('%d/%m/%Y')} inclus")
+    if conge.type_conge == 'annuel':
+        accorde += f", au titre de l'exercice {conge.annee_utilisation or conge.date_debut.year}"
+    reprise = conge.date_reprise or _reprise_apres(structure_id, conge.date_fin)
+    regularisation = bool(conge.date_approbation and conge.date_debut and conge.date_approbation > conge.date_debut)
+    contexte = _contexte_lettre_autorisation(structure_id, conge, employe, numero_ordre, "AUTORISATION DE CONGÉ",
+                                             accorde, reprise, regularisation)
+    contexte['motif'] = None   # congé annuel : pas de motif sur la lettre
+    return render_template('rh/lettre_autorisation.html', **contexte)
 
 
 # ============================================================
@@ -2512,45 +2568,33 @@ def permission_autorisation(structure_id, id):
         flash('Aucun signataire défini pour cette permission', 'danger')
         return redirect(url_for('rh.permissions'))
     
-    # Génération du numéro d'ordre
-    annee = datetime.now().year
-    count = DocumentRH.query.filter(
-        DocumentRH.type_document == 'permission',
-        extract('year', DocumentRH.created_at) == annee
-    ).count() + 1
-    numero_ordre = f"{annee}/{str(count).zfill(3)}/PERM"
-
-    try:
-        db.session.add(DocumentRH(
-            structure_id=structure_id, type_document='permission',
-            numero_ordre=numero_ordre, employe_id=employe.id,
-            statut='genere'
-        ))
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        print(f"⚠️ Erreur enregistrement DocumentRH (permission #{permission.id}): {e}")
-
-    # Détermination du titre
-    titre = 'Madame' if employe.sexe == 'Feminin' else 'Monsieur'
-    autorisee = 'autorisee' if employe.sexe == 'Feminin' else 'autorise'
-    
-    # ⭐ En-tête bleu sombre imprimable — voir commentaire équivalent sur
-    # employe_detail()/conge_autorisation().
-    from utils.structure_info import get_structure_info
-    structure = get_structure_info(structure_id)
-
-    return render_template('rh/autorisation_permission.html',
-        permission=permission,
-        employe=employe,
-        titre=titre,
-        autorisee=autorisee,
-        numero_ordre=numero_ordre,
-        date_actuelle=datetime.now().strftime('%d/%m/%Y'),
-        datetime=datetime,
-        signataire=permission.signataire,
-        structure=structure,
-    )
+    # ⭐ 2026-10-23 (patron) : lettre façon autorisation d'absence de la CNSS — rh/lettre_autorisation.html
+    numero_ordre = _numero_document(structure_id, 'permission', 'PERM', employe.id)
+    if permission.type_permission == 'heures':
+        jour = permission.date_permission
+        h1 = permission.heure_debut.strftime('%H:%M') if permission.heure_debut else ''
+        h2 = permission.heure_fin.strftime('%H:%M') if permission.heure_fin else ''
+        accorde = f"une autorisation d'absence le {jour.strftime('%d/%m/%Y') if jour else ''} de {h1} à {h2}"
+        reprise = None
+        debut = jour
+    else:
+        debut = permission.date_debut or permission.date_permission
+        fin = permission.date_fin or debut
+        if debut and fin and debut != fin:
+            accorde = (f"une autorisation d'absence de {_duree_lettre(permission.nombre_jours)} à compter du "
+                       f"{debut.strftime('%d/%m/%Y')} au {fin.strftime('%d/%m/%Y')} inclus")
+        else:
+            accorde = f"une autorisation d'absence de {_duree_lettre(permission.nombre_jours)} le {debut.strftime('%d/%m/%Y') if debut else ''}"
+        reprise = _reprise_apres(structure_id, fin)
+    accorde += {'conge': f", déductible de votre congé annuel de l'exercice {(debut or date.today()).year}",
+                'salaire': ", non rémunérée (retenue sur votre salaire)",
+                'aucune': ", sans retenue sur votre salaire ni sur votre congé annuel"}.get(permission.deduction or '', '')
+    regularisation = bool(permission.saisie_retroactive or (permission.date_approbation and debut and permission.date_approbation > debut))
+    contexte = _contexte_lettre_autorisation(structure_id, permission, employe, numero_ordre, "AUTORISATION D'ABSENCE",
+                                             accorde, reprise, regularisation)
+    if permission.type_permission == 'heures':
+        contexte['reprise_texte'] = f"Vous reprendrez service le même jour à {h2}." if h2 else None
+    return render_template('rh/lettre_autorisation.html', **contexte)
 
 
 # ============================================================
