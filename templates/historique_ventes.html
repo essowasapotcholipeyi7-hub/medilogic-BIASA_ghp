@@ -1830,7 +1830,8 @@ async function imprimerHistorique() {
     // ⭐ 2026-10-21 (patron : « quand on imprime il n'y a pas de titre ») : titre imprimé (la barre du haut,
     // avec son titre, ne s'imprime pas)
     html += '<h2 style="margin-bottom:2px;">HISTORIQUE DES VENTES</h2>';
-    if (NOM_STRUCTURE) html += '<div class="header" style="margin-bottom:2px;font-size:14px;font-weight:bold;">' + escFR(NOM_STRUCTURE) + '</div>';
+    // ⭐ 2026-10-23 : nom de la structure seulement si elle n'a pas d'en-tête (il y figure déjà)
+    if (NOM_STRUCTURE && !window.ENTETE_A4_HTML) html += '<div class="header" style="margin-bottom:2px;font-size:14px;font-weight:bold;">' + escFR(NOM_STRUCTURE) + '</div>';
     html += '<div class="header">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
 
     // ⭐ NOUVEAU : l'état rappelle les filtres/tri appliqués — utile quand ce

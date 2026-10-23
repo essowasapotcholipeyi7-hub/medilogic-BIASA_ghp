@@ -3144,7 +3144,7 @@ async function appliquerPropositionTheme() {
         // d'images rendues complètes : la fenêtre vide n'a pas l'adresse du site). Sans en-tête : html inchangé.
         window.ajouterEnteteA4 = function (html) {
             if (!window.ENTETE_A4_HTML || typeof html !== 'string') return html;
-            const entete = '<div class="entete-a4-structure" style="margin:0 0 12px;">'
+            const entete = '<div class="entete-a4-structure" style="margin:0 0 4px;">'
                 + window.ENTETE_A4_HTML.replace(/(src|href)="\//g, '$1="' + location.origin + '/') + '</div>';
             const m = html.match(/<body[^>]*>/i);
             return m ? html.replace(m[0], m[0] + entete) : entete + html;
