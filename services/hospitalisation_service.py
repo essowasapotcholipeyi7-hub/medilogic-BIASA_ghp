@@ -13,7 +13,7 @@ rien au catalogue : il détecte le groupe par le nom, à la volée.
 """
 import re
 import unicodedata
-from datetime import timedelta
+from datetime import timedelta, date
 
 # ⭐ Import différé (pas de circularité : models.py n'importe jamais ce
 # module) — utilisé uniquement par charger_pbr_complementaires() ci-dessous.
@@ -252,6 +252,80 @@ def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes
         curseur = curseur + timedelta(days=jours)
 
     return lignes
+
+
+def _niveau_et_categorie(structure_id, nom, pbr_catalogue):
+    """Niveau de la grille et catégorie de salle d'une chambre — mêmes règles que construire_lignes_chambre :
+    catégorie mémorisée pour ce nom (CorrespondanceSalleAmu) sinon déduite du nom ; niveau de la structure
+    (Paramètres AMU) sinon d'après le tarif « Première semaine »."""
+    from models import ParametrageAmuCnss, CorrespondanceSalleAmu
+    param = ParametrageAmuCnss.get_ou_creer(structure_id)
+    categorie = (CorrespondanceSalleAmu.connues_pour(structure_id).get(str(nom or '').strip())
+                 or deduire_categorie_salle(nom))
+    niveau = param.niveau_soins or NIVEAU_PAR_TYPE.get(param.type_prestataire) or (
+        deviner_niveau(categorie, pbr_catalogue) if categorie else None)
+    return niveau, categorie, param.type_prestataire
+
+
+def lignes_chambre_vente(structure_id, article, nb_jours):
+    """⭐ 2026-10-23 (patron) : chambre P160 vendue directement (vente d'actes) à un assuré AMU — EXACTEMENT le
+    découpage du module d'hospitalisation (construire_lignes_chambre / _lignes_palier_depuis_grille) :
+    1re semaine, 8e au 14e jour, 15 jours et plus, PBR de la grille AMU du niveau de la structure (cabine 1-2
+    lits au niveau CHU / clinique privée : 5 000, 3 375, 1 625) ramené au prix clinique s'il est plus bas.
+    [{nom_periode, pbr, quantite}] ; None si la grille ne s'applique pas (catégorie ou niveau inconnus)."""
+    pbr_catalogue = article.get('pbr_catalogue') or article.get('pbr')
+    niveau, categorie, type_prestataire = _niveau_et_categorie(structure_id, article.get('nom'), pbr_catalogue)
+    if not (niveau and categorie) or int(nb_jours or 0) <= 0:
+        return None
+    acte = {'id': article.get('id'), 'nom': article.get('nom'),
+            'prix': float(article.get('prix_base') or article.get('prix') or 0), 'pbr': pbr_catalogue}
+    lignes = _lignes_palier_depuis_grille(acte, int(nb_jours), date.today(), niveau, categorie, type_prestataire)
+    if lignes is None:
+        return None
+    return [{'nom_periode': l['nom'], 'pbr': l['pbr'], 'quantite': l['quantite']} for l in lignes]
+
+
+def est_chambre_p160(article):
+    return 'P160' in str(article.get('nom') or '')
+
+
+def decouper_chambres_vente(structure_id, actes, est_assure_amu):
+    """Vente d'actes : regroupe les lignes d'une même chambre P160 (même acte, même service, même médecin) et
+    les redécoupe par période avec lignes_chambre_vente() — le serveur refait le découpage du panier, il ne
+    reprend pas le PBR envoyé par le navigateur. Chaque ligne découpée garde le nom du catalogue (pour les
+    tarifs) et porte `nom_periode` (nom de la ligne sur la vente, comme au module d'hospitalisation) et
+    `_chambre_decoupee`. Patient non assuré AMU ou chambre non prise en charge : lignes inchangées."""
+    if not est_assure_amu:
+        return actes
+    groupes, ordre = {}, []
+    for a in actes:
+        if est_chambre_p160(a) and a.get('prise_en_charge_amu', True) is not False:
+            cle = (a.get('nom'), str(a.get('service_id') or ''), str(a.get('medecin_id') or ''))
+            if cle not in groupes:
+                groupes[cle] = []
+                ordre.append(('groupe', cle))
+            groupes[cle].append(a)
+        else:
+            ordre.append(('ligne', a))
+    resultat = []
+    for genre, valeur in ordre:
+        if genre == 'ligne':
+            resultat.append(valeur)
+            continue
+        lignes_groupe = groupes[valeur]
+        total = sum(int(float(l.get('quantite') or 0)) for l in lignes_groupe)
+        decoupe = lignes_chambre_vente(structure_id, lignes_groupe[0], total)
+        if decoupe is None:
+            resultat.extend(lignes_groupe)
+            continue
+        modele = dict(lignes_groupe[0])
+        modele['pbr_catalogue'] = modele.get('pbr_catalogue') or modele.get('pbr')
+        for d in decoupe:
+            ligne = dict(modele, quantite=d['quantite'], pbr=d['pbr'], nom_periode=d['nom_periode'],
+                         _chambre_decoupee=True)
+            ligne['total'] = float(ligne.get('prix') or 0) * d['quantite']
+            resultat.append(ligne)
+    return resultat
 
 
 def _taux_amu_article(nom, taux_defaut):

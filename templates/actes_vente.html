@@ -704,7 +704,15 @@
 <script>
 // Vente d'actes : raccourcis sur le panier de la page (fonctions communes dans le partial ci-dessus)
 async function completerServicesObligatoires() { return completerServicesObligatoiresDans(panier, afficherPanier); }
-async function changerServiceLigne(index) { return changerServiceDeLigne(panier[index], afficherPanier); }
+async function changerServiceLigne(index) {
+    const item = panier[index];
+    if (!estChambreP160(item)) return changerServiceDeLigne(item, afficherPanier);
+    const groupe = lignesChambre(item);   // ⭐ chambre découpée par période : toutes ses lignes
+    return changerServiceDeLigne(item, () => {
+        groupe.forEach(x => { x.service_id = item.service_id; x.service_nom = item.service_nom; });
+        afficherPanier();
+    });
+}
 </script>
 
 <script>
@@ -1733,6 +1741,90 @@ function afficherAlerteScanActe(message, estErreur) {
 })();
 
 // 🔥 FONCTION POUR AJOUTER L'ACTE AU PANIER
+// ============================================
+// ⭐ 2026-10-23 (patron) : CHAMBRE P160 VENDUE ICI = MÊME CALCUL QU'À L'HOSPITALISATION
+// Assuré AMU : la chambre est découpée par période (1re semaine, 8e au 14e jour, 15 jours et plus),
+// PBR de la grille AMU du niveau de la structure (cabine 1-2 lits, niveau CHU : 5 000 / 3 375 / 1 625),
+// ramené au prix clinique s'il est plus bas — calculé par le serveur (/api/actes_vente/chambre_paliers),
+// qui refait le même découpage à l'enregistrement. Non assuré : une seule ligne, comme avant.
+// Les lignes d'une chambre gardent le nom du catalogue (tarifs) ; nom_periode = nom affiché.
+// ============================================
+function estChambreP160(item) { return !!(item && item.nom && String(item.nom).includes('P160')); }
+function cleChambre(item) { return [item.id, item.nom, item.service_id || '', item.medecin_id || ''].join('|'); }
+function lignesChambre(item) { const cle = cleChambre(item); return panier.filter(x => estChambreP160(x) && cleChambre(x) === cle); }
+let majChambresEnCours = false;
+let majChambresPlanifiee = false;
+
+async function majChambresP160() {
+    if (majChambresEnCours) return false;
+    const ctx = contexteTarificationActes();
+    const groupes = new Map();
+    panier.forEach(item => {
+        if (!estChambreP160(item)) return;
+        if (item.pbr_catalogue === undefined) item.pbr_catalogue = item.pbr;
+        const cle = cleChambre(item);
+        if (!groupes.has(cle)) groupes.set(cle, []);
+        groupes.get(cle).push(item);
+    });
+    const remplacements = new Map();
+    majChambresEnCours = true;
+    try {
+        for (const [cle, items] of groupes) {
+            const premier = items[0];
+            const total = items.reduce((s, it) => s + (parseInt(it.quantite) || 0), 0);
+            const amu = ctx.amu && premier.prise_en_charge_amu !== false;
+            const signature = (amu ? 'amu' : 'non') + ':' + total + ':' + premier.prix;
+            if (items.every(it => it.chambre_signature === signature)) continue;
+            let lignes = null;
+            if (amu && total > 0) {
+                const r = await fetch('/api/actes_vente/chambre_paliers', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id: premier.id, nom: premier.nom, prix: premier.prix,
+                                          pbr_catalogue: premier.pbr_catalogue, jours: total}),
+                }).then(r => r.json()).catch(() => null);
+                lignes = (r && r.success && r.lignes && r.lignes.length) ? r.lignes : null;
+            }
+            if (!lignes) lignes = [{nom_periode: null, pbr: premier.pbr_catalogue, quantite: total}];
+            remplacements.set(cle, {total: total, lignes: lignes.map(l => Object.assign({}, premier, {
+                quantite: l.quantite, pbr: l.pbr,
+                nom_periode: lignes.length > 1 ? l.nom_periode : null,
+                chambre_signature: signature,
+                total: (parseFloat(premier.prix) || 0) * l.quantite,
+                pbr_total: (parseFloat(l.pbr) || 0) * l.quantite,
+            }))});
+        }
+    } finally {
+        majChambresEnCours = false;
+    }
+    if (!remplacements.size) return false;
+    // le panier a pu changer pendant l'appel : on ne remplace qu'une chambre dont le nombre de jours n'a pas bougé
+    const fait = new Set();
+    const nouveau = [];
+    let change = false;
+    panier.forEach(item => {
+        if (!estChambreP160(item)) { nouveau.push(item); return; }
+        const cle = cleChambre(item);
+        const rempl = remplacements.get(cle);
+        const totalActuel = lignesChambre(item).reduce((s, it) => s + (parseInt(it.quantite) || 0), 0);
+        if (!rempl || rempl.total !== totalActuel) { nouveau.push(item); return; }
+        if (fait.has(cle)) return;
+        fait.add(cle);
+        rempl.lignes.forEach(l => nouveau.push(l));
+        change = true;
+    });
+    if (change) panier = nouveau;
+    return change;
+}
+
+function planifierMajChambres() {
+    if (majChambresPlanifiee || majChambresEnCours || !panier.some(estChambreP160)) return;
+    majChambresPlanifiee = true;
+    setTimeout(async () => {
+        majChambresPlanifiee = false;
+        if (await majChambresP160()) afficherPanier();
+    }, 0);
+}
+
 function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
                              priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC,
                              medecinId, medecinNom, medecinDecide, serviceId, serviceNom) {
@@ -1885,11 +1977,15 @@ async function modifierPrix(index, nouveauPrix) {
         afficherPanier();
         return;
     }
-    panier[index].prix = prix;
-    // ⭐ Prix saisi à la main : prime sur le tarif privé / non assuré automatique
-    // (voir tarifUnitaireActes).
-    panier[index].prix_modifie = true;
-    panier[index].total = prix * panier[index].quantite;
+    // ⭐ chambre découpée par période : le prix vaut pour toutes ses lignes
+    const lignesPrix = estChambreP160(panier[index]) ? lignesChambre(panier[index]) : [panier[index]];
+    lignesPrix.forEach(l => {
+        l.prix = prix;
+        // ⭐ Prix saisi à la main : prime sur le tarif privé / non assuré automatique
+        // (voir tarifUnitaireActes).
+        l.prix_modifie = true;
+        l.total = prix * l.quantite;
+    });
     afficherPanier();
 }
 
@@ -1912,7 +2008,13 @@ function modifQuantite(index, delta) {
 }
 
 function supprimerActe(index) {
-    panier.splice(index, 1);
+    // ⭐ chambre découpée par période : on retire la chambre entière
+    if (estChambreP160(panier[index]) && panier[index].nom_periode) {
+        const groupe = new Set(lignesChambre(panier[index]));
+        panier = panier.filter(x => !groupe.has(x));
+    } else {
+        panier.splice(index, 1);
+    }
     afficherPanier();
 }
 
@@ -1963,7 +2065,13 @@ function afficherPanier() {
         let row = tbody.insertRow();
 
         let cellNom = row.insertCell(0);
-        cellNom.textContent = item.nom;
+        cellNom.textContent = item.nom_periode || item.nom;
+        if (item.nom_periode) {
+            const infoPeriode = document.createElement('div');
+            infoPeriode.className = 'small text-muted';
+            infoPeriode.textContent = 'PBR AMU de cette période (même calcul qu\'à l\'hospitalisation)';
+            cellNom.appendChild(infoPeriode);
+        }
         // ⭐ 2026-10-23 : spécialité / service d'hospitalisation choisi (obligatoire pour ces actes)
         const requisLigne = choixServiceRequisPour(item.nom);
         if (requisLigne || item.service_nom) {
@@ -2115,6 +2223,7 @@ function onChangeTypeAideHospitaliere() {
 // CALCULER LES TOTAUX (VERSION CORRIGÉE)
 // ============================================
 function calculerTotal() {
+    planifierMajChambres();   // ⭐ chambre P160 : découpage par période (assuré AMU)
     // ⭐ Une seule formule (repartirPanierActes, miroir de
     // services/tarification_service.py) pour le total, les lignes du panier
     // et la finalisation — le serveur recalcule avec la même règle.
@@ -2754,6 +2863,7 @@ async function finaliserVente() {
         pbr_prive_modifie: item.pbr_prive_modifie || null,
         prix_non_assure: item.prix_non_assure !== undefined ? item.prix_non_assure : (PRIX_NON_ASSURE_PAR_ACTE[item.nom] || null),
         pbr: parseFloat(item.pbr || item.prix),
+        pbr_catalogue: item.pbr_catalogue !== undefined ? item.pbr_catalogue : null,
         quantite: parseInt(item.quantite),
         total: parseFloat(lignesFinales[i].total),
         prise_en_charge_amu: item.prise_en_charge_amu !== false,
@@ -3123,6 +3233,7 @@ async function soumettreVenteEnAttente() {
             nom: item.nom,
             prix: prix,
             pbr: item.pbr || prix,
+            pbr_catalogue: item.pbr_catalogue !== undefined ? item.pbr_catalogue : null,
             quantite: item.quantite,
             prise_en_charge_amu: item.prise_en_charge_amu !== false,
             prise_en_charge_cac: item.prise_en_charge_cac !== false,

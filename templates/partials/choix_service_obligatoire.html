@@ -106,6 +106,10 @@ async function completerServicesObligatoiresDans(lignes, rafraichir) {
         }
         item.service_id = choix.id;
         item.service_nom = choix.nom;
+        // même acte encore sans service plus bas (chambre découpée par période) : même choix
+        for (const autre of lignes) {
+            if (!autre.service_id && autre.nom === item.nom) { autre.service_id = choix.id; autre.service_nom = choix.nom; }
+        }
     }
     if (typeof rafraichir === 'function') rafraichir();
     return true;

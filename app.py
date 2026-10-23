@@ -12781,6 +12781,22 @@ def page_ventes_en_attente():
     return render_template('ventes_en_attente.html')
 
 
+@app.route('/api/actes_vente/chambre_paliers', methods=['POST'])
+@login_required
+def api_chambre_paliers_vente():
+    """⭐ 2026-10-23 (patron) : découpage d'une chambre P160 vendue en vente d'actes à un assuré AMU — même
+    calcul que le module d'hospitalisation (services/hospitalisation_service.lignes_chambre_vente), refait à
+    l'enregistrement de la vente. lignes = None : la grille AMU ne connaît pas cette chambre."""
+    from services.hospitalisation_service import lignes_chambre_vente
+    data = request.get_json(silent=True) or {}
+    try:
+        jours = int(float(data.get('jours') or 0))
+    except (TypeError, ValueError):
+        jours = 0
+    lignes = lignes_chambre_vente(session.get('structure_id'), data, jours) if jours > 0 else None
+    return jsonify({'success': True, 'lignes': lignes})
+
+
 @app.route('/api/ventes/actes', methods=['POST'])
 @login_required
 def api_add_acte_vente():
@@ -12857,7 +12873,14 @@ def api_add_acte_vente():
         # fausserait réellement un remboursement AMU (patron, 2026-10-01) —
         # voir utils/grille_amu_hospitalisation.py.
         est_assure_amu_vente = bool(assurance_principale_active) and str(data.get('assurance_nom', '')).lower().startswith('amu') and taux_assurance > 0
+        # ⭐ 2026-10-23 (patron) : chambre P160 d'un assuré AMU découpée par période (1re semaine / 8e-14e jour /
+        # 15 jours et plus) avec le PBR de la grille AMU, exactement comme au module d'hospitalisation — plus de
+        # refus au-delà de 7 jours. Le refus ne reste que si la grille ne connaît pas cette chambre.
+        from services.hospitalisation_service import decouper_chambres_vente
+        actes_data = decouper_chambres_vente(structure_id, actes_data, est_assure_amu_vente)
         for acte in actes_data:
+            if acte.get('_chambre_decoupee'):
+                continue
             erreur_p160 = erreur_p160_quantite_hors_hospitalisation(
                 acte.get('nom'), acte.get('quantite'), acte.get('prise_en_charge_amu', True), est_assure_amu_vente
             )
@@ -12906,6 +12929,12 @@ def api_add_acte_vente():
             if acte['nuit'] and acte.get('prix_non_assure_nuit') is None:
                 acte['prix_non_assure_nuit'] = prix_non_assure_nuit_vente.get(acte.get('nom'))
         calcul = repartir_panier(actes_data, contexte_tarif)
+        # chambre découpée : la ligne prend le nom de sa période (« … 8e jour au 14e jour »), après le calcul
+        # (tarifs, listes et PBR privés sont enregistrés sous le nom du catalogue)
+        for acte in actes_data:
+            if acte.pop('_chambre_decoupee', None):
+                acte['nom'] = acte.pop('nom_periode', None) or acte.get('nom')
+                acte['pbr_total'] = float(acte.get('pbr') or 0) * int(acte.get('quantite') or 0)
         cles_remise_vente = {v['cle'] for v in groupe_liste['variantes']} if (groupe_liste and groupe_liste['remise']) else set()
         for acte, ligne in zip(actes_data, calcul['lignes']):
             acte['prix_base'] = float(acte.get('prix_base') or acte.get('prix') or 0)   # prix catalogue envoyé par l'écran
