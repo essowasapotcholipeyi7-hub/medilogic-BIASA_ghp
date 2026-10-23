@@ -648,8 +648,10 @@ function repartirLignePharma(item, ctx) {
         const pbrPrive = pbrManuel > 0 ? pbrManuel
             : (ctx.appliquePbrPrive ? pbrCacVarianteValeurPharma(pbrCacMapPharma[item.nom], varianteLigne) : null);
         if (pbrPrive !== null && pbrPrive !== undefined) {
-            basePrivee = Math.min(pbrPrive, tarif) * quantite;   // ⭐ PBR ramené au prix (comme le serveur)
-            partPrivee = Math.min(basePrivee * ctx.tauxPrivee / 100, reste);
+            // ⭐ PBR ramené au prix (comme le serveur) ; 2026-10-23 : taux x min(PBR, reste après AMU) — base.html
+            const cac = partComplementairePbr(Math.min(pbrPrive, tarif) * quantite, reste, ctx.tauxPrivee, patientAssurance2);
+            basePrivee = cac.base;
+            partPrivee = cac.part;
         } else {
             basePrivee = reste;
             partPrivee = basePrivee * ctx.tauxPrivee / 100;

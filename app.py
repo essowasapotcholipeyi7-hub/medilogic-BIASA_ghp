@@ -25,7 +25,7 @@ from services import theme_service
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, remise_pct_listes, pas_arrondi_structure, appliquer_liste_tarif, lignes_sans_taux_liste, contexte_tarif_sejour, liste_tarif_patient, listes_tarif_patients, enregistrer_liste_tarif_patient, article_tarif_soin, soins_a_taux_liste, type_sejour, libelles_pbr, pbr_variante_patient, pbr_variantes_patients, erreur_pbr_variante_patient, enregistrer_pbr_variante_patient
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, remise_pct_listes, pas_arrondi_structure, appliquer_liste_tarif, lignes_sans_taux_liste, contexte_tarif_sejour, liste_tarif_patient, listes_tarif_patients, enregistrer_liste_tarif_patient, article_tarif_soin, soins_a_taux_liste, type_sejour, libelles_pbr, pbr_variante_patient, pbr_variantes_patients, erreur_pbr_variante_patient, enregistrer_pbr_variante_patient, mode_complementaire, modes_complementaires, oublier_modes_complementaires
 from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu, arrondir_part_patient, ligne_remise
 from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
@@ -241,6 +241,23 @@ def libelle_taux_pec_amu(articles, taux_assurance):
 
 
 app.jinja_env.globals['libelle_taux_pec_amu'] = libelle_taux_pec_amu
+
+
+def modes_complementaires_structure():
+    """⭐ 2026-10-23 : réglage de calcul des complémentaires de la structure connectée, pour les écrans
+    (window.MODES_COMPLEMENTAIRE, base.html) — seulement les compagnies sur l'ancienne règle."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return {}
+    try:
+        return modes_complementaires(structure_id)
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ modes_complementaires_structure: {e}")
+        return {}
+
+
+app.jinja_env.globals['modes_complementaires_structure'] = modes_complementaires_structure
 
 
 def entete_impression_a4(structure_id=None):
@@ -6052,6 +6069,13 @@ def recu(vente_id, type):
         applique_pbr_cac_recu = v.get('applique_pbr_cac', True)
         pbr_cac_variante_recu = v.get('pbr_cac_variante') or 'defaut'
         pbr_cac_par_acte_recu = charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_nom and applique_pbr_cac_recu) else {}
+        _assurances_mode_recu = v.get('assurances') or {}
+        if isinstance(_assurances_mode_recu, str):
+            try:
+                _assurances_mode_recu = json.loads(_assurances_mode_recu)
+            except ValueError:
+                _assurances_mode_recu = {}
+        mode_complementaire_recu = (_assurances_mode_recu or {}).get('calcul_complementaire') or 'base'
         # ⭐ 2026-10-19 : lignes vendues avec une liste de prix (Valeo : Expatriés, SMA) -> PBR de la liste
         listes_recu = charger_listes(structure_id, {it.get('liste_tarif') for it in tous_articles if isinstance(it, dict)})
         # liste « remise » (SMA) : jamais de part d'assurance sur ces lignes (comme à la vente)
@@ -6114,6 +6138,9 @@ def recu(vente_id, type):
                 'amu': bool(est_assure and assurance_principale_active), 'taux_amu': taux_assurance,
                 'privee': taux_assurance2 > 0, 'taux_privee': taux_assurance2,
                 'pbr_prive_par_acte': pbr_cac_par_acte_recu, 'variante': pbr_cac_variante_recu,
+                # ⭐ 2026-10-23 : méthode enregistrée avec la vente ; vente plus ancienne -> ancienne règle ('base'),
+                # pour que la réimpression redonne exactement les montants encaissés
+                'mode_complementaire': mode_complementaire_recu,
                 'appliquer_tarif_prive': False, 'listes': listes_recu,
                 # SMA : aucune part privée sur les lignes de la liste ; ligne absente de la liste -> assurance réelle
                 'listes_remise': cles_remise_recu, 'privee_patient': taux_assurance2 > 0,
@@ -11954,6 +11981,8 @@ def api_vente_pharma():
             'amu': est_assure_amu_vente, 'taux_amu': taux_assurance,
             'privee': assurance2_active_vente, 'taux_privee': taux_assurance2,
             'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom) if assurance2_active_vente else {},
+            # ⭐ 2026-10-23 : méthode de la complémentaire avec l'AMU (réglage de la compagnie, 'reste' par défaut)
+            'mode_complementaire': mode_complementaire(structure_id, assurance2_nom),
             'applique_pbr_prive': bool(data.get('applique_pbr_cac', True)),
             'variante': data.get('pbr_cac_variante') or 'defaut',
             'taux_aide': taux_aide, 'type_aide': type_aide,
@@ -12014,6 +12043,8 @@ def api_vente_pharma():
             } if assurance2_nom and taux_assurance2 > 0 else None
         }
         
+        # ⭐ 2026-10-23 : méthode de la complémentaire, relue à la réimpression du reçu
+        assurances_data['calcul_complementaire'] = contexte_tarif.get('mode_complementaire', 'reste')
         print(f"📊 Assurances: {assurances_data}")
         print(f"💰 Montant donné: {montant_donne} FCFA, Rendu: {rendu} FCFA")
         print(f"📊 Base remboursement (PBR): {base_remboursement} FCFA")
@@ -12901,6 +12932,8 @@ def api_add_acte_vente():
             'amu': est_assure_amu_vente, 'taux_amu': taux_assurance,
             'privee': assurance2_active_vente, 'taux_privee': taux_assurance2,
             'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom) if assurance2_active_vente else {},
+            # ⭐ 2026-10-23 : méthode de la complémentaire avec l'AMU (réglage de la compagnie, 'reste' par défaut)
+            'mode_complementaire': mode_complementaire(structure_id, assurance2_nom),
             'applique_pbr_prive': applique_pbr_prive_vente,
             'variante': data.get('pbr_cac_variante') or 'defaut',
             'taux_aide': taux_aide, 'type_aide': type_aide,
@@ -12987,6 +13020,8 @@ def api_add_acte_vente():
         if pas_arrondi_vente:
             assurances_data['arrondi'] = {'pas': pas_arrondi_vente, 'ecart': round(calcul.get('arrondi', 0), 2)}
         
+        # ⭐ 2026-10-23 : méthode de la complémentaire, relue à la réimpression du reçu
+        assurances_data['calcul_complementaire'] = contexte_tarif.get('mode_complementaire', 'reste')
         print(f"📊 Assurances: {assurances_data}")
         print(f"💰 Montant donné: {montant_donne} FCFA, Rendu: {rendu} FCFA")
         print(f"📊 Base remboursement (PBR): {base_remboursement} FCFA")
@@ -13874,6 +13909,44 @@ def page_pbr_complementaires():
     Liste chargée en JS (même esprit que gestion_stock.html) pour un
     premier affichage instantané."""
     return render_template('pbr_complementaires.html')
+
+
+# ⭐ 2026-10-23 (patron) : méthode de calcul de chaque complémentaire quand le patient a aussi l'AMU —
+# 'reste' (défaut) : taux x min(son PBR, ce que l'AMU laisse) ; 'base' : taux x son PBR, plafonné à ce que
+# l'AMU laisse (ancienne règle, pour une convention qui le prévoit). Voir tarification_service.repartir_ligne.
+@app.route('/api/compagnies-complementaires/calcul', methods=['GET'])
+@login_required
+def api_calcul_compagnies_complementaires():
+    structure_id = session.get('structure_id')
+    lignes = CompagnieComplementaire.query.filter_by(structure_id=structure_id).all()
+    return jsonify({l.nom: (l.calcul_complementaire or 'reste') for l in lignes if l.nom})
+
+
+@app.route('/api/compagnies-complementaires/calcul', methods=['POST'])
+@login_required
+def api_regler_calcul_compagnie_complementaire():
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        nom = (data.get('compagnie') or '').strip()
+        mode = data.get('mode')
+        if not nom or mode not in ('reste', 'base'):
+            return jsonify({'success': False, 'error': 'Compagnie ou méthode invalide'}), 400
+        # même compagnie quelle que soit la casse (« Olea » / « OLEA ») : toutes ses lignes suivent le réglage
+        lignes = [l for l in CompagnieComplementaire.query.filter_by(structure_id=structure_id).all()
+                  if (l.nom or '').strip().upper() == nom.upper()]
+        if not lignes:
+            ligne = CompagnieComplementaire(structure_id=structure_id, nom=nom)
+            db.session.add(ligne)
+            lignes = [ligne]
+        for ligne in lignes:
+            ligne.calcul_complementaire = mode
+        db.session.commit()
+        oublier_modes_complementaires(structure_id)
+        return jsonify({'success': True, 'compagnie': nom, 'mode': mode})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/pbr-complementaires', methods=['GET'])
@@ -21398,6 +21471,7 @@ def api_creer_proforma():
             'privee': taux2_lignes > 0, 'taux_privee': taux2_lignes,
             'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom_pour_pbr) if (data.get('assurance2_active', False) and assurance2_nom_pour_pbr) else {},
             'applique_pbr_prive': bool(applique_pbr_cac), 'variante': pbr_cac_variante,
+            'mode_complementaire': mode_complementaire(structure_id, assurance2_nom_pour_pbr),   # ⭐ 2026-10-23
         }
         # ⭐ 2026-10-19 : liste de prix choisie (Clinique Valeo : SMA, Expatriés) — voir appliquer_liste_tarif
         sans_taux_liste = lignes_sans_taux_liste(structure_id, articles, data.get('liste_tarif'))
@@ -21559,6 +21633,8 @@ def api_creer_proforma():
                 'taux_original': taux_original
             } if assurance2_active and assurance2_nom else None
         }
+        # ⭐ 2026-10-23 : méthode de la complémentaire, relue à la réimpression du reçu
+        assurances_data['calcul_complementaire'] = contexte_proforma.get('mode_complementaire', 'reste')
         if groupe_liste_proforma:
             assurances_data['liste_tarif'] = groupe_liste_proforma['groupe']
         if pas_arrondi_proforma:
@@ -22163,6 +22239,7 @@ def api_convertir_proforma():
                 'amu': bool(est_assure and taux_assurance > 0), 'taux_amu': taux_assurance,
                 'privee': taux2_conv > 0, 'taux_privee': taux2_conv,
                 'pbr_prive_par_acte': pbr_cac_par_acte, 'variante': pbr_cac_variante,
+                'mode_complementaire': mode_complementaire(structure_id, assurance2_nom),   # ⭐ 2026-10-23
                 'appliquer_tarif_prive': False, 'listes': listes_conv, 'privee_patient': taux2_conv > 0,
                 'listes_remise': cles_remise_conv, 'remise_pct': remise_pct_conv,
             })
@@ -22277,6 +22354,8 @@ def api_convertir_proforma():
                 'montant_prise_en_charge': prise_en_charge2
             } if assurance2_nom and taux_assurance2 > 0 else None
         }
+        # ⭐ 2026-10-23 : méthode de la complémentaire, relue à la réimpression du reçu
+        assurances_data['calcul_complementaire'] = mode_complementaire(structure_id, assurance2_nom)
         if groupe_liste_conv:
             assurances_data['liste_tarif'] = groupe_liste_conv
         if pas_arrondi_conv:
@@ -23823,6 +23902,8 @@ def api_facturer_hospitalisation(hospit_id):
                                 'montant_prise_en_charge': prise_en_charge2, 'active': assurance2_active}
                               if assurance2_active else None,
         }
+        # ⭐ 2026-10-23 : méthode de la complémentaire, relue à la réimpression du reçu
+        assurances_data['calcul_complementaire'] = info_tarif['contexte'].get('mode_complementaire', 'reste')
         if info_tarif['groupe']:
             assurances_data['liste_tarif'] = info_tarif['groupe']['groupe']
         if pas_arrondi_sejour:
@@ -24516,6 +24597,8 @@ def api_facturer_soins_ambulatoires(episode_id):
                                 'montant_prise_en_charge': prise_en_charge2, 'active': assurance2_active}
                               if assurance2_active else None,
         }
+        # ⭐ 2026-10-23 : méthode de la complémentaire, relue à la réimpression du reçu
+        assurances_data['calcul_complementaire'] = info_tarif['contexte'].get('mode_complementaire', 'reste')
         if info_tarif['groupe']:
             assurances_data['liste_tarif'] = info_tarif['groupe']['groupe']
         if pas_arrondi_sejour:
@@ -24707,6 +24790,7 @@ def _calculer_montants_proforma(structure_id, data, articles, applique_pbr_cac=T
         'privee': taux_assurance2 > 0, 'taux_privee': taux_assurance2,
         'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_active and assurance2_nom) else {},
         'applique_pbr_prive': bool(applique_pbr_cac), 'variante': pbr_cac_variante or 'defaut',
+        'mode_complementaire': mode_complementaire(structure_id, assurance2_nom),   # ⭐ 2026-10-23
     }
     # ⭐ 2026-10-23 (patron) : chambre P160 d'un assuré AMU découpée par période (comme à la création)
     from services.hospitalisation_service import decouper_chambres_vente, est_assure_amu_nom

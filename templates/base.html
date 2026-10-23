@@ -2059,6 +2059,22 @@
        (texte gris pâle, voire fond noir, sur les reçus imprimés en thème sombre). #}
     {# ⭐ 2026-10-16 : K233 (césarienne) remboursé à 100 % seulement en structure publique #}
     <script>window.STRUCTURE_PUBLIQUE = {{ 'true' if structure_publique else 'false' }};</script>
+    {# ⭐ 2026-10-23 (patron, d'après un décompte OLEA réel) : part de la complémentaire quand le patient a aussi
+       l'AMU — même règle que services/tarification_service.repartir_ligne, pour tous les paniers #}
+    {% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}
+    <script>
+    window.MODES_COMPLEMENTAIRE = {{ modes_complementaires_structure()|tojson }};
+    // basePrivee = min(PBR de la compagnie, prix) x quantité ; reste = ce que l'AMU laisse sur la ligne.
+    // Règle par défaut : taux x le plus petit des deux (reste 20 000, PBR 15 000 -> taux x 15 000 ;
+    // PBR >= 20 000 -> taux x 20 000). Compagnie réglée sur l'ancienne règle : taux x PBR, plafonné au reste.
+    window.partComplementairePbr = function (basePrivee, reste, taux, compagnie) {
+        const mode = (window.MODES_COMPLEMENTAIRE || {})[String(compagnie || '').trim().toUpperCase()] || 'reste';
+        if (mode === 'base') return { base: basePrivee, part: Math.min(basePrivee * taux / 100, reste) };
+        const base = Math.min(basePrivee, reste);
+        return { base: base, part: base * taux / 100 };
+    };
+    </script>
+    {% endif %}
     {% if theme_css and not (cacher_navigation is defined and cacher_navigation) %}<style id="themeStructure">{{ theme_css|safe }}</style>{% endif %}
     {# ⭐ 2026-10-14 : formatEntier / formatFCFA (« 3 450 567 FCFA ») et montants masqués jusqu'au clic #}
     <script src="{{ url_for('static', filename='js/montants.js') }}"></script>

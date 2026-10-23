@@ -16,9 +16,28 @@
     Contrairement à l'AMU (un seul PBR par acte), chaque compagnie complémentaire (SUNU, OLEA, GTA, FIDELIA...)
     a sa <strong>propre</strong> base de remboursement — et pas forcément sur tous les actes/médicaments.
     Un acte <strong>sans entrée ici</strong> pour une compagnie donnée continue de fonctionner comme avant
-    (la complémentaire prend tout le reste après l'AMU, sans plafond) : remplissez cette liste progressivement,
+    (la complémentaire applique son taux sur tout ce que l'AMU laisse) : remplissez cette liste progressivement,
     au fur et à mesure que vous connaissez les vraies bases négociées. La compagnie se choisit dans la liste déjà
     connue (fiches patients) pour éviter qu'un même assureur soit orthographié différemment ici et là.
+</div>
+
+<!-- ⭐ 2026-10-23 (patron, d'après un décompte OLEA réel) : comment chaque complémentaire calcule sa part
+     quand le patient a aussi l'AMU — voir /api/compagnies-complementaires/calcul -->
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="fas fa-calculator me-1"></i> Calcul avec l'AMU (patient qui a l'AMU et cette assurance)</span>
+    </div>
+    <div class="card-body">
+        <p class="small text-muted mb-2">
+            <strong>Par défaut</strong>, l'assurance applique son taux sur ce que l'AMU laisse, sans dépasser son propre PBR :
+            il reste 20 000 F après l'AMU et son PBR est de 15 000 F → 80 % × 15 000 = 12 000 F ;
+            son PBR est de 25 000 F → 80 % × 20 000 = 16 000 F, le patient paie 4 000 F.
+            Ne choisissez l'<strong>ancienne règle</strong> (taux × son PBR, plafonné à ce que l'AMU laisse : le patient ne
+            paie souvent rien) que si la convention de cette assurance le prévoit.
+        </p>
+        <div id="calculCompagnies" class="row g-2"><div class="text-muted small">Chargement...</div></div>
+        <div id="calculCompagniesMsg" class="small mt-2"></div>
+    </div>
 </div>
 
 <div class="card">
@@ -148,6 +167,54 @@ function chargerCompagniesConnues() {
 }
 
 function echapper(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+
+// ⭐ 2026-10-23 : méthode de calcul de chaque compagnie quand le patient a aussi l'AMU
+async function chargerCalculCompagnies() {
+    const zone = document.getElementById('calculCompagnies');
+    try {
+        const [compagnies, modes] = await Promise.all([
+            fetch('/api/compagnies-complementaires').then(r => r.json()),
+            fetch('/api/compagnies-complementaires/calcul').then(r => r.json()),
+        ]);
+        const modeDe = {};
+        Object.entries(modes || {}).forEach(([nom, mode]) => { modeDe[nom.trim().toUpperCase()] = mode; });
+        const noms = (compagnies || []).map(c => typeof c === 'string' ? c : (c.nom || '')).filter(Boolean);
+        if (!noms.length) { zone.innerHTML = '<div class="text-muted small">Aucune compagnie complémentaire connue pour le moment.</div>'; return; }
+        zone.innerHTML = noms.map((nom, i) => {
+            const mode = modeDe[nom.trim().toUpperCase()] || 'reste';
+            return `<div class="col-md-6 col-lg-4">
+                <label class="form-label small fw-semibold mb-1" for="calculCie${i}">${echapper(nom)}</label>
+                <select class="form-select form-select-sm" id="calculCie${i}" data-compagnie="${echapper(nom)}" onchange="reglerCalculCompagnie(this)">
+                    <option value="reste" ${mode === 'reste' ? 'selected' : ''}>Taux sur le reste après AMU, sans dépasser son PBR (par défaut)</option>
+                    <option value="base" ${mode === 'base' ? 'selected' : ''}>Ancienne règle : taux sur son PBR, plafonné au reste</option>
+                </select>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        zone.innerHTML = '<div class="text-danger small">Chargement impossible.</div>';
+    }
+}
+
+async function reglerCalculCompagnie(select) {
+    const msg = document.getElementById('calculCompagniesMsg');
+    const compagnie = select.dataset.compagnie;
+    msg.className = 'small mt-2 text-muted';
+    msg.textContent = 'Enregistrement...';
+    try {
+        const d = await fetch('/api/compagnies-complementaires/calcul', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({compagnie: compagnie, mode: select.value})
+        }).then(r => r.json());
+        if (!d.success) throw new Error(d.error || 'Erreur');
+        msg.className = 'small mt-2 text-success';
+        msg.textContent = compagnie + ' : ' + (select.value === 'base' ? 'ancienne règle' : 'taux sur le reste après AMU (par défaut)')
+            + ". S'applique aux prochaines ventes et proformas ; les ventes déjà faites ne changent pas.";
+    } catch (e) {
+        msg.className = 'small mt-2 text-danger';
+        msg.textContent = 'Échec : ' + e.message;
+    }
+}
+document.addEventListener('DOMContentLoaded', chargerCalculCompagnies);
 
 // Cases à cocher des compagnies (style bouton) — `cochees` reste coché ; une
 // pastille marque celles déjà configurées pour l'acte choisi.

@@ -769,7 +769,7 @@ function contexteTarifProforma() {
     // ⭐ liste choisie (Valeo) : son tarif s'applique ; liste « remise » (SMA) : aucune part privée
     const liste = groupeListeActif();
     return {amu: tauxAMU > 0, tauxAMU: tauxAMU, privee: liste ? true : privee, priveePatient: privee, liste: liste,
-            tauxPrivee: liste ? (privee ? taux2 : 0) : taux2};
+            tauxPrivee: liste ? (privee ? taux2 : 0) : taux2, compagnie: assurance2Nom};
 }
 function tauxAMUArticleProforma(nom, taux) {
     if (nom && nom.includes('O101')) return 100;
@@ -808,7 +808,9 @@ function repartirLigneProforma(item, ctx, carte) {
         const reste = Math.max(total - partAMU, 0);
         const e = entreeLigne;
         const pbrPrive = (e && e.pbr_1 !== null && e.pbr_1 !== undefined && e.pbr_1 > 0) ? e.pbr_1 : null;
-        partPrivee = pbrPrive !== null ? Math.min(Math.min(pbrPrive, tarif) * q * ctx.tauxPrivee / 100, reste) : reste * ctx.tauxPrivee / 100;
+        // ⭐ 2026-10-23 : taux x min(PBR de la compagnie, reste après AMU) — partComplementairePbr (base.html)
+        partPrivee = pbrPrive !== null ? partComplementairePbr(Math.min(pbrPrive, tarif) * q, reste, ctx.tauxPrivee, ctx.compagnie).part
+                                       : reste * ctx.tauxPrivee / 100;
     }
     const reductionListe = (source === 'base' && ctx.liste) ? reductionApresAMU(item, ctx.liste, amuLigne, total, partAMU, partPrivee) : 0;
     return {tarif: tarif, source: source, total: total, partAMU: partAMU, partPrivee: partPrivee, reductionListe: reductionListe,
@@ -2383,6 +2385,7 @@ function afficherModalConversion(data) {
     // (mettreAJourTotauxConversion() ci-dessous), donc un second appel une
     // fois la map reçue pour refléter le plafond dès que possible.
     pbrCacConversionMap = {};
+    window.compagnieConversion = data.assurance2_nom || '';   // ⭐ 2026-10-23 : réglage de calcul de la compagnie
     window.conversionArrondie = !!((data.assurances_data || {}).arrondi);   // ⭐ arrondi choisi à la création
     // ⭐ 2026-10-19 : lignes tarifées avec une liste (Valeo) -> PBR de la liste
     const groupeConv = groupeListeDesLignes(data.articles || []);
@@ -2917,7 +2920,9 @@ function partCACArticleConversion(item, taux2) {
     const appliquePbrCac = toggleApplique ? toggleApplique.checked : true;
     if (appliquePbrCac && carteLigne[item.nom] !== undefined && pbrCacVarianteValeur(carteLigne[item.nom], 'defaut') > 0) {
         const variante = document.getElementById('convertPbrCacVariante')?.value || 'defaut';
-        baseCAC = Math.min(baseCAC, pbrCacVarianteValeur(carteLigne[item.nom], variante) * quantite);
+        // ⭐ 2026-10-23 : même règle que la vente et le serveur — partComplementairePbr (base.html)
+        const pbrLigne = Math.min(pbrCacVarianteValeur(carteLigne[item.nom], variante), prix) * quantite;
+        return partComplementairePbr(pbrLigne, baseCAC, taux2, window.compagnieConversion).part;
     }
     return (baseCAC * taux2) / 100;
 }
@@ -3950,7 +3955,7 @@ function contexteTarifModif() {
     const liste = groupeListeDesLignes(window.modifArticles || []);
     if (liste && liste.variantes.some(v => !LISTES_MAPS[v.cle])) chargerCartesListe(liste).then(() => calculerTotalModif());
     return {amu: tauxAMU > 0, tauxAMU: tauxAMU, privee: liste ? true : privee, priveePatient: privee, liste: liste,
-            tauxPrivee: liste ? (privee ? taux2 : 0) : taux2, nom2: nom2};
+            tauxPrivee: liste ? (privee ? taux2 : 0) : taux2, nom2: nom2, compagnie: nom2};
 }
 function groupeListeDesLignes(lignes) {
     const cles = new Set((lignes || []).map(a => a.liste_tarif).filter(Boolean));

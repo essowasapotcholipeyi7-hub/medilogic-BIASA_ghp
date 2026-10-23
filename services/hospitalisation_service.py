@@ -364,6 +364,42 @@ def charger_pbr_complementaires(structure_id, compagnie):
     return _lire_tarifs_compagnies(structure_id, [compagnie]).get(compagnie, {})
 
 
+# ⭐ 2026-10-23 : méthode de calcul de chaque complémentaire quand le patient a aussi l'AMU — réglage
+# CompagnieComplementaire.calcul_complementaire ('reste' par défaut, 'base' = ancienne règle). Lu au plus une
+# fois par minute et par structure (Neon ≈ 0,15 s par aller-retour) ; oublié tout de suite après un changement.
+_modes_complementaires_memo = {}
+
+
+def modes_complementaires(structure_id):
+    """{NOM DE LA COMPAGNIE EN MAJUSCULES: 'base'} — seulement les compagnies réglées sur l'ancienne règle ;
+    toutes les autres suivent la règle par défaut ('reste'). Sert aussi aux écrans (window.MODES_COMPLEMENTAIRE)."""
+    import time
+    if not structure_id:
+        return {}
+    memo = _modes_complementaires_memo.get(structure_id)
+    if memo and time.time() - memo[0] < 60:
+        return memo[1]
+    from models import db
+    from sqlalchemy import text
+    lignes = db.session.execute(text(
+        "SELECT nom FROM compagnies_complementaires WHERE structure_id = :s AND calcul_complementaire = 'base'"),
+        {'s': structure_id}).fetchall()
+    modes = {str(l[0]).strip().upper(): 'base' for l in lignes}
+    _modes_complementaires_memo[structure_id] = (time.time(), modes)
+    return modes
+
+
+def oublier_modes_complementaires(structure_id):
+    _modes_complementaires_memo.pop(structure_id, None)
+
+
+def mode_complementaire(structure_id, compagnie):
+    """'reste' ou 'base' pour la complémentaire `compagnie` de cette structure (contexte['mode_complementaire'])."""
+    if not compagnie:
+        return 'reste'
+    return modes_complementaires(structure_id).get(str(compagnie).strip().upper(), 'reste')
+
+
 def _f(v):
     return float(v) if v is not None else None
 
@@ -637,7 +673,9 @@ def contexte_tarif_sejour(sejour, pbr_cac_par_acte=None, variante='defaut'):
     privee = bool(sejour.a_cac and taux2 > 0)
     contexte = {'amu': bool(sejour.est_assure_amu), 'taux_amu': sejour.taux_assurance_effectif,
                 'privee': privee, 'taux_privee': taux2, 'pbr_prive_par_acte': pbr_cac_par_acte or {},
-                'variante': variante or 'defaut'}
+                'variante': variante or 'defaut',
+                # ⭐ 2026-10-23 : méthode de la complémentaire avec l'AMU (réglage de la compagnie)
+                'mode_complementaire': mode_complementaire(sid, getattr(sejour, 'assurance2_nom', None))}
     nom_liste, variantes = liste_choisie_sejour(sid, type_sejour(sejour), sejour.id)
     if nom_liste is None:   # rien choisi pour ce séjour : liste de la fiche patient (Valeo : SMA, Expatriés)
         nom_liste = liste_tarif_patient(sid, getattr(sejour, 'patient_id', None))

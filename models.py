@@ -3217,6 +3217,10 @@ class CompagnieComplementaire(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     structure_id = db.Column(db.Integer, nullable=False)
     nom = db.Column(db.String(150), nullable=False)
+    # ⭐ 2026-10-23 : patient avec AMU + cette complémentaire — 'reste' (défaut) : taux x min(son PBR, ce que
+    # l'AMU laisse) ; 'base' : taux x son PBR, plafonné à ce que l'AMU laisse (ancienne règle). Voir
+    # services/tarification_service.repartir_ligne et migrate_calcul_complementaire.py.
+    calcul_complementaire = db.Column(db.String(10), default='reste')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

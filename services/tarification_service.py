@@ -230,6 +230,12 @@ def tarif_unitaire(article, contexte):
     return prix, 'base'
 
 
+# ⭐ 2026-10-23 : méthode de la complémentaire quand le patient a aussi l'AMU (contexte['mode_complementaire'],
+# réglage CompagnieComplementaire.calcul_complementaire) — 'reste' par défaut, 'base' = ancienne règle.
+MODE_COMPLEMENTAIRE_RESTE = 'reste'
+MODE_COMPLEMENTAIRE_BASE = 'base'
+
+
 def repartir_ligne(article, contexte):
     """Répartition d'UNE ligne.
 
@@ -237,7 +243,7 @@ def repartir_ligne(article, contexte):
                prise_en_charge_cac?, pbr_variante?, pbr_prive_modifie?}
     contexte : {amu: bool, taux_amu: %, privee: bool, taux_privee: %,
                 pbr_prive_par_acte: {nom: {pbr_1, pbr_2, tarif_prive}},
-                variante: 'defaut'|'alternatif'}
+                variante: 'defaut'|'alternatif', mode_complementaire: 'reste'|'base'}
     Valeurs NON arrondies (le panier arrondit une fois, après la somme).
     """
     q = article.get('quantite')
@@ -280,12 +286,19 @@ def repartir_ligne(article, contexte):
         else:
             pbr_prive = pbr_prive_valeur(entree, variante, bool(article.get('nuit'))) if contexte.get('applique_pbr_prive', True) else None
         if pbr_prive is not None:
-            # Part privée = taux x PBR privé (pas réduite par l'AMU), la PART
-            # restant plafonnée à ce qui reste après l'AMU (patient >= 0).
             # ⭐ 2026-10-21 : un PBR plus haut que le prix est ramené au prix (comme l'AMU) — l'assureur ne
             # rembourse jamais plus que son taux du prix réel (ex. PBR ONMT de biologie au-dessus du prix Valeo)
             base_privee = min(pbr_prive, tarif) * quantite
-            part_privee = min(base_privee * taux_privee / 100, reste)
+            if contexte.get('mode_complementaire') == MODE_COMPLEMENTAIRE_BASE:
+                # Ancienne règle (réglage de la compagnie) : taux x PBR privé, la PART plafonnée à ce qui
+                # reste après l'AMU.
+                part_privee = min(base_privee * taux_privee / 100, reste)
+            else:
+                # ⭐ 2026-10-23 (patron, d'après un décompte OLEA réel) : la complémentaire prend son taux
+                # sur ce que l'AMU laisse, sans dépasser son propre PBR — reste 20 000, PBR 15 000 -> taux x
+                # 15 000 ; PBR >= 20 000 -> taux x 20 000 (le patient paie toujours sa part du reste).
+                base_privee = min(base_privee, reste)
+                part_privee = base_privee * taux_privee / 100
         else:
             base_privee = reste
             part_privee = base_privee * taux_privee / 100

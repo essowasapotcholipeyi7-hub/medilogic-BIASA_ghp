@@ -40,11 +40,11 @@ def test_six_exemples_du_patron(label, article, contexte, attendu):
 
 
 def test_pbr_prive_superieur_au_reste_apres_amu():
-    """Cas 4 avec PBR privé : part privée = taux x PBR privé (pas réduite par
-    l'AMU), mais jamais plus que ce qui reste après l'AMU."""
+    """⭐ 2026-10-23 (patron) : la complémentaire applique son taux sur le plus petit de (son PBR, ce que
+    l'AMU laisse) — reste 10 800, PBR 12 000 -> 80 % x 10 800 (avant : 80 % x 12 000 = 9 600)."""
     article = {'nom': 'Acte', 'prix': 15000, 'pbr': 5250, 'quantite': 1}
     r = repartir_ligne(article, ctx(amu=True, taux_amu=80, privee=True, taux_privee=80, pbr_prive=12000))
-    assert arrondi(r) == (4200, 9600, 1200)
+    assert arrondi(r) == (4200, 8640, 2160)
     # PBR privé énorme : la part privée est plafonnée au reste (patient = 0, jamais négatif)
     r = repartir_ligne(article, ctx(amu=True, taux_amu=80, privee=True, taux_privee=100, pbr_prive=50000))
     assert arrondi(r) == (4200, 10800, 0)
@@ -455,3 +455,37 @@ def test_assurance_privee_pour_base_de_la_carte():
     from services.hospitalisation_service import a_assurance_privee
     assert a_assurance_privee('NSIA', '') and a_assurance_privee('amu_cnss', 'SUNU') and a_assurance_privee('non_assure', 'SUNU')
     assert not a_assurance_privee('amu_cnss', '') and not a_assurance_privee('non_assure', None) and not a_assurance_privee('amu_inam', 'Aucune')
+
+
+@pytest.mark.parametrize("label, prix, pbr_amu, pbr_prive, attendu", [
+    # décompte OLEA réel (08/07/2026) envoyé par le patron : OLEA = 80 % de ce que la CNSS laisse
+    ("OLEA ECG", 15000, 10710, 15000, (8568, 5145.6, 1286.4)),
+    ("OLEA Echodoppler", 40000, 17680, 40000, (14144, 20684.8, 5171.2)),
+    # exemples du patron : reste 20 000 après l'AMU
+    ("Reste 20 000, PBR 15 000", 30000, 12500, 15000, (10000, 12000, 8000)),
+    ("Reste 20 000, PBR 10 000", 30000, 12500, 10000, (10000, 8000, 12000)),
+    ("Reste 20 000, PBR 25 000", 30000, 12500, 25000, (10000, 16000, 4000)),
+])
+def test_complementaire_sur_le_reste_sans_depasser_son_pbr(label, prix, pbr_amu, pbr_prive, attendu):
+    r = repartir_ligne({'nom': 'Acte', 'prix': prix, 'pbr': pbr_amu, 'quantite': 1},
+                       ctx(amu=True, taux_amu=80, privee=True, taux_privee=80, pbr_prive=pbr_prive))
+    assert (round(r['part_amu'], 1), round(r['part_privee'], 1), round(r['part_patient'], 1)) == attendu, label
+
+
+def test_ancienne_regle_reglee_pour_une_compagnie():
+    """Compagnie réglée sur l'ancienne règle ('base') : taux x son PBR, plafonné au reste après l'AMU."""
+    article = {'nom': 'Acte', 'prix': 15000, 'pbr': 5250, 'quantite': 1}
+    r = repartir_ligne(article, ctx(amu=True, taux_amu=80, privee=True, taux_privee=80, pbr_prive=12000,
+                                    mode_complementaire='base'))
+    assert arrondi(r) == (4200, 9600, 1200)
+    r = repartir_ligne({'nom': 'Acte', 'prix': 15000, 'pbr': 10710, 'quantite': 1},
+                       ctx(amu=True, taux_amu=80, privee=True, taux_privee=80, pbr_prive=15000, mode_complementaire='base'))
+    assert arrondi(r) == (8568, 6432, 0)
+
+
+def test_sans_amu_les_deux_regles_donnent_le_meme_montant():
+    article = {'nom': 'Acte', 'prix': 15000, 'pbr': 5250, 'quantite': 1}
+    for pbr in (8500, 15000, 30000):
+        a = repartir_ligne(article, ctx(privee=True, taux_privee=80, pbr_prive=pbr))
+        b = repartir_ligne(article, ctx(privee=True, taux_privee=80, pbr_prive=pbr, mode_complementaire='base'))
+        assert arrondi(a) == arrondi(b)
