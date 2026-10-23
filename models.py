@@ -3040,6 +3040,12 @@ class Hospitalisation(db.Model):
     # reçu/facture papier, décoché par défaut, choisissable en direct
     # depuis le suivi du séjour avant facturation.
     applique_tva = db.Column(db.Boolean, default=False)
+    # ⭐ 2026-10-22 (patron) : prédépôt versé à l'admission, comme en soins ambulatoires — il
+    # n'entre en caisse qu'à la facturation finale, où il pré-remplit le « montant donné »
+    # (avance_recue de la proforma). Colonnes : migrate_ajouter_predepot_hospitalisation.py
+    predepot_montant = db.Column(db.Numeric, default=0)
+    predepot_mode_paiement = db.Column(db.String(50))
+    predepot_note = db.Column(db.Text)
     statut = db.Column(db.String(50), default='en_cours')  # en_cours/sortie/facturee
     proforma_id = db.Column(db.Integer)
     vente_id = db.Column(db.Integer)

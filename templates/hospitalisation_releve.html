@@ -176,9 +176,18 @@
                 <span>- {{ '{:,}'.format(repartition.part_cac|round(0)|int).replace(',', ' ') }} FCFA</span>
             </div>
             {% endif %}
+            {# ⭐ 2026-10-22 : prédépôt versé à l'admission, comme le relevé des soins ambulatoires #}
+            {% if predepot %}
+            <div class="ligne-recap" style="color:#b26a00;">
+                <span>Prédépôt déjà versé :</span>
+                <span>- {{ '{:,.0f}'.format(predepot).replace(',', ' ') }} FCFA</span>
+            </div>
+            {% endif %}
         </div>
         <div class="total-general">
-            {% if repartition and (repartition.est_assure_amu or repartition.a_cac) %}
+            {% if predepot and reste_du_apres_predepot is not none %}
+                Reste dû après prédépôt : {{ '{:,.0f}'.format(reste_du_apres_predepot).replace(',', ' ') }} FCFA
+            {% elif repartition and (repartition.est_assure_amu or repartition.a_cac) %}
                 Reste à charge du patient : {{ '{:,}'.format(repartition.part_patient|round(0)|int).replace(',', ' ') }} FCFA
             {% else %}
                 Total général : {{ '{:,}'.format(total_general|round(0)|int).replace(',', ' ') }} FCFA

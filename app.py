@@ -22787,6 +22787,10 @@ def api_creer_hospitalisation():
             societe_assurance2=patient.societe_assurance2,
             # ⭐ 2026-10-21 : base de remboursement de la carte du patient (Valeo : PBR CAT / ONMT)
             pbr_cac_variante=pbr_variante_patient(structure_id, patient.id) or 'defaut',
+            # ⭐ 2026-10-22 : prédépôt à l'admission (même principe que les soins ambulatoires)
+            predepot_montant=max(float(data.get('predepot_montant') or 0), 0),
+            predepot_mode_paiement=data.get('predepot_mode_paiement') or 'especes',
+            predepot_note=data.get('predepot_note', ''),
             statut='en_cours',
             created_by=user_name,
         )
@@ -22803,6 +22807,33 @@ def api_creer_hospitalisation():
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur création hospitalisation: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/hospitalisation/<int:hospit_id>/predepot', methods=['POST'])
+@login_required
+def api_modifier_predepot_hospitalisation(hospit_id):
+    """⭐ 2026-10-22 : corrige le prédépôt (montant/mode/note) tant que le séjour n'est pas
+    facturé — mirroir de api_modifier_predepot_soins_ambulatoires : il n'entre en caisse qu'à la
+    conversion en vente finale, le corriger avant ne touche à aucune recette."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+        if not hospit:
+            return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
+        if hospit.statut == 'facturee':
+            return jsonify({'success': False, 'error': 'Séjour déjà facturé'}), 400
+        if 'predepot_montant' in data:
+            hospit.predepot_montant = max(float(data.get('predepot_montant') or 0), 0)
+        if 'predepot_mode_paiement' in data:
+            hospit.predepot_mode_paiement = data.get('predepot_mode_paiement') or 'especes'
+        if 'predepot_note' in data:
+            hospit.predepot_note = data.get('predepot_note', '')
+        db.session.commit()
+        return jsonify({'success': True, 'predepot_montant': float(hospit.predepot_montant or 0)})
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -23640,9 +23671,9 @@ def api_facturer_hospitalisation(hospit_id):
                 prise_en_charge2, net_a_payer, base_remboursement, notes,
                 created_by, expires_at, numero_proforma, assurances_data,
                 base_cac, assurance_principale_active, hospitalisation_id,
-                statut, created_at, applique_pbr_cac, pbr_cac_variante, applique_tva
+                avance_recue, statut, created_at, applique_pbr_cac, pbr_cac_variante, applique_tva
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, NOW(), %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, NOW(), %s, %s, %s)
             RETURNING id
         """, (
             structure_id, hospit.patient_id, hospit.patient_nom, '',
@@ -23653,6 +23684,8 @@ def api_facturer_hospitalisation(hospit_id):
             f"du {hospit.date_entree.strftime('%d/%m/%Y')} au {hospit.date_sortie.strftime('%d/%m/%Y')}",
             user_name, expires_at, prochain_numero, json.dumps(assurances_data, ensure_ascii=False),
             base_cac_articles, True, hospit.id,
+            # ⭐ 2026-10-22 : prédépôt -> pré-remplit le « montant donné » à la conversion en vente
+            float(hospit.predepot_montant or 0),
             'en_attente', hospit.applique_pbr_cac, hospit.pbr_cac_variante, hospit.applique_tva,
         ))
 
@@ -23773,13 +23806,21 @@ def hospitalisation_releve(hospit_id):
              for d in sorted(groupes.keys())]
     total_general = sum(j['total'] for j in jours)
 
+    # ⭐ 2026-10-22 : prédépôt déduit du reste dû (même calcul que le relevé des soins ambulatoires)
+    predepot = float(hospit.predepot_montant or 0)
+    reste_du_apres_predepot = None
+    if repartition:
+        reste_du_apres_predepot = max(float(repartition.get('part_patient') or 0) - predepot, 0)
+    elif predepot:
+        reste_du_apres_predepot = max(float(total_general) - predepot, 0)
+
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
 
     return render_template('hospitalisation_releve.html', hospit=hospit, jours=jours, total_general=total_general,
                             estimation_au=estimation_au, chambre_non_definie=chambre_non_definie,
                             type_filtre=type_filtre, structure_nom=structure_info.get('nom', 'SSoftOneV10'),
-                            repartition=repartition)
+                            repartition=repartition, predepot=predepot, reste_du_apres_predepot=reste_du_apres_predepot)
 
 
 # ============================================================
