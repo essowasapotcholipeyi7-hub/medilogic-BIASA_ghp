@@ -178,7 +178,9 @@ _REGLES_DOMAINE = [
       r'\bsoins? (et surveillance )?infirmier', r'\bsurveillance infirmi', r'\bpansements?\b',
       r'\boxygenotherapie', r'\bnebulisation', r'\baerosol', r'\bsondage', r'\bacte im\b',
       r'\bintramusculaire', r'\bintraveineuse', r'\bprise de (la )?tension', r'\bcontrole (de la )?tension',
-      r'^ta tension arterielle'],
+      r'^ta tension arterielle',
+      # ⭐ 2026-10-23 (patron) : « Vat inj » (vaccin antitétanique injecté), « inj » abrégé.
+      r'\binj\b', r'\bvat\b'],
      None, ['soins', 'infirmier'], ['IMAGERIE', r'^[qr]\d']),
 ]
 
@@ -195,6 +197,7 @@ _MOTIFS_LABORATOIRE = [
     r'\btdr\b', r'\bselles\b', r'\bspermogramme', r'\bcalcemie', r'\bmagnesemie', r'\bproteinurie',
     r'\bbilirubin', r'\bamylase', r'\blipase', r'\bcpk\b', r'\bldh\b', r'\bphosphatase',
     r'\belectrophorese', r'\bhemoculture', r'\bantibiogramme', r'\bfibrinog', r'\breticulocyt',
+    r'\bbandelettes? urinaires?',   # ⭐ 2026-10-23 (patron) : « BANDELETTE URINAIRE (BU) »
 ]
 
 # Imagerie reconnue au nom quand il n'y a pas de code Q (« Echodoppler thyroïdienne »...).
