@@ -4,27 +4,39 @@
 {% block title %}Mes résultats{% endblock %}
 
 {% block extra_css %}
-<link rel="manifest" href="{{ url_for('portail_manifest') }}">
-<link rel="apple-touch-icon" href="{{ url_for('static', filename='images/portail-icon-192.png') }}">
-<meta name="theme-color" content="#1d6fa5">
-<!-- ⭐ Sans ces 2 balises, iOS ouvre le raccourci comme un simple onglet
-     Safari (barre d'adresse + boutons visibles) plutôt qu'en plein écran
-     — c'est ce qui donnait l'effet "page toute petite, ne cadre pas
-     l'écran" signalé par le patron. Android suit déjà le manifest.json
-     (display: standalone) sans avoir besoin de ça. -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Résultats">
+{% include "partials/portail_app_tete.html" %}
 <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@10.0.0/dist/bundle/index.umd.min.js"></script>
 {% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
+<div class="row justify-content-center rs-page">
     <div class="col-md-5">
-        <div class="card shadow-sm mt-5">
-            <div class="card-header text-white" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%);">
-                <i class="fas fa-file-medical me-2"></i><strong>Accéder à mes résultats</strong>
+        <div class="d-flex align-items-center gap-2 mt-4 mb-3">
+            <span class="rs-logo">Rs</span>
+            <h5 class="mb-0 rs-titre">Mes résultats</h5>
+        </div>
+
+        {% include "partials/portail_app_installer.html" %}
+
+        <!-- ⭐ Application installée, téléphone déjà activé : on entre avec l'empreinte / Face ID /
+             code de verrouillage du téléphone (patron, 2026-10-23). -->
+        <div id="ppBlocDeverrouiller" class="card mb-3" style="display:none;">
+            <div class="card-body text-center py-4">
+                <i class="fas fa-fingerprint fa-3x mb-3 rs-titre"></i>
+                <p class="mb-3">Ouvrez vos résultats avec l'empreinte, le Face ID ou le code de votre téléphone.</p>
+                <button type="button" class="btn btn-primary w-100 py-2" onclick="connexionAppareil()">
+                    <i class="fas fa-unlock me-1"></i> Déverrouiller
+                </button>
+                <div id="ppDeverrouillerMsg" class="small mt-2"></div>
+                <button type="button" class="btn btn-link btn-sm mt-2 text-secondary" onclick="utiliserCodeAcces()">
+                    Ça ne marche pas ? Me connecter avec mon code d'accès
+                </button>
+            </div>
+        </div>
+
+        <div class="card shadow-sm" id="ppCarteConnexion">
+            <div class="card-header">
+                <i class="fas fa-file-medical me-2"></i><strong id="ppTitreConnexion">Accéder à mes résultats</strong>
             </div>
             <div class="card-body">
                 <button type="button" id="ppBtnWebauthn" hidden onclick="connexionWebauthn()"
@@ -47,14 +59,14 @@
                 </ul>
 
                 <div id="ppBlocCode">
-                    <p class="text-muted small">
+                    <p class="text-muted small" id="ppAideCode">
                         Le code d'accès vous a été communiqué par la clinique. Renseignez le numéro de téléphone
                         enregistré dans votre dossier ainsi que ce code.
                     </p>
                     <form id="ppFormCode" autocomplete="on" onsubmit="event.preventDefault(); verifierAcces();">
                         <div class="mb-3">
                             <label class="form-label">Numéro de téléphone</label>
-                            <input type="text" class="form-control" id="ppTelephone" placeholder="Ex. 90112233" autocomplete="username">
+                            <input type="text" class="form-control" id="ppTelephone" placeholder="Ex. 90112233" autocomplete="username" inputmode="tel">
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Code d'accès</label>
@@ -76,7 +88,7 @@
                     <form id="ppFormPin" autocomplete="on" onsubmit="event.preventDefault(); verifierPin();">
                         <div class="mb-3">
                             <label class="form-label">Numéro de téléphone</label>
-                            <input type="text" class="form-control" id="ppTelephonePin" placeholder="Ex. 90112233" autocomplete="username">
+                            <input type="text" class="form-control" id="ppTelephonePin" placeholder="Ex. 90112233" autocomplete="username" inputmode="tel">
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Code rapide (4 à 6 chiffres)</label>
@@ -94,12 +106,12 @@
 </div>
 
 <script>
-// ⭐ Condition technique manquante jusqu'ici pour que Chrome/Android
-// propose l'installation du raccourci (beforeinstallprompt) — un
-// manifest seul ne suffit pas. Voir static/sw.js et
-// portail_resultats.html (même enregistrement).
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register("{{ url_for('portail_service_worker') }}", { scope: '/portail-patient' }).catch(() => {});
+const PAGE_RESULTATS = "{{ url_for('page_portail_resultats') }}";
+const WEBAUTHN_DISPONIBLE = !!(window.SimpleWebAuthnBrowser && SimpleWebAuthnBrowser.browserSupportsWebAuthn());
+
+function ouvrirResultats() {
+    RsApp.deverrouiller();
+    window.location.href = PAGE_RESULTATS;
 }
 
 function basculerMode(mode) {
@@ -128,7 +140,7 @@ function verifierAcces() {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            window.location.href = "{{ url_for('page_portail_resultats') }}";
+            ouvrirResultats();
         } else {
             erreur.textContent = data.error || 'Téléphone ou code incorrect.';
             erreur.style.display = 'block';
@@ -159,7 +171,7 @@ function verifierPin() {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            window.location.href = "{{ url_for('page_portail_resultats') }}";
+            ouvrirResultats();
         } else {
             erreur.textContent = data.error || 'Téléphone ou code incorrect.';
             erreur.style.display = 'block';
@@ -188,26 +200,15 @@ document.getElementById('ppPin').addEventListener('keyup', function(e) {
     }
 })();
 
-// ⭐ Vrai mot de passe/biométrie DE L'APPAREIL (Face ID/Windows
-// Hello/empreinte) — patron : "que le patient utilise son mot de passe
-// du téléphone ou d'ordinateur pour accéder aux résultats". Bouton
-// affiché seulement si le navigateur sait le faire ; le patient doit
-// avoir déjà activé cet appareil une fois depuis la page de ses
-// résultats (voir portail_resultats.html).
-document.addEventListener('DOMContentLoaded', function() {
-    if (window.SimpleWebAuthnBrowser && SimpleWebAuthnBrowser.browserSupportsWebAuthn()) {
-        document.getElementById('ppBtnWebauthn').hidden = false;
-    }
-});
-
-async function connexionWebauthn() {
-    const msg = document.getElementById('ppWebauthnMsg');
-    msg.className = 'small text-center mb-2 text-muted';
-    msg.textContent = '';
+// ⭐ Vrai mot de passe/biométrie DE L'APPAREIL (Face ID/Windows Hello/empreinte) — même mécanisme
+// WebAuthn que le personnel (services/webauthn_login_service.py) : la clé privée ne quitte jamais
+// le téléphone, rien n'est transmis à la clinique. Renvoie '' si c'est bon, sinon le message d'erreur
+// (null si le patient a annulé).
+async function connexionParAppareil() {
     try {
         const rOpt = await fetch('/api/portail-patient/webauthn/login/options', { method: 'POST' });
         const dOpt = await rOpt.json();
-        if (!dOpt.success) { msg.className = 'small text-center mb-2 text-danger'; msg.textContent = dOpt.error; return; }
+        if (!dOpt.success) return dOpt.error || 'Connexion impossible';
 
         const assertion = await SimpleWebAuthnBrowser.startAuthentication(dOpt.options);
 
@@ -216,17 +217,75 @@ async function connexionWebauthn() {
             body: JSON.stringify({ credential: assertion }),
         });
         const dVer = await rVer.json();
-        if (dVer.success) {
-            window.location.href = "{{ url_for('page_portail_resultats') }}";
-        } else {
-            msg.className = 'small text-center mb-2 text-danger';
-            msg.textContent = dVer.error || 'Connexion refusée';
-        }
+        if (!dVer.success) return dVer.error || 'Connexion refusée';
+        RsApp.retenirAppareil('webauthn');
+        return '';
     } catch (err) {
-        if (err.name === 'NotAllowedError') return; // annulé par le patient
-        msg.className = 'small text-center mb-2 text-danger';
-        msg.textContent = 'Échec : ' + (err.message || err);
+        if (err.name === 'NotAllowedError') return null; // annulé par le patient
+        return 'Échec : ' + (err.message || err);
     }
 }
+
+async function connexionWebauthn() {
+    const msg = document.getElementById('ppWebauthnMsg');
+    msg.className = 'small text-center mb-2 text-muted';
+    msg.textContent = '';
+    const erreur = await connexionParAppareil();
+    if (erreur === '') { ouvrirResultats(); return; }
+    if (erreur) { msg.className = 'small text-center mb-2 text-danger'; msg.textContent = erreur; }
+}
+
+async function connexionAppareil() {
+    const msg = document.getElementById('ppDeverrouillerMsg');
+    msg.className = 'small mt-2 text-muted';
+    msg.textContent = '';
+    const erreur = await connexionParAppareil();
+    if (erreur === '') { ouvrirResultats(); return; }
+    if (erreur) { msg.className = 'small mt-2 text-danger'; msg.textContent = erreur; }
+}
+
+// ⭐ Application « Rs » installée (patron, 2026-10-23) : la 1re fois, connexion obligatoire avec le
+// téléphone + le code d'accès, puis la page des résultats impose d'enregistrer l'empreinte / Face ID
+// / code du téléphone ; ensuite on n'entre plus qu'avec eux. « Ça ne marche pas ? » repasse par le
+// code d'accès et redemande l'enregistrement (nouveau téléphone, empreintes changées...).
+function utiliserCodeAcces() {
+    RsApp.oublierAppareil();
+    afficherModeApplication();
+}
+
+function afficherModeApplication() {
+    const mode = RsApp.modeAppareil();
+    const deverrouiller = mode === 'webauthn' && WEBAUTHN_DISPONIBLE;
+    document.getElementById('ppBlocDeverrouiller').style.display = deverrouiller ? '' : 'none';
+    document.getElementById('ppCarteConnexion').style.display = deverrouiller ? 'none' : '';
+    document.getElementById('ppBtnWebauthn').hidden = true;
+    if (deverrouiller) return;
+
+    if (mode === 'pin') {
+        // Téléphone sans empreinte / Face ID utilisable : son code rapide à la place.
+        document.getElementById('ppModeTabs').style.display = 'none';
+        document.getElementById('ppTitreConnexion').textContent = 'Entrez votre code rapide';
+        basculerMode('pin');
+    } else {
+        document.getElementById('ppModeTabs').style.display = 'none';
+        document.getElementById('ppTitreConnexion').textContent = 'Première connexion';
+        document.getElementById('ppAideCode').textContent =
+            "Saisissez le numéro de téléphone enregistré à la clinique et le code d'accès qu'elle vous a remis. "
+            + "Vous activerez ensuite l'empreinte / Face ID de ce téléphone : ce sera votre seule clé par la suite.";
+        basculerMode('code');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    if (RsApp.estInstallee()) {
+        afficherModeApplication();
+        if (RsApp.modeAppareil() === 'webauthn' && WEBAUTHN_DISPONIBLE) {
+            // Lancée tout de suite ; si le téléphone exige un geste, le bouton « Déverrouiller » reste là.
+            connexionAppareil();
+        }
+    } else if (WEBAUTHN_DISPONIBLE) {
+        document.getElementById('ppBtnWebauthn').hidden = false;
+    }
+});
 </script>
 {% endblock %}

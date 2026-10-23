@@ -4,34 +4,24 @@
 {% block title %}Mes résultats{% endblock %}
 
 {% block extra_css %}
-<link rel="manifest" href="{{ url_for('portail_manifest') }}">
-<link rel="apple-touch-icon" href="{{ url_for('static', filename='images/portail-icon-192.png') }}">
-<meta name="theme-color" content="#1d6fa5">
-<!-- ⭐ Voir portail_patient.html — même correctif, même raison. -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Résultats">
+{% with garde = True %}{% include "partials/portail_app_tete.html" %}{% endwith %}
 <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@10.0.0/dist/bundle/index.umd.min.js"></script>
 {% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
+<div class="row justify-content-center rs-page">
     <div class="col-md-7">
         <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
-            <h5 class="mb-0"><i class="fas fa-file-medical me-2"></i>Mes résultats</h5>
+            <div class="d-flex align-items-center gap-2">
+                <span class="rs-logo">Rs</span>
+                <h5 class="mb-0 rs-titre">Mes résultats</h5>
+            </div>
             <a href="{{ url_for('portail_patient_deconnexion') }}" class="btn btn-sm btn-outline-secondary">
                 <i class="fas fa-sign-out-alt me-1"></i> Fermer
             </a>
         </div>
 
-        <div id="ppBanniereInstall" style="display:none;" class="alert alert-primary d-flex justify-content-between align-items-center py-2">
-            <span><i class="fas fa-mobile-alt me-1"></i> <span id="ppBanniereInstallTexte">Ajoutez cette page à votre écran d'accueil pour y revenir en un geste.</span></span>
-            <div>
-                <button class="btn btn-sm btn-light" id="ppBtnInstall" onclick="installerRaccourci()">Ajouter</button>
-                <button class="btn btn-sm btn-link text-white" onclick="document.getElementById('ppBanniereInstall').style.display='none';">×</button>
-            </div>
-        </div>
+        {% include "partials/portail_app_installer.html" %}
 
         <div id="ppProchainRdv" style="display:none;" class="alert alert-info">
             <i class="fas fa-calendar-check me-1"></i>
@@ -45,14 +35,14 @@
         </a>
 
         <div class="card">
-            <div class="card-header bg-dark text-white">Résultats disponibles</div>
+            <div class="card-header">Résultats disponibles</div>
             <div class="card-body p-0" id="ppListeResultats">
                 <div class="text-center text-muted py-4">Chargement...</div>
             </div>
         </div>
 
         <div class="card mt-3" id="ppCartePin">
-            <div class="card-header bg-light">
+            <div class="card-header">
                 <i class="fas fa-fingerprint me-1"></i> Connexion rapide (empreinte / Face ID)
             </div>
             <div class="card-body">
@@ -85,14 +75,14 @@
     </div>
 </div>
 
-<!-- Invite (une seule fois, tant qu'aucun code rapide n'est défini) à le
-     faire avant de quitter l'hôpital — patron : "séance tenante le
-     patient change ce mot de passe avant de quitter l'hôpital". -->
+<!-- Invite (navigateur, une seule fois, tant qu'aucun code rapide n'est défini) à le faire avant de
+     quitter l'hôpital — patron : "séance tenante le patient change ce mot de passe avant de quitter
+     l'hôpital". Dans l'application installée, c'est la fenêtre obligatoire ci-dessous. -->
 <div class="modal fade" id="modalPinObligatoire" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color:white;">
-                <h5 class="modal-title"><i class="fas fa-shield-alt me-2"></i>Sécurisez votre accès</h5>
+            <div class="modal-header">
+                <h5 class="modal-title rs-titre"><i class="fas fa-shield-alt me-2"></i>Sécurisez votre accès</h5>
             </div>
             <div class="modal-body">
                 <p>
@@ -111,39 +101,74 @@
     </div>
 </div>
 
+<!-- ⭐ Application « Rs » installée (patron, 2026-10-23) : après la 1re connexion avec le code d'accès,
+     enregistrer l'empreinte / Face ID / code du téléphone est OBLIGATOIRE (pas de « Plus tard ») ;
+     c'est ensuite la seule façon d'ouvrir l'application. Code rapide seulement si le téléphone
+     n'a aucun verrouillage utilisable. -->
+<div class="modal fade" id="modalActiverAppareil" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title rs-titre"><i class="fas fa-fingerprint me-2"></i>Dernière étape</h5>
+            </div>
+            <div class="modal-body">
+                <div id="ppActiverBiometrie">
+                    <p>
+                        Enregistrez l'<strong>empreinte</strong>, le <strong>Face ID</strong> ou le <strong>code de
+                        verrouillage</strong> de ce téléphone. C'est avec eux que vous ouvrirez désormais
+                        l'application Rs — plus besoin du code d'accès.
+                    </p>
+                    <button type="button" class="btn btn-primary w-100 py-2" onclick="activerAppareilObligatoire()">
+                        <i class="fas fa-fingerprint me-1"></i> Enregistrer mon téléphone
+                    </button>
+                </div>
+                <div id="ppActiverPin" style="display:none;">
+                    <p>
+                        Ce téléphone ne permet pas d'utiliser son empreinte ou son code de verrouillage.
+                        Choisissez un <strong>code rapide</strong> de 4 à 6 chiffres : il vous sera demandé
+                        à chaque ouverture de l'application.
+                    </p>
+                    <form onsubmit="event.preventDefault(); definirPinObligatoire();" autocomplete="on">
+                        <input type="password" inputmode="numeric" class="form-control mb-2" id="ppPinObligatoire" placeholder="4 à 6 chiffres" maxlength="6" autocomplete="new-password">
+                        <button type="submit" class="btn btn-primary w-100"><i class="fas fa-check me-1"></i> Enregistrer</button>
+                    </form>
+                </div>
+                <div id="ppActiverMsg" class="small mt-2"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-// ⭐ Condition technique manquante jusqu'ici pour que Chrome/Android
-// propose l'installation du raccourci (beforeinstallprompt, voir plus bas)
-// — un manifest seul ne suffit pas. Voir static/sw.js.
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register("{{ url_for('portail_service_worker') }}", { scope: '/portail-patient' }).catch(() => {});
+const WEBAUTHN_DISPONIBLE = !!(window.SimpleWebAuthnBrowser && SimpleWebAuthnBrowser.browserSupportsWebAuthn());
+
+// Enregistre le code rapide ; renvoie '' si c'est bon, sinon le message d'erreur.
+async function enregistrerPin(pin) {
+    if (!/^\d{4,6}$/.test(pin)) return 'Le code doit contenir 4 à 6 chiffres.';
+    try {
+        const r = await fetch('/api/portail-patient/definir-pin', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: pin })
+        });
+        const data = await r.json();
+        return data.success ? '' : (data.error || 'Erreur, réessayez.');
+    } catch (e) {
+        return 'Erreur de connexion, réessayez.';
+    }
 }
 
-function definirPin() {
-    const pin = document.getElementById('ppNouveauPin').value.trim();
+async function definirPin() {
     const msg = document.getElementById('ppPinMsg');
     msg.className = 'small mt-2';
-    if (!/^\d{4,6}$/.test(pin)) {
-        msg.textContent = 'Le code doit contenir 4 à 6 chiffres.';
+    const erreur = await enregistrerPin(document.getElementById('ppNouveauPin').value.trim());
+    if (erreur) {
+        msg.textContent = erreur;
         msg.classList.add('text-danger');
         return;
     }
-    fetch('/api/portail-patient/definir-pin', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: pin })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            msg.textContent = 'Code rapide enregistré — votre téléphone a peut-être proposé de le mémoriser.';
-            msg.classList.add('text-success');
-            document.getElementById('ppNouveauPin').value = '';
-        } else {
-            msg.textContent = data.error || 'Erreur, réessayez.';
-            msg.classList.add('text-danger');
-        }
-    })
-    .catch(() => { msg.textContent = 'Erreur de connexion, réessayez.'; msg.classList.add('text-danger'); });
+    msg.textContent = 'Code rapide enregistré — votre téléphone a peut-être proposé de le mémoriser.';
+    msg.classList.add('text-success');
+    document.getElementById('ppNouveauPin').value = '';
 }
 
 function allerDefinirPin() {
@@ -154,26 +179,15 @@ function allerDefinirPin() {
     setTimeout(() => document.getElementById('ppNouveauPin').focus(), 350);
 }
 
-// ⭐ Vrai mot de passe/biométrie DE L'APPAREIL (Face ID/Windows
-// Hello/empreinte) — patron : "que le patient utilise son mot de passe
-// du téléphone ou d'ordinateur pour accéder aux résultats actuellement
-// ça ne marche pas". Même mécanisme WebAuthn que le personnel
-// (services/webauthn_login_service.py) : la clé privée ne quitte jamais
-// l'appareil, rien n'est transmis à la clinique.
-document.addEventListener('DOMContentLoaded', function() {
-    if (window.SimpleWebAuthnBrowser && SimpleWebAuthnBrowser.browserSupportsWebAuthn()) {
-        document.getElementById('ppBtnActiverWebauthn').hidden = false;
-    }
-});
-
-async function activerWebauthn() {
-    const msg = document.getElementById('ppWebauthnActiverMsg');
-    msg.className = 'small mb-2 text-muted';
-    msg.textContent = 'Suivez les instructions de votre appareil (Face ID, Windows Hello, empreinte...)...';
+// ⭐ Vrai mot de passe/biométrie DE L'APPAREIL (Face ID/Windows Hello/empreinte) — même mécanisme
+// WebAuthn que le personnel (services/webauthn_login_service.py) : la clé privée ne quitte jamais
+// l'appareil, rien n'est transmis à la clinique. Renvoie '' si c'est bon (ou déjà fait sur cet
+// appareil), null si le patient a annulé, sinon le message d'erreur.
+async function enregistrerAppareil() {
     try {
         const rOpt = await fetch('/api/portail-patient/webauthn/inscription/options', { method: 'POST' });
         const dOpt = await rOpt.json();
-        if (!dOpt.success) { msg.className = 'small mb-2 text-danger'; msg.textContent = dOpt.error; return; }
+        if (!dOpt.success) return dOpt.error || 'Erreur, réessayez.';
 
         const credential = await SimpleWebAuthnBrowser.startRegistration(dOpt.options);
 
@@ -182,56 +196,83 @@ async function activerWebauthn() {
             body: JSON.stringify({ credential, libelle_appareil: navigator.platform || 'Mon appareil' }),
         });
         const dVer = await rVer.json();
-        if (dVer.success) {
-            msg.className = 'small mb-2 text-success';
-            msg.textContent = 'Activé ! La prochaine fois, connectez-vous directement avec ce bouton depuis la page de connexion.';
-            const modalEl = document.getElementById('modalPinObligatoire');
-            const instance = bootstrap.Modal.getInstance(modalEl);
-            if (instance) instance.hide();
-        } else {
-            msg.className = 'small mb-2 text-danger';
-            msg.textContent = dVer.error;
-        }
+        if (!dVer.success) return dVer.error || 'Erreur, réessayez.';
     } catch (err) {
-        if (err.name === 'NotAllowedError') { msg.textContent = ''; return; } // annulé
-        msg.className = 'small mb-2 text-danger';
-        msg.textContent = (err.name === 'InvalidStateError')
-            ? 'Cet appareil est déjà activé.'
-            : 'Échec : ' + (err.message || err);
+        if (err.name === 'NotAllowedError') return null; // annulé
+        if (err.name !== 'InvalidStateError') return 'Échec : ' + (err.message || err);
+        // InvalidStateError : cet appareil a déjà sa clé pour ce dossier.
     }
+    RsApp.retenirAppareil('webauthn');
+    return '';
 }
 
-// ⭐ Raccourci sur l'écran d'accueil — patron : "quand il scanne ce code
-// pour ouvrir, que ça crée un raccourci direct sur son téléphone... il
-// n'aura pas à souffrir pour rentrer dedans". Android/Chrome : bannière
-// native via beforeinstallprompt. iPhone/Safari ne propose aucune
-// installation programmable — on affiche juste le geste à faire.
-let ppDeferredInstall = null;
-window.addEventListener('beforeinstallprompt', function(e) {
-    e.preventDefault();
-    ppDeferredInstall = e;
-    document.getElementById('ppBanniereInstall').style.display = 'flex';
+async function activerWebauthn() {
+    const msg = document.getElementById('ppWebauthnActiverMsg');
+    msg.className = 'small mb-2 text-muted';
+    msg.textContent = 'Suivez les instructions de votre appareil (Face ID, Windows Hello, empreinte...)...';
+    const erreur = await enregistrerAppareil();
+    if (erreur === null) { msg.textContent = ''; return; }
+    if (erreur) { msg.className = 'small mb-2 text-danger'; msg.textContent = erreur; return; }
+    msg.className = 'small mb-2 text-success';
+    msg.textContent = 'Activé ! La prochaine fois, connectez-vous directement avec ce bouton depuis la page de connexion.';
+    const instance = bootstrap.Modal.getInstance(document.getElementById('modalPinObligatoire'));
+    if (instance) instance.hide();
+}
+
+function fermerActivationObligatoire() {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalActiverAppareil')).hide();
+    document.getElementById('ppCartePin').style.display = 'none';
+}
+
+function proposerPinObligatoire(message) {
+    document.getElementById('ppActiverBiometrie').style.display = 'none';
+    document.getElementById('ppActiverPin').style.display = '';
+    const msg = document.getElementById('ppActiverMsg');
+    msg.className = 'small mt-2 text-warning';
+    msg.textContent = message || '';
+}
+
+async function activerAppareilObligatoire() {
+    const msg = document.getElementById('ppActiverMsg');
+    msg.className = 'small mt-2 text-muted';
+    msg.textContent = 'Suivez les instructions de votre téléphone...';
+    const erreur = await enregistrerAppareil();
+    if (erreur === '') { fermerActivationObligatoire(); return; }
+    if (erreur === null) {
+        msg.className = 'small mt-2 text-danger';
+        msg.textContent = "Cette étape est obligatoire pour utiliser l'application. Appuyez de nouveau sur le bouton.";
+        return;
+    }
+    // Pas de verrouillage utilisable sur ce téléphone : code rapide à la place.
+    proposerPinObligatoire(erreur);
+}
+
+async function definirPinObligatoire() {
+    const msg = document.getElementById('ppActiverMsg');
+    const erreur = await enregistrerPin(document.getElementById('ppPinObligatoire').value.trim());
+    if (erreur) { msg.className = 'small mt-2 text-danger'; msg.textContent = erreur; return; }
+    RsApp.retenirAppareil('pin');
+    fermerActivationObligatoire();
+}
+
+async function exigerActivationAppareil() {
+    let biometrie = WEBAUTHN_DISPONIBLE;
+    if (biometrie) {
+        try { biometrie = await SimpleWebAuthnBrowser.platformAuthenticatorIsAvailable(); } catch (e) { biometrie = false; }
+    }
+    if (!biometrie) proposerPinObligatoire('');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalActiverAppareil')).show();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    if (WEBAUTHN_DISPONIBLE) {
+        document.getElementById('ppBtnActiverWebauthn').hidden = false;
+    }
+    // Application installée et téléphone déjà enregistré : la carte « Connexion rapide » ne sert plus.
+    if (RsApp.estInstallee() && RsApp.modeAppareil()) {
+        document.getElementById('ppCartePin').style.display = 'none';
+    }
 });
-
-function installerRaccourci() {
-    if (!ppDeferredInstall) return;
-    ppDeferredInstall.prompt();
-    ppDeferredInstall.userChoice.finally(() => {
-        ppDeferredInstall = null;
-        document.getElementById('ppBanniereInstall').style.display = 'none';
-    });
-}
-
-(function() {
-    const estIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    const dejaInstalle = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-    if (estIOS && !dejaInstalle) {
-        document.getElementById('ppBanniereInstallTexte').textContent =
-            "Pour un accès plus rapide : appuyez sur Partager (⬆), puis « Sur l'écran d'accueil ».";
-        document.getElementById('ppBtnInstall').style.display = 'none';
-        document.getElementById('ppBanniereInstall').style.display = 'flex';
-    }
-})();
 
 fetch('/api/portail-patient/resultats').then(r => r.json()).then(data => {
     if (!data.success) { window.location.href = "{{ url_for('page_portail_patient') }}"; return; }
@@ -250,7 +291,9 @@ fetch('/api/portail-patient/resultats').then(r => r.json()).then(data => {
         b.style.display = '';
     }
 
-    if (!data.pin_defini) {
+    if (RsApp.estInstallee()) {
+        if (!RsApp.modeAppareil()) exigerActivationAppareil();
+    } else if (!data.pin_defini) {
         new bootstrap.Modal(document.getElementById('modalPinObligatoire')).show();
     }
 

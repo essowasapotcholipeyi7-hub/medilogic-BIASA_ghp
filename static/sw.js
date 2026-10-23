@@ -4,7 +4,8 @@
 // que Chrome/Android propose l'installation (beforeinstallprompt) : un
 // manifest seul ne suffit pas, il faut aussi un service worker enregistré
 // avec un gestionnaire "fetch" (voir portail_patient.html/
-// portail_resultats.html, navigator.serviceWorker.register()).
+// portail_resultats.html, navigator.serviceWorker.register()). Servi à
+// /sw-portail.js (racine), comme /sw-app.js de l'application SS.
 //
 // ⭐ Stratégie volontairement prudente pour une page de RÉSULTATS
 // MÉDICAUX : jamais de résultat périmé affiché depuis un cache. Seuls les
@@ -15,7 +16,7 @@
 // remplacement silencieux d'une donnée à jour.
 // ============================================================
 
-const CACHE_NAME = 'ssoftone-portail-v1';
+const CACHE_NAME = 'ssoftone-portail-v2'   // ⭐ v2 (2026-10-23) : icône « Rs », couleurs SS;
 const ASSETS_STATIQUES = [
     '/portail-manifest.json',
     '/static/images/portail-icon-192.png',

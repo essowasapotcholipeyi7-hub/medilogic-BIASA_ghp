@@ -4,14 +4,13 @@
 {% block title %}Mes rendez-vous{% endblock %}
 
 {% block extra_css %}
-<link rel="manifest" href="{{ url_for('portail_manifest') }}">
-<meta name="theme-color" content="#1d6fa5">
+{% with garde = True %}{% include "partials/portail_app_tete.html" %}{% endwith %}
 <style>
     .rdv-item { border-left: 4px solid #cfd8e3; }
     .rdv-item.confirme { border-left-color: #198754; }
     .rdv-item.demande { border-left-color: #0d6efd; }
     .rdv-item.annule { border-left-color: #dc3545; }
-    .rdv-item.non-lu { background: #fff8e6; }
+    .rdv-item.non-lu { background: rgba(250, 204, 21, .10); }
 </style>
 {% endblock %}
 

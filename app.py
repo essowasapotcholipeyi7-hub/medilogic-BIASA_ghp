@@ -16974,13 +16974,16 @@ def portail_manifest():
     return send_from_directory('static', 'portail-manifest.json', mimetype='application/manifest+json')
 
 
-# ⭐ Servi à cette URL précise (pas sous /static/) pour que sa PORTÉE
-# ("scope") couvre nativement tout /portail-patient/* sans avoir besoin
-# de l'en-tête HTTP Service-Worker-Allowed — un service worker ne peut
-# contrôler par défaut que les chemins sous son propre dossier de
-# service. Voir static/sw.js pour la stratégie de cache (jamais de
-# résultat médical périmé affiché).
-@app.route('/portail-patient/sw.js')
+# ⭐ Servi à la racine, comme /sw-app.js de l'application SS : un service
+# worker ne peut contrôler que les chemins sous son propre dossier. Servi
+# avant depuis /portail-patient/sw.js, sa portée maximale était
+# « /portail-patient/ » et l'enregistrement avec la portée
+# « /portail-patient » (page de connexion comprise) échouait sans bruit —
+# d'où une installation incomplète ou refusée sur certains téléphones
+# (patron, 2026-10-23 : « on me disait que c'est une ancienne version »).
+# Voir static/sw.js pour la stratégie de cache (jamais de résultat médical
+# périmé affiché).
+@app.route('/sw-portail.js')
 def portail_service_worker():
     from flask import send_from_directory
     return send_from_directory('static', 'sw.js', mimetype='application/javascript')

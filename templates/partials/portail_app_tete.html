@@ -1,0 +1,77 @@
+{# ⭐ 2026-10-23 (patron) : l'application « Rs » des résultats, aux couleurs de « Ss » (fond noir,
+   lettres vertes). À inclure dans {% block extra_css %} des pages du portail patient.
+   garde=True : dans l'application installée, la page n'est ouverte qu'après déverrouillage
+   (empreinte / Face ID / code du téléphone) depuis la page de connexion — voir portail_patient.html. #}
+<link rel="manifest" href="{{ url_for('portail_manifest') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='images/portail-icon-192.png') }}">
+<meta name="theme-color" content="#000000">
+<!-- ⭐ Sans ces balises, iOS ouvre le raccourci comme un simple onglet Safari (barre d'adresse
+     visible, page qui ne cadre pas l'écran). Android suit déjà le manifest (display: standalone). -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Rs">
+<style>
+    html body { background: #000 !important; color: #e8f5ec; }
+    .rs-page { padding-top: env(safe-area-inset-top); }
+    .rs-logo { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px;
+               border-radius: 10px; background: #000; border: 1px solid #1f3a2a; color: #4ADE80;
+               font: 800 22px/1 Arial, Helvetica, sans-serif; letter-spacing: -1px; }
+    .rs-titre { color: #4ADE80; }
+    [data-bs-theme="dark"] .card { background: #0b0f0c; border-color: #1c2b21; }
+    [data-bs-theme="dark"] .card-header { background: #101812 !important; border-color: #1c2b21; color: #e8f5ec !important; }
+    [data-bs-theme="dark"] .list-group-item { background: transparent; border-color: #1c2b21; }
+    [data-bs-theme="dark"] .modal-content { background: #0b0f0c; border: 1px solid #1c2b21; }
+    [data-bs-theme="dark"] .form-control, [data-bs-theme="dark"] .form-select { background-color: #050806; border-color: #24382b; }
+    [data-bs-theme="dark"] .form-control:focus, [data-bs-theme="dark"] .form-select:focus { border-color: #4ADE80; box-shadow: 0 0 0 .2rem rgba(74,222,128,.2); }
+    /* base.html donne aux boutons un style pâle (fond pastel) : on remet l'aplat vert de SS. */
+    html body .btn-primary, html body .btn-success { background: #4ADE80; border: 1px solid #4ADE80; color: #000; font-weight: 600; }
+    html body .btn-primary:hover, html body .btn-success:hover,
+    html body .btn-primary:focus, html body .btn-success:focus { background: #22c55e; border-color: #22c55e; color: #000; }
+    html body .btn-outline-primary, html body .btn-outline-success { background: transparent; border: 1.5px solid #4ADE80; color: #4ADE80; }
+    html body .btn-outline-primary:hover, html body .btn-outline-success:hover { background: #4ADE80; border-color: #4ADE80; color: #000; }
+    .nav-pills { --bs-nav-pills-link-active-bg: #4ADE80; --bs-nav-pills-link-active-color: #000; --bs-nav-link-color: #4ADE80; --bs-nav-link-hover-color: #86efac; }
+    .bg-primary { background-color: #14532d !important; }
+    .alert-info, .alert-primary { --bs-alert-bg: #0f2418; --bs-alert-border-color: #1f4d2e; --bs-alert-color: #bbf7d0; }
+    .rs-install { border: 1px solid #4ADE80; border-radius: 12px; background: #07140c; }
+</style>
+<script>
+    // Thème sombre de Bootstrap (textes d'aide, formulaires, fenêtres lisibles sur fond noir).
+    document.documentElement.setAttribute('data-bs-theme', 'dark');
+
+    // Petits outils partagés par les pages du portail.
+    window.RsApp = {
+        // Ouverte depuis l'icône « Rs » de l'écran d'accueil (et non dans le navigateur) ?
+        estInstallee: function() {
+            return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        },
+        // Ce téléphone a-t-il déjà ses identifiants enregistrés ('webauthn' ou, à défaut, 'pin') ?
+        modeAppareil: function() {
+            try { return localStorage.getItem('rs_appareil') || ''; } catch (e) { return ''; }
+        },
+        retenirAppareil: function(mode) {
+            try { localStorage.setItem('rs_appareil', mode); } catch (e) {}
+        },
+        oublierAppareil: function() {
+            try { localStorage.removeItem('rs_appareil'); } catch (e) {}
+        },
+        // Déverrouillée pendant cette ouverture de l'application (effacé quand on la ferme).
+        estDeverrouillee: function() {
+            try { return sessionStorage.getItem('rs_deverrouille') === '1'; } catch (e) { return true; }
+        },
+        deverrouiller: function() {
+            try { sessionStorage.setItem('rs_deverrouille', '1'); } catch (e) {}
+        },
+    };
+    // ⭐ Condition technique pour que le téléphone propose l'installation (un manifest seul ne
+    // suffit pas). Servi à la racine comme celui de SS — voir la route /sw-portail.js (app.py).
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register("{{ url_for('portail_service_worker') }}", { scope: '/portail-patient' })
+            .catch(function(e) { console.warn('Service worker Rs non enregistré :', e); });
+    }
+    {% if garde %}
+    if (RsApp.estInstallee() && !RsApp.estDeverrouillee()) {
+        window.location.replace("{{ url_for('page_portail_patient') }}?app=1");
+    }
+    {% endif %}
+</script>

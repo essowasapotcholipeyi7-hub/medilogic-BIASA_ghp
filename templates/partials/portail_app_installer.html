@@ -1,0 +1,52 @@
+{# ⭐ 2026-10-23 (patron) : « dès qu'un patient va sur son portail de résultats, on lui propose
+   d'installer » l'application « Rs ». Android/Chrome : vraie fenêtre d'installation
+   (beforeinstallprompt) ; iPhone/Safari ne permet pas d'installer depuis la page, on montre le geste.
+   Rien n'est affiché dans l'application déjà installée. Nécessite portail_app_tete.html (RsApp). #}
+<div id="rsInstall" class="rs-install p-3 mb-3" style="display:none;">
+    <div class="d-flex align-items-center gap-3">
+        <img src="{{ url_for('static', filename='images/portail-icon-192.png') }}" alt="Rs" width="52" height="52" style="border-radius:12px;">
+        <div class="flex-grow-1">
+            <div class="fw-bold rs-titre">Installez l'application Rs</div>
+            <div class="small" id="rsInstallTexte">Vos résultats sur votre écran d'accueil, ouverts avec l'empreinte ou le Face ID de votre téléphone.</div>
+        </div>
+    </div>
+    <button type="button" id="rsBtnInstall" class="btn btn-primary w-100 mt-3" style="display:none;" onclick="rsInstaller()">
+        <i class="fas fa-download me-1"></i> Installer
+    </button>
+</div>
+
+<script>
+(function() {
+    if (RsApp.estInstallee()) return;
+    const carte = document.getElementById('rsInstall');
+    const texte = document.getElementById('rsInstallTexte');
+    const bouton = document.getElementById('rsBtnInstall');
+    let invite = null;
+
+    window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        invite = e;
+        bouton.style.display = '';
+        carte.style.display = '';
+    });
+    window.addEventListener('appinstalled', function() {
+        invite = null;
+        bouton.style.display = 'none';
+        texte.innerHTML = "Application installée. Ouvrez <strong>Rs</strong> sur votre écran d'accueil : "
+            + "connectez-vous une première fois avec votre code d'accès, puis activez l'empreinte / Face ID de votre téléphone.";
+        carte.style.display = '';
+    });
+    window.rsInstaller = function() {
+        if (!invite) return;
+        invite.prompt();
+        invite.userChoice.finally(function() { invite = null; bouton.style.display = 'none'; });
+    };
+
+    // iPhone / iPad : pas d'installation depuis la page, seulement par le menu Partager de Safari.
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+        texte.innerHTML = "Appuyez sur <strong>Partager</strong> <i class=\"fas fa-arrow-up-from-bracket\"></i> en bas de Safari, "
+            + "puis <strong>« Sur l'écran d'accueil »</strong>. Ouvrez ensuite <strong>Rs</strong> depuis votre écran d'accueil.";
+        carte.style.display = '';
+    }
+})();
+</script>
