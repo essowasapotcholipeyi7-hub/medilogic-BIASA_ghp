@@ -257,11 +257,27 @@ def _service_vise(services, type_service, mots_cles):
 # un service à part plutôt que « Autre ». Pas une spécialité : jamais proposé au choix de la
 # spécialité ni de l'hospitalisation à la vente, et la vente demande toujours la spécialité.
 NOM_SERVICE_NON_PRECISE = 'CONSULTATIONS SPECIALISEES NON PRECISEES'
+# ⭐ 2026-10-23 (patron) : de même, journée / chambre d'hospitalisation (P160...) vendue sans le service
+# qui a hospitalisé le patient.
+NOM_HOSPITALISATION_NON_PRECISE = 'HOSPITALISATION (SERVICE NON PRECISE)'
+_NOMS_NON_PRECIS = ('consultations specialisees non precise', 'hospitalisation service non precise')
 
 
 def est_service_non_precise(service):
+    """Un des services « non précisé » (consultations spécialisées, hospitalisation) : seulement
+    pour le classement, jamais proposé au choix."""
     nom = service.get('nom') if isinstance(service, dict) else getattr(service, 'nom', '')
-    return _mots(nom).startswith('consultations specialisees non precise')
+    return _mots(nom).startswith(_NOMS_NON_PRECIS)
+
+
+def _service_non_precis(services, nom_reference):
+    racine = _mots(nom_reference)[:30]
+    return next((x for x in services if _mots(x['nom']).startswith(racine)), None)
+
+
+def _est_hospitalisation(nom_mots):
+    return bool(re.search(r'\bp160\b', nom_mots) or re.search(r'\bhospitali', nom_mots)
+                or re.search(r'\bhospi\b', nom_mots))
 
 
 def _est_consultation_specialisee(nom_mots):
@@ -323,7 +339,7 @@ def deviner_service_acte(nom_acte, services):
     # ⭐ 2026-10-23 (patron) : consultation spécialisée dont la spécialité n'est pas dite -> service
     # « CONSULTATIONS SPECIALISEES NON PRECISEES » (plus dans « Autre »).
     if _est_consultation_specialisee(nom_mots):
-        s = next((x for x in services if est_service_non_precise(x)), None)
+        s = _service_non_precis(services, NOM_SERVICE_NON_PRECISE)
         if s:
             return s
 
@@ -343,6 +359,14 @@ def deviner_service_acte(nom_acte, services):
             return s
     if _contient(nom_mots, _MOTIFS_IMAGERIE):
         s = _trouver_service_par_type(services, 'imagerie', ['radiologie', 'imagerie'])
+        if s:
+            return s
+
+    # ⭐ 2026-10-23 (patron) : hospitalisation (P160...) vendue sans son service -> « HOSPITALISATION
+    # (SERVICE NON PRECISE) » plutôt que « Autre ». (Au module d'hospitalisation, la ligne va au service
+    # du séjour, avant toute règle.)
+    if _est_hospitalisation(nom_mots):
+        s = _service_non_precis(services, NOM_HOSPITALISATION_NON_PRECISE)
         if s:
             return s
 
@@ -464,7 +488,7 @@ SERVICES_DE_REFERENCE = [
     ('ONCOLOGIE', 'clinique'), ('MEDECINE INTERNE', 'clinique'), ('CHIRURGIE', 'clinique'),
     ('ODONTO-STOMATOLOGIE / CHIRURGIE DENTAIRE', 'clinique'),
     ('NEUROCHIRURGIE', 'clinique'), ('ANESTHESIE-REANIMATION', 'clinique'), ('INFECTIOLOGIE', 'clinique'),
-    (NOM_SERVICE_NON_PRECISE, 'autre'),
+    (NOM_SERVICE_NON_PRECISE, 'autre'), (NOM_HOSPITALISATION_NON_PRECISE, 'autre'),
 ]
 
 
@@ -475,6 +499,8 @@ def _deja_couvert(nom_ref, type_ref, existants):
     pharmacie. (Pas l'inverse : « CHIRURGIE » ne couvre pas « ODONTO-STOMATOLOGIE / CHIRURGIE
     DENTAIRE ».) Un service dentaire déjà là couvre l'odonto-stomatologie."""
     ref = _mots(nom_ref)
+    if est_service_non_precise({'nom': nom_ref}):
+        return any(_mots(s.nom) == ref for s in existants)
     for s in existants:
         nom = _mots(s.nom)
         if not nom:
@@ -528,7 +554,7 @@ def choix_service_requis(nom_acte, services, classification=None):
     nom_mots = _mots(nom_acte)
     if _est_consultation_specialisee(nom_mots):
         requis = 'specialite'
-    elif re.search(r'\bp160\b', nom_mots) or re.search(r'\bhospitali', nom_mots) or re.search(r'\bhospi\b', nom_mots):
+    elif _est_hospitalisation(nom_mots):
         requis = 'hospitalisation'
     else:
         return None
