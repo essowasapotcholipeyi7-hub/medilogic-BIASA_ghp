@@ -146,15 +146,19 @@ _REGLES_DOMAINE = [
      None, ['ophtalm'], []),
     # Césarienne, accouchement : obstétrique (sinon gynécologie / maternité).
     ([r'\bcesarienne', r'\baccouchement'], None, ['obstetri', 'gyneco', 'maternite'], []),
-    # Échographie obstétricale, consultation prénatale : gynécologie.
-    ([r'\bech\w* obstetric', r'\bobstetricale', r'\bprenatale?\b'], None, ['gyneco', 'obstetri', 'maternite'], []),
+    # Échographie obstétricale, consultation prénatale (CPN, code S115), actes gynécologiques :
+    # gynécologie. (Le CARNET CPN, lui, va en « Autre » : règle des carnets, vue avant.)
+    ([r'\bech\w* obstetric', r'\bobstetricale', r'\bprenatale?\b', r'\bcpn\b', r'^s115\b',
+      r'\bhydrotubation', r'\bdiu\b', r'\bsterilet', r'\bcolposcop', r'\bhysteroscop'],
+     None, ['gyneco', 'obstetri', 'maternite'], []),
     # Soins infirmiers vendus directement (injections, perfusions, mises en observation...).
     # Au cours d'une hospitalisation, la ligne va au service du séjour (service_id_force).
     # Pas pour « Scanner avec injection » ni un examen codé Q (imagerie) / R (laboratoire).
     ([r'\binjections?\b', r'\bperfusions?\b', r'\bmise en observation', r'\bsalle d observation',
       r'\bsoins? (et surveillance )?infirmier', r'\bsurveillance infirmi', r'\bpansements?\b',
       r'\boxygenotherapie', r'\bnebulisation', r'\baerosol', r'\bsondage', r'\bacte im\b',
-      r'\bintramusculaire', r'\bintraveineuse'],
+      r'\bintramusculaire', r'\bintraveineuse', r'\bprise de (la )?tension', r'\bcontrole (de la )?tension',
+      r'^ta tension arterielle'],
      None, ['soins', 'infirmier'], ['IMAGERIE', r'^[qr]\d']),
 ]
 
@@ -268,10 +272,12 @@ def deviner_service_acte(nom_acte, services):
         s = _service_dans_le_nom(m.group(1), services)
         if s:
             return s
-    # (« Chirurgie dentaire » n'est pas la chirurgie générale : laissée en « Autre ».)
-    if (re.search(r'\bconsultation', nom_mots) or re.match(r'^S1\d{2}\b', nom, re.IGNORECASE)) \
-            and not re.search(r'\bdentaire', nom_mots):
-        s = _service_dans_le_nom(nom, services)
+    # (« Chirurgie dentaire » n'est pas la chirurgie générale : seulement un service dentaire.)
+    if re.search(r'\bconsultation', nom_mots) or re.match(r'^S1\d{2}\b', nom, re.IGNORECASE):
+        if re.search(r'\bdentaire', nom_mots):
+            s = _trouver_service_par_mot_cle(services, ['dentaire', 'stomato', 'odonto'])
+        else:
+            s = _service_dans_le_nom(nom, services)
         if s:
             return s
 
@@ -376,16 +382,99 @@ def reclasser_recettes_service(structure_id):
                RecetteService.origine.in_(['auto', 'non_classe', 'classification'])),
         db.or_(RecetteService.type_source.is_(None), RecetteService.type_source != 'hospitalisation'),
     ).all()
-    nb = 0
+    # Une requête UPDATE par résultat (service, origine), pas une par ligne : ligne par ligne,
+    # 660 lignes prenaient ~90 s (un aller-retour vers la base chacune) — trop pour un simple
+    # enregistrement de service.
+    a_changer = {}
     for l in lignes:
-        service_id, service_nom, origine = _resoudre_ligne(
-            structure_id, l.nom_acte, l.type_source or 'acte', None, None, classification, services)
-        if l.service_id != service_id or l.origine != origine:
-            l.service_id, l.service_nom, l.origine = service_id, service_nom, origine
-            nb += 1
-    if nb:
+        resultat = _resoudre_ligne(structure_id, l.nom_acte, l.type_source or 'acte', None, None,
+                                   classification, services)
+        if l.service_id != resultat[0] or l.origine != resultat[2]:
+            a_changer.setdefault(resultat, []).append(l.id)
+    for (service_id, service_nom, origine), ids in a_changer.items():
+        RecetteService.query.filter(RecetteService.id.in_(ids)).update(
+            {'service_id': service_id, 'service_nom': service_nom, 'origine': origine},
+            synchronize_session=False)
+    if a_changer:
         db.session.commit()
-    return nb
+    return sum(len(ids) for ids in a_changer.values())
+
+
+# ⭐ 2026-10-22 (patron : « il faut créer les services manquants pour toutes les structures ») :
+# services qu'une structure peut se voir créer quand ses ventes en réclament un. Seuls ceux
+# qu'au moins une de ses recettes rangées en « Autre » attend réellement sont créés — pas toute
+# la liste partout.
+SERVICES_DE_REFERENCE = [
+    ('PHARMACIE', 'pharmacie'), ('LABORATOIRE', 'laboratoire'), ('RADIOLOGIE', 'imagerie'),
+    ('SOINS', 'autre'), ('MEDECINE GENERALE', 'clinique'), ('CARDIOLOGIE', 'clinique'),
+    ('OPHTALMOLOGIE', 'clinique'), ('OBSTETRIQUE', 'clinique'), ('GYNECOLOGIE', 'clinique'),
+    ('PEDIATRIE', 'clinique'), ('RHUMATOLOGIE', 'clinique'), ('UROLOGIE', 'clinique'),
+    ('NEUROLOGIE', 'clinique'), ('DERMATOLOGIE', 'clinique'), ('PNEUMOLOGIE', 'clinique'),
+    ('NEPHROLOGIE', 'clinique'), ('ENDOCRINOLOGIE', 'clinique'), ('GASTRO-ENTEROLOGIE', 'clinique'),
+    ('ORL', 'clinique'), ('GENETIQUE MEDICALE', 'clinique'), ('TRAUMATOLOGIE', 'clinique'),
+    ('ORTHOPEDIE', 'clinique'), ('PSYCHIATRIE', 'clinique'), ('HEMATOLOGIE', 'clinique'),
+    ('ONCOLOGIE', 'clinique'), ('MEDECINE INTERNE', 'clinique'), ('CHIRURGIE', 'clinique'),
+    ('CHIRURGIE DENTAIRE', 'clinique'),
+]
+
+
+def _deja_couvert(nom_ref, type_ref, existants):
+    """Un service existant (actif ou non) tient déjà ce rôle : même nom aux accents/espaces
+    près, l'un contenant l'autre en mots entiers (« SERVICE MEDECINE INTERNE »), l'un début de
+    l'autre (« MEDECINE GENERAL »), ou même type pour labo / imagerie / pharmacie."""
+    ref = _mots(nom_ref)
+    for s in existants:
+        nom = _mots(s.nom)
+        if not nom:
+            continue
+        if type_ref in TYPES_SANS_HOSPITALISATION and s.type_service == type_ref:
+            return True
+        if nom == ref or nom.startswith(ref) or ref.startswith(nom) \
+                or re.search(r'\b' + re.escape(ref) + r'\b', nom) or re.search(r'\b' + re.escape(nom) + r'\b', ref):
+            return True
+    return False
+
+
+def services_manquants(structure_id):
+    """{nom: {'type', 'lignes', 'exemples'}} — services de référence que les recettes de cette
+    structure aujourd'hui rangées en « Autre » attendent (mêmes règles que le classement :
+    on rejoue le classement avec ces services ajoutés, sans rien écrire)."""
+    existants = ServiceHospitalisation.query.filter_by(structure_id=structure_id).all()
+    candidats = [{'id': -(i + 1), 'nom': nom, 'type': type_ref, 'hospitalisation': False}
+                 for i, (nom, type_ref) in enumerate(SERVICES_DE_REFERENCE)
+                 if not _deja_couvert(nom, type_ref, existants)]
+    if not candidats:
+        return {}
+    services = charger_services(structure_id)
+    classification = _charger_classification_manuelle(structure_id)
+    lignes = RecetteService.query.filter(
+        RecetteService.structure_id == structure_id, RecetteService.service_id.is_(None),
+        db.or_(RecetteService.type_source.is_(None), RecetteService.type_source != 'hospitalisation'),
+    ).all()
+    besoins = {}
+    for l in lignes:
+        sid, nom, _ = _resoudre_ligne(structure_id, l.nom_acte, l.type_source or 'acte', None, None,
+                                      classification, services + candidats)
+        if sid is not None and sid < 0:
+            b = besoins.setdefault(nom, {'type': next(c['type'] for c in candidats if c['id'] == sid),
+                                         'lignes': 0, 'exemples': []})
+            b['lignes'] += 1
+            if l.nom_acte not in b['exemples'] and len(b['exemples']) < 4:
+                b['exemples'].append(l.nom_acte)
+    return besoins
+
+
+def creer_services_manquants(structure_id):
+    """Crée les services de services_manquants() (sans hospitalisation : à cocher dans
+    « Services de la structure » si le service reçoit des hospitalisés), puis reclasse les
+    recettes. Renvoie (noms créés, nombre de lignes reclassées)."""
+    besoins = services_manquants(structure_id)
+    for nom, b in besoins.items():
+        db.session.add(ServiceHospitalisation(structure_id=structure_id, nom=nom, actif=True,
+                                              type_service=b['type'], hospitalisation=False))
+    if besoins:
+        db.session.commit()
+    return sorted(besoins), reclasser_recettes_service(structure_id)
 
 
 def reclasser_recettes_service_sans_echec(structure_id):
