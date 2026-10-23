@@ -160,7 +160,6 @@
                 data-medecins-affectes="{{ acte.medecins_affectes or '' }}"
                 data-type-prestation="{{ acte.type_prestation or '' }}"
                 data-service-devine="{{ acte.service_devine or '' }}"
-                data-choix-service="{{ acte.choix_service_requis or '' }}"
                 data-nom="{{ acte.nom }}"
                 data-statut="{{ acte.statut or 'direct' }}"
                 data-prise-en-charge-amu="{{ 'true' if acte.prise_en_charge_amu else 'false' }}"
@@ -701,127 +700,11 @@
     </div>
 </div>
 
-<!-- ⭐ 2026-10-23 (patron) : « consultation spécialisée » sans spécialité, ou chambre
-     d'hospitalisation vendue ici : le service est OBLIGATOIRE. Un clic sur le service met l'acte
-     au panier et la vente continue. -->
-<div class="modal fade" id="choixServiceModal" tabindex="-1" data-bs-backdrop="static" aria-labelledby="choixServiceTitre">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="choixServiceTitre">Préciser la spécialité</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Annuler"></button>
-            </div>
-            <div class="modal-body">
-                <p class="mb-2" id="choixServiceTexte"></p>
-                <input type="text" class="form-control mb-3" id="choixServiceFiltre" placeholder="Rechercher (ex. cardio, pédiatrie)…" autocomplete="off">
-                <div class="d-flex flex-wrap gap-2" id="choixServiceListe"></div>
-                <div class="text-muted small mt-3" id="choixServiceVide" style="display:none;">
-                    Aucun service. Créez-le d'abord dans « Services de la structure ».
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-            </div>
-        </div>
-    </div>
-</div>
-
+{% include "partials/choix_service_obligatoire.html" %}
 <script>
-// ============================================
-// SERVICE OBLIGATOIRE (patron, 2026-10-23)
-// ============================================
-const SERVICES_SPECIALITES = {{ (services_specialites or [])|tojson|safe }};
-const SERVICES_HOSPITALISATION_VENTE = {{ (services_hospitalisation_vente or [])|tojson|safe }};
-
-// Type de choix exigé pour un acte du catalogue ('specialite' | 'hospitalisation' | ''),
-// lu sur l'option de la liste (data-choix-service, calculé côté serveur).
-function choixServiceRequisPour(nomActe) {
-    const select = document.getElementById('acteSelect');
-    if (!select || !nomActe) return '';
-    for (const opt of select.options) {
-        if (opt.getAttribute('data-nom') === nomActe) return opt.getAttribute('data-choix-service') || '';
-    }
-    return '';
-}
-
-function nomServiceVente(serviceId) {
-    const s = SERVICES_SPECIALITES.concat(SERVICES_HOSPITALISATION_VENTE).find(x => String(x.id) === String(serviceId));
-    return s ? s.nom : '';
-}
-
-// Ouvre la fenêtre et renvoie le service choisi {id, nom}, ou null si annulé.
-function demanderServiceObligatoire(nomActe, typeChoix) {
-    return new Promise(resolve => {
-        const services = typeChoix === 'hospitalisation' ? SERVICES_HOSPITALISATION_VENTE : SERVICES_SPECIALITES;
-        const modalEl = document.getElementById('choixServiceModal');
-        const liste = document.getElementById('choixServiceListe');
-        const filtre = document.getElementById('choixServiceFiltre');
-        document.getElementById('choixServiceTitre').textContent =
-            typeChoix === 'hospitalisation' ? "Service qui a hospitalisé le patient" : 'Préciser la spécialité';
-        document.getElementById('choixServiceTexte').innerHTML = (typeChoix === 'hospitalisation'
-            ? 'Pour <strong></strong>, choisissez le service qui a hospitalisé le patient :'
-            : 'Pour <strong></strong>, choisissez la spécialité de la consultation :');
-        document.querySelector('#choixServiceTexte strong').textContent = nomActe;
-        document.getElementById('choixServiceVide').style.display = services.length ? 'none' : '';
-        let choisi = null;
-        liste.innerHTML = '';
-        services.forEach(s => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'btn btn-outline-primary choix-service-btn';
-            b.textContent = s.nom;
-            b.dataset.recherche = _sansAccents(s.nom);
-            b.onclick = () => { choisi = {id: s.id, nom: s.nom}; bootstrap.Modal.getInstance(modalEl).hide(); };
-            liste.appendChild(b);
-        });
-        filtre.value = '';
-        filtre.oninput = () => {
-            const q = _sansAccents(filtre.value);
-            liste.querySelectorAll('.choix-service-btn').forEach(b => { b.style.display = !q || b.dataset.recherche.includes(q) ? '' : 'none'; });
-        };
-        filtre.onkeydown = e => {
-            if (e.key !== 'Enter') return;
-            e.preventDefault();
-            const visibles = [...liste.querySelectorAll('.choix-service-btn')].filter(b => b.style.display !== 'none');
-            if (visibles.length === 1) visibles[0].click();
-        };
-        modalEl.addEventListener('hidden.bs.modal', () => resolve(choisi), {once: true});
-        modalEl.addEventListener('shown.bs.modal', () => filtre.focus(), {once: true});
-        bootstrap.Modal.getOrCreateInstance(modalEl).show();
-    });
-}
-
-// Avant d'encaisser : toute ligne du panier qui exige un service et n'en a pas (panier repris
-// d'une prescription, d'une vente en attente...) le demande maintenant. false = vente annulée.
-async function completerServicesObligatoires() {
-    for (const item of panier) {
-        if (item.service_id) continue;
-        const requis = choixServiceRequisPour(item.nom);
-        if (!requis) continue;
-        const choix = await demanderServiceObligatoire(item.nom, requis);
-        if (!choix) {
-            await afficherMessage(requis === 'hospitalisation'
-                ? `Précisez le service qui a hospitalisé le patient pour « ${item.nom} » avant d'enregistrer la vente.`
-                : `Précisez la spécialité de « ${item.nom} » avant d'enregistrer la vente.`);
-            return false;
-        }
-        item.service_id = choix.id;
-        item.service_nom = choix.nom;
-    }
-    afficherPanier();
-    return true;
-}
-
-// Changer la spécialité / le service d'une ligne déjà au panier.
-async function changerServiceLigne(index) {
-    const item = panier[index];
-    if (!item) return;
-    const choix = await demanderServiceObligatoire(item.nom, choixServiceRequisPour(item.nom) || 'specialite');
-    if (!choix) return;
-    item.service_id = choix.id;
-    item.service_nom = choix.nom;
-    afficherPanier();
-}
+// Vente d'actes : raccourcis sur le panier de la page (fonctions communes dans le partial ci-dessus)
+async function completerServicesObligatoires() { return completerServicesObligatoiresDans(panier, afficherPanier); }
+async function changerServiceLigne(index) { return changerServiceDeLigne(panier[index], afficherPanier); }
 </script>
 
 <script>

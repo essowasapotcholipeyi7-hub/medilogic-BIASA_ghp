@@ -505,6 +505,29 @@ def choix_service_requis(nom_acte, services, classification=None):
     return requis
 
 
+def contexte_choix_service(structure_id, noms_actes, services=None, classification=None):
+    """Variables du partial templates/partials/choix_service_obligatoire.html (Vente d'actes,
+    Proformas) : services_specialites, services_hospitalisation_vente et
+    choix_service_par_acte = {nom: 'specialite' | 'hospitalisation'} pour les seuls actes qui
+    exigent un choix."""
+    if services is None:
+        services = charger_services(structure_id)
+    if classification is None:
+        classification = _charger_classification_manuelle(structure_id)
+    par_acte = {}
+    for nom in noms_actes or []:
+        nom = (nom or '').strip()
+        if nom and nom not in par_acte:
+            requis = choix_service_requis(nom, services, classification)
+            if requis:
+                par_acte[nom] = requis
+    return {
+        'services_specialites': [s for s in services if s['type'] == 'clinique'],
+        'services_hospitalisation_vente': [s for s in services if s['type'] not in TYPES_SANS_HOSPITALISATION],
+        'choix_service_par_acte': par_acte,
+    }
+
+
 def services_manquants(structure_id):
     """{nom: {'type', 'lignes', 'exemples'}} — services de référence que les recettes de cette
     structure aujourd'hui rangées en « Autre » attendent (mêmes règles que le classement :

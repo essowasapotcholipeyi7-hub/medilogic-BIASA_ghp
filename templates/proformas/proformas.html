@@ -675,6 +675,7 @@
     </div>
 </div>
 
+{% include "partials/choix_service_obligatoire.html" %}
 <script>
 // ============================================
 // VARIABLES GLOBALES
@@ -1411,8 +1412,18 @@ async function validerEtAjouterActeProforma(acte, qte, isAMU, isCAC, patientAssu
         return false;
     }
 
+    // ⭐ 2026-10-23 (patron) : « consultation spécialisée » sans spécialité / chambre d'hospitalisation :
+    // le service est obligatoire, choisi ici avant l'ajout au panier.
+    let serviceId = null, serviceNom = '';
+    const choixRequis = choixServiceRequisPour(nom);
+    if (choixRequis) {
+        const choix = await demanderServiceObligatoire(nom, choixRequis);
+        if (!choix) return false;
+        serviceId = choix.id;
+        serviceNom = choix.nom;
+    }
     if (prix > 0) {
-        ajouterAuPanierComplet(nom, 'acte', prix, pbrValue, qte, priseEnChargeAMU, priseEnChargeCAC);
+        ajouterAuPanierComplet(nom, 'acte', prix, pbrValue, qte, priseEnChargeAMU, priseEnChargeCAC, serviceId, serviceNom);
         return true;
     }
     return false;
@@ -1597,8 +1608,10 @@ async function ajouterArticlePersonnalise() {
     ajouterAuPanier(nom, type, prix, qte);
 }
 
-function ajouterAuPanierComplet(nom, type, prix, pbr, qte, priseEnChargeAMU, priseEnChargeCAC) {
-    const existing = panierArticles.find(item => item.nom === nom && item.type === type && item.prix === prix);
+function ajouterAuPanierComplet(nom, type, prix, pbr, qte, priseEnChargeAMU, priseEnChargeCAC, serviceId, serviceNom) {
+    // ⭐ 2026-10-23 : deux spécialités = deux lignes (même acte, services différents)
+    const existing = panierArticles.find(item => item.nom === nom && item.type === type && item.prix === prix
+        && (!serviceId || !item.service_id || String(item.service_id) === String(serviceId)));
     
     // 🔥 CORRECTION : Garder 0 si le PBR est 0
     const pbrValue = (pbr !== undefined && pbr !== null && pbr !== '') ? pbr : 0;
@@ -1617,6 +1630,8 @@ function ajouterAuPanierComplet(nom, type, prix, pbr, qte, priseEnChargeAMU, pri
             total: prix * qte,
             prise_en_charge_amu: priseEnChargeAMU !== false,
             prise_en_charge_cac: priseEnChargeCAC !== false,
+            service_id: serviceId || null,        // ⭐ 2026-10-23 : spécialité / service d'hospitalisation
+            service_nom: serviceId ? (serviceNom || nomServiceVente(serviceId)) : null,
             liste_tarif: groupeListeActif() ? cleListeParDefaut({nom: nom}, groupeListeActif()) : null
         });
     }
@@ -1768,7 +1783,7 @@ function afficherPanier() {
 
         const row = tbody.insertRow();
         row.innerHTML = `
-            <td>${item.nom}${celluleCouvertureProforma(item, index, estAssurePourPanier && tauxAMUPourPanier > 0, assurance2Active)}</td>
+            <td>${item.nom}${libelleServiceLigne(item, 'changerServiceDeLigne(panierArticles[' + index + '], afficherPanier)')}${celluleCouvertureProforma(item, index, estAssurePourPanier && tauxAMUPourPanier > 0, assurance2Active)}</td>
             <td>
                 <span class="badge ${item.type === 'acte' ? 'bg-primary' : 'bg-success'}">
                     ${item.type === 'acte' ? 'Acte' : 'Produit'}
@@ -1969,9 +1984,13 @@ async function sauvegarderProforma() {
     }
     
     // 🔥 CORRECTION: Envoyer les articles avec les vraies valeurs
+    // ⭐ 2026-10-23 : spécialité / service obligatoire sur les lignes qui l'exigent
+    if (!await completerServicesObligatoiresDans(panierArticles, afficherPanier)) return;
     const articles = panierArticles.map(item => ({
         nom: item.nom,
         type: item.type,
+        service_id: item.service_id || null,
+        service_nom: item.service_nom || null,
         quantite: item.quantite,
         prix_unitaire: item.prix,
         prix: item.prix,
@@ -2280,6 +2299,8 @@ async function convertirEnVente(proformaId) {
                 id: a.id || null,
                 nom: a.nom,
                 type: a.type || 'acte',
+                service_id: a.service_id || null,     // ⭐ 2026-10-23 : spécialité choisie sur la proforma
+                service_nom: a.service_nom || null,
                 quantite: a.quantite || 1,
                 prix: a.prix || a.prix_unitaire || 0,
                 prix_unitaire: a.prix_unitaire || a.prix || 0,
@@ -2415,7 +2436,7 @@ function afficherModalConversion(data) {
                                 '<tr><td colspan="6" class="text-center text-muted">Aucun article</td></tr>' :
                                 panierConversion.map((item, index) => `
                                     <tr>
-                                        <td>${item.nom}${formatDatePrestationConversion(item)}<div class="convert-couv">${celluleCouvertureConversion(item, index)}</div></td>
+                                        <td>${item.nom}${formatDatePrestationConversion(item)}${libelleServiceLigne(item)}<div class="convert-couv">${celluleCouvertureConversion(item, index)}</div></td>
                                         <td><span class="badge ${item.type === 'acte' ? 'bg-primary' : 'bg-success'}">${item.type === 'acte' ? 'Acte' : 'Produit'}</span></td>
                                         <td>
                                             <input type="number" class="form-control form-control-sm" value="${item.quantite}" 
@@ -3396,6 +3417,8 @@ async function finaliserConversionVente() {
         await afficherMessage('Le panier est vide. Ajoutez au moins un article.');
         return;
     }
+    // ⭐ 2026-10-23 : spécialité / service d'hospitalisation obligatoire avant la vente
+    if (!await completerServicesObligatoiresDans(panierConversion)) return;
     
     const netAPayer = calculeNetAPayerConversion();
     const montantDonne = parseFloat(document.getElementById('convertMontantDonne').value) || 0;
@@ -3905,7 +3928,7 @@ function afficherArticlesModif(lignes) {
         const libelle = l.source === 'prive' ? 'tarif ' + (contexteTarifModif().nom2 || 'privé')
             : (l.source === 'non_assure' ? 'prix non assuré' : (item.prix_modifie ? 'prix saisi' : ''));
         return `<tr>
-            <td>${item.nom}</td>
+            <td>${item.nom}${libelleServiceLigne(item, 'changerServiceDeLigne(window.modifArticles[' + index + '], calculerTotalModif)')}</td>
             <td><span class="badge ${item.type === 'produit' ? 'bg-success' : 'bg-primary'}">${item.type === 'produit' ? 'Produit' : 'Acte'}</span></td>
             <td><input type="number" class="form-control form-control-sm" value="${item.quantite}"
                        style="width:60px;" onchange="modifierArticleModif(${index}, 'quantite', this.value)"></td>
@@ -4084,6 +4107,8 @@ async function sauvegarderModificationProforma() {
         return;
     }
     
+    // ⭐ 2026-10-23 : spécialité / service obligatoire avant d'enregistrer la modification
+    if (!await completerServicesObligatoiresDans(window.modifArticles || [], calculerTotalModif)) return;
     const data = {
         id: proformaAModifier.id,
         assurance_nom: document.getElementById('modifAssuranceNom').value,

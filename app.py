@@ -32,7 +32,7 @@ from services.part_medecin_service import (charger_taux_part_medecin, creer_lign
                                            calculer_periode_part_medecin, charger_toujours_demander_medecin,
                                            charger_affectations, charger_medecins_affectes_csv, parametres_rsps, parametres_rsps_structure,
                                            montant_net_periode, point_prestations, rsps_a_verser, enregistrer_versement_rsps)
-from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service, reclasser_recettes_service_sans_echec
+from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service, reclasser_recettes_service_sans_echec, contexte_choix_service
 from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION
 from models import ConsommableLabo, UsageConsommable, MouvementConsommable, ParametrageStockLabo
 from services import comptes_service   # ⭐ 2026-10-18 : comptes (structures, personnel) dans Neon
@@ -4865,7 +4865,9 @@ def actes_vente():
                           choix_service_actif=choix_service_actif,
                           services_liste=services_liste_vente,
                           services_specialites=services_specialites,
-                          services_hospitalisation_vente=services_hospitalisation_vente)
+                          services_hospitalisation_vente=services_hospitalisation_vente,
+                          choix_service_par_acte={a['nom']: a['choix_service_requis'] for a in actes_filtres
+                                                  if a.get('choix_service_requis')})
 
 
 @app.route('/pharma_vente')
@@ -21133,7 +21135,9 @@ def proformas():
                          prix_non_assure_produits=charger_prix_non_assure(structure_id, 'produit'),
                          # ⭐ 2026-10-19 : listes de prix (Valeo : SMA, Expatriés) et arrondi de la part patient
                          listes_tarifs=listes_tarifs(structure_id),
-                         pas_arrondi=pas_arrondi_structure(structure_id))
+                         pas_arrondi=pas_arrondi_structure(structure_id),
+                         # ⭐ 2026-10-23 : spécialité / service d'hospitalisation obligatoire (comme Vente d'actes)
+                         **contexte_choix_service(structure_id, [a.get('nom') for a in actes_filtres]))
 
 
 @app.route('/api/sejour/<string:type_s>/<int:sejour_id>/liste-tarif', methods=['POST'])
