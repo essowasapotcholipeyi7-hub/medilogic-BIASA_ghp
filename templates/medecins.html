@@ -721,7 +721,7 @@ async function imprimerHistoriqueMedecin() {
     </html>`;
     
     const win = window.open('', '_blank');
-    win.document.write(html);
+    win.document.write(ajouterEnteteA4(html));
     win.document.close();
 }
 

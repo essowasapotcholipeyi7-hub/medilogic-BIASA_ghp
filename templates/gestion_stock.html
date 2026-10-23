@@ -1455,7 +1455,7 @@ async function imprimerListeProduitsModal() {
         <table><thead><tr>${m.entetes.map(e => '<th>' + e + '</th>').join('')}</tr></thead><tbody>${m.lignes.map(l => '<tr>' + l.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('')}</tbody></table></body></html>`;
     const w = window.open('', '_blank');
     if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
-    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    w.document.write(ajouterEnteteA4(html)); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
 }
 
 function ouvrirStockADate() {
@@ -2010,7 +2010,7 @@ async function imprimerApercuInventaire() {
     `;
     const w = window.open('', '_blank');
     if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
-    w.document.write(html);
+    w.document.write(ajouterEnteteA4(html));
     w.document.close();
     w.focus();
     setTimeout(() => w.print(), 300);
@@ -2097,7 +2097,7 @@ async function imprimerDetailValeurStock() {
         </body></html>`;
     const w = window.open('', '_blank');
     if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
-    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    w.document.write(ajouterEnteteA4(html)); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
 }
 
 // ========== ⭐ INVENTAIRE — feuille de comptage à imprimer AVANT de valider (patron, 2026-10-06) ==========
@@ -2119,7 +2119,7 @@ async function imprimerFeuilleComptage() {
         </body></html>`;
     const w = window.open('', '_blank');
     if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
-    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    w.document.write(ajouterEnteteA4(html)); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
 }
 
 // ========== ⭐ VENTES DE MÉDICAMENTS PAR JOUR (patron, 2026-10-06) ==========
@@ -2209,7 +2209,7 @@ async function imprimerVentesMedicamentsParJour() {
         </body></html>`;
     const w = window.open('', '_blank');
     if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
-    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    w.document.write(ajouterEnteteA4(html)); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
 }
 
 // ========== HISTORIQUE DES MOUVEMENTS (actes et produits) ==========
@@ -2503,7 +2503,7 @@ async function spImprimerDetail() {
         </body></html>`;
     const w = window.open('', '_blank');
     if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
-    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    w.document.write(ajouterEnteteA4(html)); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
 }
 
 // ---- Aperçu (toutes les pages, mêmes filtres) : fenêtre à relire, puis Imprimer / Enregistrer en PDF
@@ -2538,7 +2538,7 @@ async function spApercu() {
         </body></html>`;
     const w = window.open('', '_blank');
     if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'aperçu."); return; }
-    w.document.write(html); w.document.close(); w.focus();
+    w.document.write(ajouterEnteteA4(html)); w.document.close(); w.focus();
 }
 
 // ---- PDF / texte / CSV : générés par le serveur, toutes les pages, mêmes filtres que l'écran

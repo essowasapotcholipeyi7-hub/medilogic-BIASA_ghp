@@ -77,12 +77,15 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-5">
+        {# ⭐ 2026-10-23 (patron) : en A4 / A5, en-tête de la structure (celui de ses comptes rendus) ; le ticket
+           80 mm garde son bandeau. Logo et nom du bandeau masqués quand l'en-tête est là (.entete-identite). #}
+        {% if format != '80mm' %}{% set entete_structure_id = preinscription.structure_id %}{% include 'partials/entete_a4.html' %}{% endif %}
         <div class="card" id="ticketContenu">
             <div class="ticket-header text-center">
                 {% if structure.logo_url %}
-                <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 44px; max-width: 90px; background: white; padding: 3px; border-radius: 5px;" class="mb-1">
+                <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 44px; max-width: 90px; background: white; padding: 3px; border-radius: 5px;" class="mb-1 entete-identite">
                 {% endif %}
-                <h6>{{ structure.nom or "SSoftOne v10" }}</h6>
+                <h6 class="entete-identite">{{ structure.nom or "SSoftOne v10" }}</h6>
                 <p class="sous-titre">Ticket de passage</p>
             </div>
             <div class="card-body text-center">

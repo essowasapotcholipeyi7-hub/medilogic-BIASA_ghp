@@ -3128,6 +3128,34 @@ async function appliquerPropositionTheme() {
     <!-- ===== CONTENU PRINCIPAL ===== -->
     <main class="main-content" id="mainContent">
 
+        {# ⭐ 2026-10-23 (patron : « toutes les impressions A4 prennent l'en-tête de la structure, sauf les
+           80 mm ») — une page de l'application imprimée telle quelle (journal, annulations, inventaire, fiche
+           employé, comptabilité...) : en-tête de la structure en haut de la feuille, à l'impression seulement.
+           Retiré si la page affiche déjà le sien (partials/entete_a4.html). Les rapports ouverts dans une
+           nouvelle fenêtre l'ajoutent avec ajouterEnteteA4() (plus bas). #}
+        {# jamais sur un document sans menu (reçus, tickets 80 mm, factures...) : ils gèrent leur en-tête eux-mêmes #}
+        {% set _entete_page = entete_impression_a4() if not (cacher_navigation is defined and cacher_navigation) else '' %}
+        {% if _entete_page %}
+        <div class="entete-a4-page d-none d-print-block">{{ _entete_page }}</div>
+        {% endif %}
+        <script>
+        window.ENTETE_A4_HTML = {{ (_entete_page or '')|string|tojson }};
+        // Rapport imprimé dans une nouvelle fenêtre : en-tête de la structure juste après <body> (adresses
+        // d'images rendues complètes : la fenêtre vide n'a pas l'adresse du site). Sans en-tête : html inchangé.
+        window.ajouterEnteteA4 = function (html) {
+            if (!window.ENTETE_A4_HTML || typeof html !== 'string') return html;
+            const entete = '<div class="entete-a4-structure" style="margin:0 0 12px;">'
+                + window.ENTETE_A4_HTML.replace(/(src|href)="\//g, '$1="' + location.origin + '/') + '</div>';
+            const m = html.match(/<body[^>]*>/i);
+            return m ? html.replace(m[0], m[0] + entete) : entete + html;
+        };
+        document.addEventListener('DOMContentLoaded', function () {
+            if (document.querySelector('.entete-a4-structure')) {
+                document.querySelectorAll('.entete-a4-page').forEach(function (el) { el.remove(); });
+            }
+        });
+        </script>
+
         <!-- ===== BANNIÈRE ABONNEMENT SSOFTONEV10 (jaune/rouge/bloqué) ===== -->
         {% set _ab_banner = abonnement() %}
         {% if not (cacher_navigation is defined and cacher_navigation) and _ab_banner.niveau_alerte in ('jaune', 'rouge') %}
