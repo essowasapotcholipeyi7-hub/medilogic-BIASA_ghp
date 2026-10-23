@@ -463,7 +463,7 @@
     <!-- 🔥 Prise en charge principale -->
     {% if prise_en_charge_val > 0 %}
     <div style="display: flex; justify-content: space-between; color: #28a745;">
-        <span>Prise en charge ({{ libelle_taux_pec_amu(articles, taux_assurance|default(0)) }}) :</span> <span>- {{ prise_en_charge_val|round(0)|int }} FCFA</span>
+        {% set _taux_pec = libelle_taux_pec_amu(articles, taux_assurance|default(0)) %}<span>Prise en charge{% if _taux_pec %} ({{ _taux_pec }}){% endif %} :</span> <span>- {{ prise_en_charge_val|round(0)|int }} FCFA</span>
     </div>
     {% endif %}
     

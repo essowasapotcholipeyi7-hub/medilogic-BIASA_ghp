@@ -215,8 +215,10 @@ app.jinja_env.globals['a_acces'] = a_acces
 def libelle_taux_pec_amu(articles, taux_assurance):
     """⭐ 2026-10-16 (patron) : taux affiché à côté de « Prise en charge AMU » sur les reçus,
     factures et proformas — celui des actes pris en charge (100 % pour O101, S102/S113, K233 en
-    structure publique ; 90 % pour P160), « taux par acte » s'ils diffèrent. Avant : toujours
-    le taux du patient (« 80 % » affiché pour une prise en charge à 100 %). Affichage seul."""
+    structure publique ; 90 % pour P160), rien s'ils diffèrent (2026-10-23, patron : « taux par acte »
+    ne sert à rien et renvoyait le montant à la ligne sur le ticket 80 mm — les modèles n'affichent
+    alors pas de parenthèses). Avant : toujours le taux du patient (« 80 % » affiché pour une prise en
+    charge à 100 %). Affichage seul."""
     def pct(v):
         return f"{float(v):g}%"
     try:
@@ -235,7 +237,7 @@ def libelle_taux_pec_amu(articles, taux_assurance):
         taux.add(round(float(taux_amu_pour_article(a.get('nom'), defaut)), 2))
     if len(taux) == 1:
         return pct(taux.pop())
-    return 'taux par acte' if taux else pct(defaut)
+    return '' if taux else pct(defaut)
 
 
 app.jinja_env.globals['libelle_taux_pec_amu'] = libelle_taux_pec_amu
