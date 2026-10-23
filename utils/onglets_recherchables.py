@@ -45,6 +45,8 @@ def onglets_recherchables(role, is_admin, a_acces, onglet_cache_fn, bloq):
             not role_labo_radio and not onglet_cache_fn('patients') and not bloq)
     ajouter('Accueil patient (QR)', 'page_accueil_qr',
             not role_labo_radio and not onglet_cache_fn('patients') and not bloq)
+    ajouter('Portail résultats (Rs)', 'page_portail_resultats_accueil',
+            not role_labo_radio and not onglet_cache_fn('patients') and not bloq)
     ajouter('Programmer un rendez-vous', 'rendez_vous',
             not role_labo_radio and a_acces('rendez_vous') and not onglet_cache_fn('rendez_vous') and not bloq)
     ajouter('Rappels des rendez-vous', 'rappels',

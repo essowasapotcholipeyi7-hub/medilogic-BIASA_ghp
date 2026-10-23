@@ -332,16 +332,6 @@
                     </button>
                 </li>
                 {% endif %}
-                <!-- ⭐ Code d'accès au portail résultats (voir /portail-patient) —
-                     jusqu'ici uniquement visible depuis /resultats-analyses UNE
-                     FOIS un résultat déjà saisi, ce qui le rendait introuvable
-                     pour le donner au patient à l'avance (signalé). Onglet dédié
-                     ici : accessible pour n'importe quel patient, à tout moment. -->
-                <li class="nav-item">
-                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#detailTabPortail" type="button" onclick="chargerCodePortailPatient()">
-                        <i class="fas fa-key"></i> Portail résultats
-                    </button>
-                </li>
             </ul>
             <div class="modal-body tab-content">
                 <div class="tab-pane fade show active" id="detailTabInfos">
@@ -357,18 +347,6 @@
                     <div class="text-center text-muted py-4">Chargement...</div>
                 </div>
                 {% endif %}
-                <div class="tab-pane fade" id="detailTabPortail">
-                    <div class="p-3">
-                        <p class="text-muted small">
-                            Ce code, avec le numéro de téléphone du patient, lui donne accès à
-                            <a href="{{ url_for('page_portail_patient') }}" target="_blank">son portail résultats</a>
-                            pour télécharger/imprimer ses résultats disponibles et voir son prochain rendez-vous.
-                        </p>
-                        <div id="portailCodeZone" class="text-center py-3">
-                            <div class="text-muted">Chargement...</div>
-                        </div>
-                    </div>
-                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
@@ -377,6 +355,11 @@
                 </button>
                 <button class="btn btn-warning" onclick="modifierDepuisDetails()" id="btnEditFromDetail">
                     <i class="fas fa-pen me-1"></i> Modifier
+                </button>
+                <!-- ⭐ 2026-10-23 (patron) : remplace l'onglet « Portail résultats », trop caché — la page dédiée
+                     (groupe Patients) s'ouvre directement sur ce patient, QR code prêt à scanner. -->
+                <button class="btn btn-primary" onclick="window.location.href = '{{ url_for('page_portail_resultats_accueil') }}?patient=' + detailPatientId">
+                    <i class="fas fa-qrcode me-1"></i> QR portail Rs
                 </button>
             </div>
         </div>
@@ -1660,58 +1643,6 @@ function chargerRendezVousPatient() {
             `;
         })
         .catch(() => { zone.innerHTML = '<div class="text-center text-danger py-4">Erreur de chargement</div>'; });
-}
-
-// ⭐ Code d'accès au portail résultats (voir /portail-patient, app.py) —
-// affiche le code existant, ou propose de le générer s'il n'y en a pas
-// encore (jusqu'ici un code n'apparaissait qu'après un premier résultat
-// saisi, introuvable pour le préparer à l'avance — signalé).
-function chargerCodePortailPatient() {
-    if (!detailPatientId) return;
-    const zone = document.getElementById('portailCodeZone');
-    zone.innerHTML = '<div class="text-muted">Chargement...</div>';
-    fetch(`/api/patients/${detailPatientId}/code-portail`)
-        .then(r => r.json())
-        .then(d => { afficherCodePortailPatient(d.code_acces); })
-        .catch(() => { zone.innerHTML = '<div class="text-center text-danger py-4">Erreur de chargement</div>'; });
-}
-
-function afficherCodePortailPatient(code) {
-    const zone = document.getElementById('portailCodeZone');
-    if (code) {
-        zone.innerHTML = `
-            <div class="fs-3 fw-bold mb-2" style="letter-spacing:3px; font-family:monospace;">${code}</div>
-            <button class="btn btn-sm btn-outline-secondary" onclick="regenererCodePortailPatient()">
-                <i class="fas fa-sync-alt me-1"></i> Régénérer (invalide l'ancien code)
-            </button>
-            <a class="btn btn-sm btn-outline-primary" href="/patients/${detailPatientId}/carte-portail" target="_blank">
-                <i class="fas fa-qrcode me-1"></i> Imprimer une carte (QR code)
-            </a>`;
-    } else {
-        zone.innerHTML = `
-            <p class="text-muted">Aucun code généré pour ce patient pour le moment.</p>
-            <button class="btn btn-primary" onclick="genererCodePortailPatient()">
-                <i class="fas fa-key me-1"></i> Générer un code d'accès
-            </button>
-            <a class="btn btn-outline-primary" href="/patients/${detailPatientId}/carte-portail" target="_blank">
-                <i class="fas fa-qrcode me-1"></i> Générer et imprimer une carte
-            </a>`;
-    }
-}
-
-function genererCodePortailPatient() {
-    fetch(`/api/patients/${detailPatientId}/generer-code-portail`, { method: 'POST' })
-        .then(r => r.json())
-        .then(async d => { if (d.success) afficherCodePortailPatient(d.code_acces); else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'}); });
-}
-
-async function regenererCodePortailPatient() {
-    if (!await demanderConfirmation("Régénérer le code ?\n\nL'ancien code ne fonctionnera plus : le patient sera déconnecté du portail, " +
-            "son code rapide et son empreinte / Face ID enregistrés seront effacés. Il devra se reconnecter avec le nouveau code.",
-            {type: 'warning', texteOk: 'Oui, régénérer', texteAnnuler: 'Non'})) return;
-    fetch(`/api/patients/${detailPatientId}/regenerer-code-portail`, { method: 'POST' })
-        .then(r => r.json())
-        .then(async d => { if (d.success) afficherCodePortailPatient(d.code_acces); else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'}); });
 }
 
 async function selectionnerDepuisDetails() {

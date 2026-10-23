@@ -2489,6 +2489,9 @@ async function appliquerPropositionTheme() {
                 <a class="menu-item" href="{{ url_for('page_accueil_qr') }}">
                     Accueil patient (QR)
                 </a>
+                <a class="menu-item" href="{{ url_for('page_portail_resultats_accueil') }}">
+                    Portail résultats (Rs)
+                </a>
                 {% if a_acces('rendez_vous') and not onglet_cache('rendez_vous') %}
                 <a class="menu-item" href="{{ url_for('rendez_vous') }}">
                     Programmer Rendez-vous

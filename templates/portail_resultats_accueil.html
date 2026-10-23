@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}Portail résultats (Rs){% endblock %}
+
+{% block extra_css %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+    /* ⭐ 2026-10-23 (patron) : donner l'accès au portail résultats au comptoir, sans chercher l'onglet caché
+       de la fiche patient — mêmes couleurs que « Accueil patient (QR) » (thème de la structure). */
+    .rs-liste { max-height: calc(100vh - 290px); min-height: 240px; overflow-y: auto; }
+    .rs-liste .list-group-item { cursor: pointer; }
+    .rs-liste .list-group-item.active { background: color-mix(in srgb, var(--th-primaire, #0E9D67) 14%, transparent);
+                                        border-color: var(--th-primaire, #0E9D67); color: inherit; }
+    .rs-cadre-qr { display: inline-block; background: #fff; padding: 16px; border-radius: 16px;
+                   border: 3px solid var(--th-primaire, #0E9D67); }
+    .rs-code { font: 700 28px/1.2 monospace; letter-spacing: 4px; }
+    .rs-etapes { counter-reset: etape; list-style: none; padding: 0; margin: 0; font-size: 14px; }
+    .rs-etapes li { counter-increment: etape; padding: 3px 0; }
+    .rs-etapes li::before { content: counter(etape); display: inline-flex; align-items: center; justify-content: center;
+                            width: 22px; height: 22px; border-radius: 50%; margin-right: 8px; font-size: 12px; font-weight: 700;
+                            background: var(--th-primaire, #0E9D67); color: #fff; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <h4 class="mb-0"><i class="fas fa-qrcode me-2"></i>Portail résultats (Rs)</h4>
+    <span class="text-muted small">Choisissez le patient, il scanne le QR code avec son téléphone.</span>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-body">
+                <input type="search" class="form-control mb-2" id="rsRecherche" placeholder="Nom, téléphone ou n° de dossier" autocomplete="off">
+                <div class="btn-group btn-group-sm w-100 mb-2" role="group">
+                    <input type="radio" class="btn-check" name="rsFiltre" id="rsFiltreJour" value="jour" checked>
+                    <label class="btn btn-outline-primary" for="rsFiltreJour">Venus aujourd'hui <span id="rsNbJour" class="badge bg-secondary ms-1"></span></label>
+                    <input type="radio" class="btn-check" name="rsFiltre" id="rsFiltreTous" value="tous">
+                    <label class="btn btn-outline-primary" for="rsFiltreTous">Tous les patients</label>
+                </div>
+                <div class="list-group rs-liste" id="rsListe">
+                    <div class="text-center text-muted py-4">Chargement...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-body" id="rsPanneau">
+                <div class="text-center text-muted py-5">
+                    <i class="fas fa-hand-pointer fa-2x mb-3 d-block"></i>
+                    Choisissez un patient dans la liste.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const RS_PORTAIL_URL = {{ portail_url|tojson }};
+let rsPatients = [];
+let rsSelection = null;
+
+function rsEchapper(t) {
+    return String(t ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+}
+
+function rsEtat(p) {
+    if (p.nb_appareils) return {cls: 'bg-success', texte: 'Application activée' + (p.derniere_utilisation ? ` — vu le ${p.derniere_utilisation}` : '')};
+    if (p.pin_defini) return {cls: 'bg-success', texte: 'Code rapide défini'};
+    if (p.code_acces) return {cls: 'bg-warning text-dark', texte: 'Code créé, pas encore activé'};
+    return {cls: 'bg-secondary', texte: "Pas encore d'accès"};
+}
+
+function rsNormaliser(t) {
+    return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+function rsAfficherListe() {
+    const recherche = rsNormaliser(document.getElementById('rsRecherche').value.trim());
+    const chiffres = recherche.replace(/\D/g, '');
+    const filtre = document.querySelector('input[name="rsFiltre"]:checked').value;
+    // Une recherche tapée cherche dans tous les patients, même si « Venus aujourd'hui » est coché.
+    let liste = rsPatients.filter(p => {
+        if (!recherche) return filtre === 'tous' || p.venu_aujourdhui;
+        return rsNormaliser(p.nom).includes(recherche)
+            || String(p.numero) === recherche
+            || (chiffres.length >= 3 && String(p.telephone).replace(/\D/g, '').includes(chiffres));
+    });
+    const total = liste.length;
+    liste = liste.slice(0, 100);
+    const zone = document.getElementById('rsListe');
+    if (!liste.length) {
+        zone.innerHTML = `<div class="text-center text-muted py-4">${recherche ? 'Aucun patient trouvé.' : "Aucun patient venu aujourd'hui pour le moment — cherchez par nom ou téléphone."}</div>`;
+        return;
+    }
+    zone.innerHTML = liste.map(p => {
+        const e = rsEtat(p);
+        return `<button type="button" class="list-group-item list-group-item-action ${rsSelection && rsSelection.id === p.id ? 'active' : ''}" onclick="rsChoisir(${p.id})">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+                <div>
+                    <div class="fw-semibold notranslate text-break">${rsEchapper(p.nom) || '(sans nom)'}</div>
+                    <div class="small text-muted">N° ${rsEchapper(p.numero)} · ${rsEchapper(p.telephone) || 'pas de téléphone'}</div>
+                </div>
+                <span class="badge ${e.cls} text-wrap" style="max-width: 45%;">${e.texte}</span>
+            </div>
+        </button>`;
+    }).join('') + (total > liste.length ? `<div class="text-center text-muted small py-2">${total - liste.length} autres — affinez la recherche.</div>` : '');
+}
+
+async function rsChoisir(id) {
+    const p = rsPatients.find(x => x.id === id);
+    if (!p) return;
+    rsSelection = p;
+    rsAfficherListe();
+    const panneau = document.getElementById('rsPanneau');
+    if (!p.code_acces) {
+        // Get-or-create, jamais destructif : le patient choisi reçoit son code tout de suite.
+        panneau.innerHTML = '<div class="text-center text-muted py-5">Création du code d\'accès...</div>';
+        try {
+            const d = await fetch(`/api/patients/${p.id}/generer-code-portail`, {method: 'POST'}).then(r => r.json());
+            if (!d.success) throw new Error(d.error || 'inconnue');
+            p.code_acces = d.code_acces;
+            rsAfficherListe();
+        } catch (e) {
+            panneau.innerHTML = `<div class="alert alert-danger">Création du code impossible : ${rsEchapper(e.message)}</div>`;
+            return;
+        }
+    }
+    rsAfficherPanneau();
+}
+
+function rsAfficherPanneau() {
+    const p = rsSelection;
+    const e = rsEtat(p);
+    const panneau = document.getElementById('rsPanneau');
+    panneau.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+            <div>
+                <h5 class="mb-0 notranslate text-break">${rsEchapper(p.nom)}</h5>
+                <div class="small text-muted">Dossier n° ${rsEchapper(p.numero)}</div>
+            </div>
+            <span class="badge ${e.cls}">${e.texte}</span>
+        </div>
+
+        <label class="form-label small mb-1">Téléphone du dossier — <strong>le patient doit taper ce numéro</strong> : vérifiez-le avec lui</label>
+        <div class="input-group mb-3">
+            <span class="input-group-text"><i class="fas fa-phone"></i></span>
+            <input type="tel" class="form-control fs-5" id="rsTelephone" value="${rsEchapper(p.telephone)}" placeholder="Aucun téléphone enregistré">
+            <button class="btn btn-outline-primary" type="button" onclick="rsEnregistrerTelephone()"><i class="fas fa-save me-1"></i> Corriger</button>
+        </div>
+        <div id="rsTelephoneMsg" class="small mb-2"></div>
+
+        <div class="row align-items-center g-3">
+            <div class="col-md-6 text-center">
+                <div class="rs-cadre-qr"><div id="rsQr"></div></div>
+                <div class="mt-2 small text-muted">Code d'accès</div>
+                <div class="rs-code notranslate">${rsEchapper(p.code_acces)}</div>
+            </div>
+            <div class="col-md-6">
+                <ol class="rs-etapes mb-3">
+                    <li>Le patient ouvre l'appareil photo de son téléphone et scanne le QR code.</li>
+                    <li>Il tape son numéro de téléphone (le code est déjà rempli).</li>
+                    <li>Il installe l'application <strong>Rs</strong> proposée.</li>
+                    <li>Il ouvre Rs, se connecte une fois, puis enregistre son empreinte / Face ID.</li>
+                </ol>
+                <a class="btn btn-primary w-100 mb-2" href="/patients/${p.id}/carte-portail" target="_blank">
+                    <i class="fas fa-print me-1"></i> Imprimer la carte
+                </a>
+                <button class="btn btn-outline-secondary btn-sm w-100" type="button" onclick="rsRegenerer()">
+                    <i class="fas fa-sync-alt me-1"></i> Régénérer le code (code perdu)
+                </button>
+            </div>
+        </div>`;
+    new QRCode(document.getElementById('rsQr'), {
+        text: `${RS_PORTAIL_URL}?code=${encodeURIComponent(p.code_acces)}`,
+        width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M,
+    });
+}
+
+async function rsEnregistrerTelephone() {
+    const p = rsSelection;
+    const telephone = document.getElementById('rsTelephone').value.trim();
+    const msg = document.getElementById('rsTelephoneMsg');
+    msg.className = 'small mb-2 text-muted';
+    msg.textContent = 'Enregistrement...';
+    try {
+        const d = await fetch(`/api/patients/${p.id}/telephone`, {
+            method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({telephone})
+        }).then(r => r.json());
+        if (!d.success) throw new Error(d.error || 'inconnue');
+        p.telephone = d.telephone;
+        msg.className = 'small mb-2 text-success';
+        msg.textContent = 'Téléphone corrigé dans le dossier.';
+        rsAfficherListe();
+    } catch (e) {
+        msg.className = 'small mb-2 text-danger';
+        msg.textContent = e.message;
+    }
+}
+
+async function rsRegenerer() {
+    const p = rsSelection;
+    if (!await demanderConfirmation("Régénérer le code ?\n\nL'ancien code ne fonctionnera plus : le patient sera déconnecté du portail, " +
+            "son code rapide et son empreinte / Face ID enregistrés seront effacés. Il devra se reconnecter avec le nouveau code.",
+            {type: 'warning', texteOk: 'Oui, régénérer', texteAnnuler: 'Non'})) return;
+    const d = await fetch(`/api/patients/${p.id}/regenerer-code-portail`, {method: 'POST'}).then(r => r.json());
+    if (!d.success) { await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'}); return; }
+    p.code_acces = d.code_acces;
+    p.pin_defini = false;
+    p.nb_appareils = 0;
+    p.derniere_utilisation = null;
+    rsAfficherListe();
+    rsAfficherPanneau();
+}
+
+document.getElementById('rsRecherche').addEventListener('input', rsAfficherListe);
+document.querySelectorAll('input[name="rsFiltre"]').forEach(r => r.addEventListener('change', rsAfficherListe));
+
+fetch('/api/portail-resultats/patients').then(r => r.json()).then(d => {
+    if (!d.success) throw new Error(d.error);
+    rsPatients = d.patients;
+    document.getElementById('rsNbJour').textContent = rsPatients.filter(p => p.venu_aujourdhui).length;
+    // Ouvert depuis la fiche d'un patient (bouton « QR portail Rs ») : on l'affiche directement.
+    const initial = {{ patient_initial|tojson }};
+    if (initial && rsPatients.some(p => p.id === initial)) {
+        const p = rsPatients.find(x => x.id === initial);
+        if (!p.venu_aujourdhui) document.getElementById('rsFiltreTous').checked = true;
+        document.getElementById('rsRecherche').value = p.numero;   // le patient seul dans la liste, surligné
+        rsChoisir(initial);
+    } else {
+        // Personne aujourd'hui : on montre tout le monde plutôt qu'une liste vide.
+        if (!rsPatients.some(p => p.venu_aujourdhui)) document.getElementById('rsFiltreTous').checked = true;
+        rsAfficherListe();
+    }
+}).catch(e => {
+    document.getElementById('rsListe').innerHTML = `<div class="text-center text-danger py-4">Erreur de chargement : ${rsEchapper(e.message)}</div>`;
+});
+</script>
+{% endblock %}

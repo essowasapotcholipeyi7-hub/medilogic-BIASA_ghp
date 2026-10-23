@@ -140,6 +140,8 @@ function verifierAcces() {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
+            // Gardé après une connexion dans le navigateur : l'application, installée ensuite, en a encore besoin.
+            if (RsApp.estInstallee()) { try { localStorage.removeItem('rs_code'); } catch (e) {} }
             ouvrirResultats();
         } else {
             erreur.textContent = data.error || 'Téléphone ou code incorrect.';
@@ -192,8 +194,14 @@ document.getElementById('ppPin').addEventListener('keyup', function(e) {
 
 // ⭐ Carte imprimée / QR code (carte_portail_patient.html) : le code est
 // dans l'URL scannée, seul le téléphone reste à saisir par le patient.
+// ⭐ 2026-10-23 : le code est aussi retenu sur le téléphone, pour que l'application Rs installée juste
+// après le retrouve à sa 1re ouverture (Android ; l'iPhone sépare Safari et l'application).
 (function() {
-    const code = new URLSearchParams(window.location.search).get('code');
+    let code = new URLSearchParams(window.location.search).get('code');
+    try {
+        if (code) localStorage.setItem('rs_code', code);
+        else code = localStorage.getItem('rs_code');
+    } catch (e) {}
     if (code) {
         document.getElementById('ppCode').value = code.toUpperCase();
         document.getElementById('ppTelephone').focus();

@@ -43,6 +43,9 @@
                 <a class="nav-link {% if request.endpoint == 'page_accueil_qr' %}active{% endif %}" href="{{ url_for('page_accueil_qr') }}">
                     <span class="menu-text">Accueil patient (QR)</span>
                 </a>
+                <a class="nav-link {% if request.endpoint == 'page_portail_resultats_accueil' %}active{% endif %}" href="{{ url_for('page_portail_resultats_accueil') }}">
+                    <span class="menu-text">Portail résultats (Rs)</span>
+                </a>
                 {% endif %}
 
                 {% if a_acces('prescriptions_recues') and not onglet_cache('prescriptions_recues') and not _bloq %}

@@ -16638,10 +16638,91 @@ def page_carte_portail_patient(patient_id):
     # ⭐ Le code dans l'URL n'est pas plus sensible que le code déjà
     # affiché/imprimé en clair juste en dessous — le patient doit de
     # toute façon saisir SON téléphone, que ce QR ne contient pas.
-    qr_data = f"{portail_url}?code={acces.code_acces}"
+    # ⭐ 2026-10-23 : code encodé — il peut contenir # ou % (_ALPHABET_CODE) ; en clair, « # » coupait
+    # le code à la lecture du QR (près d'un code sur trois).
+    from urllib.parse import quote
+    qr_data = f"{portail_url}?code={quote(acces.code_acces, safe='')}"
 
     return render_template('carte_portail_patient.html', patient=patient_row[0], acces=acces,
                             structure=structure_info, portail_url=portail_url, qr_data=qr_data)
+
+
+# ============================================================
+# ⭐ 2026-10-23 (patron) : « Portail résultats (Rs) » — page dédiée du groupe Patients (menu du haut et
+# latéral) pour donner l'accès au comptoir : patients venus aujourd'hui en tête, un clic = QR à
+# l'écran que le patient scanne avec son téléphone, téléphone du dossier vérifiable et corrigeable sur
+# place (c'est lui que le patient doit taper pour se connecter), état de l'accès. Remplace l'onglet
+# « Portail résultats » de la fiche patient, trop caché.
+# ============================================================
+@app.route('/patients/portail-resultats')
+@login_required
+def page_portail_resultats_accueil():
+    return render_template('portail_resultats_accueil.html',
+                           portail_url=f"{BASE_URL}{url_for('page_portail_patient')}",
+                           patient_initial=request.args.get('patient', type=int))
+
+
+@app.route('/api/portail-resultats/patients', methods=['GET'])
+@login_required
+def api_portail_resultats_patients():
+    """Tous les patients de la structure avec l'état de leur accès — une seule requête (Neon ≈ 0,15 s
+    par aller-retour) ; nom et téléphone chiffrés, donc filtrés côté navigateur après déchiffrement."""
+    structure_id = session.get('structure_id')
+    try:
+        lignes = db.execute_query("""
+            SELECT p.id, p.nom, p.prenom, p.telephone, p.numero_local,
+                   a.code_acces, (a.pin_hash IS NOT NULL) AS pin_defini,
+                   COALESCE(w.nb, 0) AS nb_appareils, w.derniere AS derniere_utilisation,
+                   (p.created_at >= CURRENT_DATE OR v.patient_id IS NOT NULL) AS venu_aujourdhui
+            FROM patients p
+            LEFT JOIN acces_portail_patients a ON a.structure_id = p.structure_id AND a.patient_id = p.id
+            LEFT JOIN (SELECT utilisateur_id, COUNT(*) AS nb, MAX(derniere_utilisation) AS derniere
+                       FROM identifiants_webauthn
+                       WHERE structure_id = %s AND type_compte = 'patient' AND actif
+                       GROUP BY utilisateur_id) w ON w.utilisateur_id = p.id
+            LEFT JOIN (SELECT DISTINCT patient_id FROM ventes
+                       WHERE structure_id = %s AND date_vente >= CURRENT_DATE
+                         AND COALESCE(statut, '') <> 'annulee') v ON v.patient_id = p.id
+            WHERE p.structure_id = %s
+            ORDER BY p.id DESC
+        """, (structure_id, structure_id, structure_id))
+        patients_portail = []
+        for ligne in dechiffrer_lignes(lignes or []):
+            patients_portail.append({
+                'id': ligne['id'],
+                'numero': ligne.get('numero_local') or ligne['id'],
+                'nom': f"{ligne.get('nom') or ''} {ligne.get('prenom') or ''}".strip(),
+                'telephone': ligne.get('telephone') or '',
+                'code_acces': ligne.get('code_acces'),
+                'pin_defini': bool(ligne.get('pin_defini')),
+                'nb_appareils': int(ligne.get('nb_appareils') or 0),
+                'derniere_utilisation': ligne['derniere_utilisation'].strftime('%d/%m/%Y') if ligne.get('derniere_utilisation') else None,
+                'venu_aujourdhui': bool(ligne.get('venu_aujourdhui')),
+            })
+        return jsonify({'success': True, 'patients': patients_portail})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/patients/<int:patient_id>/telephone', methods=['PUT'])
+@login_required
+def api_modifier_telephone_patient(patient_id):
+    """Correction du seul téléphone, depuis la page Portail résultats (Rs)."""
+    try:
+        structure_id = session.get('structure_id')
+        telephone = ((request.json or {}).get('telephone') or '').strip()
+        if not re.fullmatch(r'[0-9 +().-]{6,25}', telephone):
+            return jsonify({'success': False, 'error': 'Numéro de téléphone invalide.'}), 400
+        if not Patient.query.filter_by(id=patient_id, structure_id=structure_id).first():
+            return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
+        db.execute_query("UPDATE patients SET telephone = %s WHERE id = %s AND structure_id = %s",
+                         (chiffrer(telephone), patient_id, structure_id))
+        # ⭐ envoi direct à gestion_patients (services/sync_patients_gp.py), comme api_update_patient
+        from services.sync_patients_gp import pousser_patients_gp
+        pousser_patients_gp(structure_id, [patient_id])
+        return jsonify({'success': True, 'telephone': telephone})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ============================================================
@@ -17015,6 +17096,17 @@ def app_service_worker():
 # (obtenir_ou_creer_code_acces), pas par une session utilisateur de
 # l'appli. Ne PAS utiliser de WhatsApp pour transmettre un résultat
 # médical (patron : "pas sécurisé") — ce portail remplace cet usage.
+def _telephone_comparable(numero):
+    """⭐ 2026-10-23 : chiffres seuls, sans l'indicatif 228 — « 90 11 22 33 » dans le dossier et
+    « +228 90112233 » tapé par le patient sont le même numéro (avant : refus, comparaison exacte)."""
+    chiffres = re.sub(r'\D', '', numero or '')
+    if chiffres.startswith('00228'):
+        chiffres = chiffres[5:]
+    elif chiffres.startswith('228') and len(chiffres) > 8:
+        chiffres = chiffres[3:]
+    return chiffres
+
+
 @app.route('/portail-patient')
 def page_portail_patient():
     return render_template('portail_patient.html')
@@ -17039,7 +17131,9 @@ def api_verifier_portail_patient():
         )
         if patient_row:
             dechiffrer_champs(patient_row[0])
-        if not patient_row or (patient_row[0].get('telephone') or '').strip() != telephone:
+        telephone_saisi = _telephone_comparable(telephone)
+        if not patient_row or not telephone_saisi or \
+                _telephone_comparable(patient_row[0].get('telephone')) != telephone_saisi:
             return jsonify({'success': False, 'error': 'Téléphone ou code incorrect'}), 401
 
         # ⭐ Session dédiée au portail (distincte de session['user_id'] —
@@ -17076,8 +17170,9 @@ def api_connexion_pin_portail_patient():
             WHERE a.pin_hash IS NOT NULL
         """)
         pin_hash = hash_password(pin)
+        telephone_saisi = _telephone_comparable(telephone)
         for ligne in (lignes or []):
-            if dechiffrer(ligne.get('telephone')) != telephone:
+            if not telephone_saisi or _telephone_comparable(dechiffrer(ligne.get('telephone'))) != telephone_saisi:
                 continue
             if ligne['pin_hash'] == pin_hash:
                 session['portail_patient_id'] = ligne['patient_id']
