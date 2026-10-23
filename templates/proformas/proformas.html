@@ -425,6 +425,12 @@
                                             <th id="priseEnChargeDisplay" class="text-end text-success">0 FCFA</th>
                                             <th></th>
                                         </tr>
+                                        <!-- ⭐ 2026-10-23 (patron) : ce que l'AMU laisse — c'est sur ce reste que la complémentaire applique son taux -->
+                                        <tr id="resteApresAmuRow" style="display:none;">
+                                            <th colspan="4" class="text-end">Reste après AMU :</th>
+                                            <th id="resteApresAmuDisplay" class="text-end">0 FCFA</th>
+                                            <th></th>
+                                        </tr>
                                         <tr id="priseEnCharge2Row" style="display:none;">
                                             <th colspan="4" class="text-end text-info">Prise en charge complémentaire :</th>
                                             <th id="priseEnCharge2Display" class="text-end text-info">0 FCFA</th>
@@ -1783,6 +1789,7 @@ function afficherPanier() {
         document.getElementById('priseEnCharge2Display').textContent = '0 FCFA';
         document.getElementById('netAPayerDisplay').textContent = '0 FCFA';
         document.getElementById('priseEnCharge2Row').style.display = 'none';
+    document.getElementById('resteApresAmuRow').style.display = 'none';
         return;
     }
     
@@ -1986,6 +1993,12 @@ function calculerTotal() {
     } else {
         aideProformaRow.style.display = 'none';
     }
+
+    // ⭐ 2026-10-23 (patron) : « Reste après AMU » — la base sur laquelle la complémentaire applique son taux
+    const resteApresAmuRow = document.getElementById('resteApresAmuRow');
+    const avecResteAmu = assurance2Active && tauxComplementaire > 0 && priseEnChargeAMU > 0;
+    resteApresAmuRow.style.display = avecResteAmu ? '' : 'none';
+    if (avecResteAmu) document.getElementById('resteApresAmuDisplay').textContent = Math.round(Math.max(sousTotal - priseEnChargeAMU, 0)).toLocaleString('fr-FR') + ' FCFA';
 
     // 🔥 Affichage CAC
     const priseEnCharge2Row = document.getElementById('priseEnCharge2Row');
@@ -2207,6 +2220,7 @@ function nouvelleProforma() {
     document.getElementById('priseEnCharge2Display').textContent = '0 FCFA';
     document.getElementById('netAPayerDisplay').textContent = '0 FCFA';
     document.getElementById('priseEnCharge2Row').style.display = 'none';
+    document.getElementById('resteApresAmuRow').style.display = 'none';
     document.getElementById('patientNom').value = '';
     document.getElementById('patientTelephone').value = '';
     document.getElementById('assuranceNom').value = '';
@@ -2520,6 +2534,12 @@ function afficherModalConversion(data) {
                                 <th></th>
                             </tr>
                             ${data.assurance2_nom ? `
+                            <!-- ⭐ 2026-10-23 (patron) : ce que l'AMU laisse — c'est sur ce reste que la complémentaire applique son taux -->
+                            <tr id="convertResteApresAmuRow" style="display:none;">
+                                <th colspan="4" class="text-end">Reste après AMU :</th>
+                                <th id="convertResteApresAmu" class="text-end">0 F</th>
+                                <th></th>
+                            </tr>
                             <tr>
                                 <th colspan="4" class="text-end text-info">Prise en charge ${data.assurance2_nom} :</th>
                                 <th id="convertPriseEnCharge2" class="text-end text-info">${Math.round(calculePriseEnCharge2Conversion()).toLocaleString('fr-FR')} F</th>
@@ -3208,6 +3228,12 @@ function mettreAJourTotauxConversion() {
 
     const el2 = document.getElementById('convertPriseEnCharge2');
     if (el2) el2.textContent = Math.round(priseEnCharge2).toLocaleString('fr-FR') + ' F';
+    // ⭐ 2026-10-23 (patron) : « Reste après AMU » — la base sur laquelle la complémentaire applique son taux
+    const resteRowConv = document.getElementById('convertResteApresAmuRow');
+    if (resteRowConv) {
+        resteRowConv.style.display = priseEnCharge > 0 ? '' : 'none';
+        document.getElementById('convertResteApresAmu').textContent = Math.round(Math.max(sousTotal - priseEnCharge, 0)).toLocaleString('fr-FR') + ' F';
+    }
 
     const aideRow = document.getElementById('convertAideRow');
     const aideDisplay = document.getElementById('convertAideDisplay');
@@ -3817,6 +3843,12 @@ function modifierProforma(id) {
                                         <th id="modifPriseEnCharge" class="text-end text-success">${data.prise_en_charge ? Math.round(data.prise_en_charge).toLocaleString('fr-FR') : 0} FCFA</th>
                                         <th></th>
                                     </tr>
+                                    <!-- ⭐ 2026-10-23 (patron) : ce que l'AMU laisse — c'est sur ce reste que la complémentaire applique son taux -->
+                                    <tr id="modifResteApresAmuRow" style="display:none;">
+                                        <th colspan="4" class="text-end">Reste après AMU :</th>
+                                        <th id="modifResteApresAmu" class="text-end">0 FCFA</th>
+                                        <th></th>
+                                    </tr>
                                     <tr id="modifPriseEnCharge2Row" style="${data.prise_en_charge2 && data.prise_en_charge2 > 0 ? '' : 'display:none;'}">
                                         <th colspan="4" class="text-end text-info">Prise en charge complémentaire :</th>
                                         <th id="modifPriseEnCharge2" class="text-end text-info">${data.prise_en_charge2 ? Math.round(data.prise_en_charge2).toLocaleString('fr-FR') : 0} FCFA</th>
@@ -4027,6 +4059,14 @@ function calculerTotalModif() {
     document.getElementById('modifSousTotal').textContent = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('modifPriseEnCharge').textContent = Math.round(priseEnCharge).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('modifNetAPayer').textContent = Math.round(netAPayer).toLocaleString('fr-FR') + ' FCFA';
+
+    // ⭐ 2026-10-23 (patron) : « Reste après AMU » — la base sur laquelle la complémentaire applique son taux
+    const resteRowModif = document.getElementById('modifResteApresAmuRow');
+    if (resteRowModif) {
+        const avecResteModif = assurance2Active && priseEnCharge > 0;
+        resteRowModif.style.display = avecResteModif ? '' : 'none';
+        if (avecResteModif) document.getElementById('modifResteApresAmu').textContent = Math.round(Math.max(sousTotal - priseEnCharge, 0)).toLocaleString('fr-FR') + ' FCFA';
+    }
 
     const row2 = document.getElementById('modifPriseEnCharge2Row');
     const display2 = document.getElementById('modifPriseEnCharge2');

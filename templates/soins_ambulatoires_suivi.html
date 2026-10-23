@@ -191,6 +191,10 @@
             <div class="card-body">
                 <div class="text-muted small"><i class="fas fa-plus-circle"></i> Part {{ episode.assurance2_nom }} (CAC)</div>
                 <div class="fw-bold fs-5 text-info">{{ '{:,}'.format(repartition.part_cac|round(0)|int).replace(',', ' ') }} FCFA</div>
+                {# ⭐ 2026-10-23 (patron) : la base sur laquelle la complémentaire applique son taux #}
+                {% if repartition.est_assure_amu and repartition.part_amu > 0 %}
+                <div class="small text-muted">sur un reste après AMU de {{ '{:,}'.format((repartition.sous_total - repartition.part_amu)|round(0)|int).replace(',', ' ') }} FCFA</div>
+                {% endif %}
             </div>
         </div>
     </div>

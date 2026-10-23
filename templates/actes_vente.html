@@ -359,6 +359,12 @@
                                 <th id="priseEnCharge" class="text-end text-success">0 FCFA</th>
                                 <th></th>
                             </tr>
+                            <!-- ⭐ 2026-10-23 (patron) : ce que l'AMU laisse — c'est sur ce reste que la complémentaire applique son taux -->
+                            <tr id="resteApresAmuRow" style="display:none;">
+                                <th colspan="6" class="text-end">Reste après AMU :</th>
+                                <th id="resteApresAmu" class="text-end">0 FCFA</th>
+                                <th></th>
+                            </tr>
                             <tr id="priseEnCharge2Row" style="display:none;">
                                 <th colspan="6" class="text-end text-info">Prise en charge complémentaire :</th>
                                 <th id="priseEnCharge2" class="text-end text-info">0 FCFA</th>
@@ -851,8 +857,8 @@ function arrondiActifActes() { return arrondiActif('toggleArrondiPatient'); }
 //   Cas 3 privée seule : tarif = tarif privé ; part privée = taux x PBR privé
 //                        s'il existe, sinon taux x tarif
 //   Cas 4 AMU + privée : tarif = tarif privé ; part AMU comme cas 2 ; part
-//                        privée = taux x PBR privé s'il existe (plafonnée au
-//                        reste après AMU), sinon taux x (tarif - part AMU)
+//                        privée = taux x min(PBR privé, tarif - part AMU)
+//                        s'il existe (2026-10-23), sinon taux x (tarif - part AMU)
 // ============================================
 function contexteTarificationActes() {
     const typeAssurance = sessionStorage.getItem('selectedPatientAssurance') || '';
@@ -1970,6 +1976,7 @@ function afficherPanier() {
         document.getElementById('priseEnCharge2').innerHTML = '0 FCFA';
         document.getElementById('netAPayer').innerHTML = '0 FCFA';
         document.getElementById('priseEnCharge2Row').style.display = 'none';
+        if (document.getElementById('resteApresAmuRow')) document.getElementById('resteApresAmuRow').style.display = 'none';
         return;
     }
 
@@ -2188,6 +2195,14 @@ function calculerTotal() {
     document.getElementById('priseEnCharge').innerHTML = Math.round(priseEnChargeAMU).toLocaleString('fr-FR') + ' FCFA';
     
     // Afficher la prise en charge complémentaire
+    // ⭐ 2026-10-23 (patron) : « Reste après AMU » — la base sur laquelle la complémentaire applique son taux
+    const resteApresAmuRow = document.getElementById('resteApresAmuRow');
+    if (resteApresAmuRow) {
+        const avecReste = assurance2Active && priseEnChargeAMU > 0;
+        resteApresAmuRow.style.display = avecReste ? 'table-row' : 'none';
+        if (avecReste) document.getElementById('resteApresAmu').innerHTML = Math.round(Math.max(sousTotal - priseEnChargeAMU, 0)).toLocaleString('fr-FR') + ' FCFA';
+    }
+
     const priseEnCharge2El = document.getElementById('priseEnCharge2');
     const priseEnCharge2Row = document.getElementById('priseEnCharge2Row');
     if (priseEnChargeCAC > 0 && assurance2Active) {
