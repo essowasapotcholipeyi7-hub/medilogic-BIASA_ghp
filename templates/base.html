@@ -2063,6 +2063,12 @@
     {# ⭐ 2026-10-14 : formatEntier / formatFCFA (« 3 450 567 FCFA ») et montants masqués jusqu'au clic #}
     <script src="{{ url_for('static', filename='js/montants.js') }}"></script>
     {% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}<script src="{{ url_for('static', filename='js/theme_sombre.js') }}" defer></script>{% endif %}
+    {# ⭐ 2026-10-23 (patron : « sur le téléphone tout est mélangé ») : mise en page téléphone, en dernier
+       pour primer sur tout le reste — static/css/mobile.css, static/js/mobile.js #}
+    {% if not (cacher_navigation is defined and cacher_navigation) %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css', v='20261023e') }}">
+    <script src="{{ url_for('static', filename='js/mobile.js', v='20261023e') }}" defer></script>
+    {% endif %}
 <script>
 // ⭐ Bande passante (2026-10-12) : chaque vérification automatique (badges,
 // messages, tableau de bord...) interroge le serveur et la base, même quand
@@ -2184,6 +2190,12 @@ window.LIBELLES_PBR = {{ (libelles_pbr_structure() if session.get('structure_id'
 {% if not (cacher_navigation is defined and cacher_navigation) %}
 <nav class="navbar navbar-expand-lg">
     <div class="container">
+        {% if session.user_id %}
+        <!-- ⭐ 2026-10-23 : ☰ sur téléphone / tablette — ouvre le menu (static/js/mobile.js) -->
+        <button type="button" class="btn-menu-mobile" id="btnMenuMobile" onclick="basculerMenuMobile()" aria-label="Menu" aria-expanded="false">
+            <i class="fas fa-bars"></i>
+        </button>
+        {% endif %}
         <!-- ⭐ Patron : "pour BIASA ne change pas, laisse GED BIASA mais
              enlève le bouton plein écran" — contrairement à GHP, la marque
              reste fixe ici (pas de "SI <acronyme>" par structure). -->
@@ -2242,7 +2254,7 @@ window.LIBELLES_PBR = {{ (libelles_pbr_structure() if session.get('structure_id'
                 </div>
             </div>
 
-            <div class="d-md-none">
+            <div class="d-md-none horloge-mobile">
                 <div id="horlogeMobile" style="background: #f8f9fa; padding: 5px 12px; border-radius: 30px; display:flex; align-items:center; gap:7px;">
                     <span id="heureMobile" style="font-size: 12px; font-weight: 600; color: #0E9D67;"></span>
                 </div>
@@ -2454,7 +2466,16 @@ async function appliquerPropositionTheme() {
 {% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}
 {% set _ab = abonnement() %}
 {% set _bloq = _ab.bloque_effectif %}
-<div class="top-nav">
+<div class="top-nav" id="menuPrincipal">
+    <!-- ⭐ 2026-10-23 : en-tête du tiroir (téléphone / tablette seulement) — thème, langue et recherche y
+         sont déplacés sur téléphone par static/js/mobile.js -->
+    <div class="menu-mobile-entete">
+        <div class="d-flex align-items-center justify-content-between">
+            <span class="menu-mobile-titre" style="color: #0E9D67;">GED BIASA</span>
+            <button type="button" class="menu-mobile-fermer" onclick="basculerMenuMobile(false)" aria-label="Fermer le menu"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="menu-mobile-outils" id="menuMobileOutils"></div>
+    </div>
     <ul class="nav-group">
         <!-- ⭐ Accueil (guide : recherche, parcours, onglets par domaine) et
              Tableau de bord (chiffres) séparés — patron, 2026-10-04. -->
@@ -3037,6 +3058,7 @@ async function appliquerPropositionTheme() {
         {% endif %}
     </ul>
 </div>
+<div id="menuMobileVoile" onclick="basculerMenuMobile(false)"></div>
 {% endif %}
 
 <!-- ============================================
