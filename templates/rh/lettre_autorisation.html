@@ -11,11 +11,19 @@
         (partials/entete_a4.html) ou, à défaut, logo, nom et adresse. Contexte : routes/rh.py
         _contexte_lettre_autorisation. -#}
     <style>
-        @page { size: A4 portrait; margin: 14mm 16mm; }
+        /* ⭐ 2026-10-23 (patron : « ça a coupé les bords ») : lettre de 180 mm centrée — au moins 15 mm de blanc de chaque
+           côté même si l'impression se fait avec des marges réduites ou « aucune » */
+        @page { size: A4 portrait; margin: 12mm; }
         * { box-sizing: border-box; }
         body { margin: 0; background: #eef0f2; font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 14px; }
-        .feuille { width: 210mm; min-height: 297mm; margin: 18px auto; background: #fff; padding: 14mm 16mm 12mm;
-                   box-shadow: 0 6px 24px rgba(0, 0, 0, .08); display: flex; flex-direction: column; }
+        .feuille { width: 210mm; min-height: 297mm; margin: 18px auto; background: #fff; padding: 14mm 15mm 12mm;
+                   box-shadow: 0 6px 24px rgba(0, 0, 0, .08); display: flex; flex-direction: column;
+                   position: relative; isolation: isolate; overflow: hidden; }
+        .feuille img, .feuille table { max-width: 100%; }
+        /* filigrane « ORIGINAL » en travers de la page, comme sur l'exemplaire de la CNSS (derrière le texte) */
+        .filigrane { position: absolute; top: 48%; left: 50%; transform: translate(-50%, -50%) rotate(-35deg); z-index: -1;
+                     font-size: 120px; font-weight: 700; letter-spacing: 14px; color: rgba(31, 45, 107, .07); white-space: nowrap;
+                     pointer-events: none; user-select: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .entete-defaut { display: flex; align-items: center; gap: 16px; padding-bottom: 8px; border-bottom: 2px solid #1f2d6b; }
         .entete-defaut img { max-height: 64px; max-width: 120px; object-fit: contain; }
         .entete-defaut .nom { font-size: 21px; font-weight: 700; color: #1f2d6b; }
@@ -47,13 +55,14 @@
         .no-print .imprimer { background: #1f2d6b; } .no-print .fermer { background: #6c757d; }
         @media print {
             body { background: #fff; }
-            .feuille { margin: 0; width: auto; min-height: calc(297mm - 28mm); box-shadow: none; padding: 0; }
+            .feuille { margin: 0 auto; width: 180mm; max-width: 100%; min-height: 268mm; box-shadow: none; padding: 0; }
             .no-print { display: none !important; }
         }
     </style>
 </head>
 <body>
 <div class="feuille">
+    <div class="filigrane" aria-hidden="true">ORIGINAL</div>
     {% include 'partials/entete_a4.html' %}
     {% if not entete_impression_a4() %}
     <div class="entete-defaut">
