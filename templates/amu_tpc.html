@@ -66,6 +66,7 @@
     }
     .tpc-filtre-statut button .compte { font-size: 11px; min-width: 22px; padding: 1px 7px; border-radius: 999px; background: #EEF3F5; color: #0A3D5C; }
     .tpc-filtre-statut button[data-statut="en_attente"] .compte { background: #FCEEE0; color: #92400E; }
+    .tpc-filtre-statut button[data-statut="en_attente"] .compte.compte-recentes { background: #DCFCE7; color: #166534; }
     .tpc-filtre-statut button.active { background: #0A3D5C; color: white; border-color: #0A3D5C; }
     .tpc-filtre-statut button.active .compte { background: rgba(255,255,255,.2); color: white; }
 </style>
@@ -279,8 +280,11 @@
     <div class="tpc-card">
         <h6><i class="fas fa-history me-1"></i>Historique</h6>
         <div class="tpc-filtre-statut" id="tpcFiltreStatut">
+            {# ⭐ 2026-10-23 (patron) : les demandes approuvées restent 24 h ici avant de ne plus être que dans « Approuvées » #}
+            {% set _validees_recentes = demandes|selectattr('statut', 'equalto', 'approuvee')|selectattr('approuve_le')|selectattr('approuve_le', 'ge', limite_recentes)|list|length %}
             <button type="button" class="active" data-statut="en_attente"><i class="fas fa-hourglass-half"></i> En attente
-                <span class="compte">{{ demandes|selectattr('statut', 'equalto', 'en_attente')|list|length }}</span></button>
+                <span class="compte">{{ demandes|selectattr('statut', 'equalto', 'en_attente')|list|length }}</span>
+                {% if _validees_recentes %}<span class="compte compte-recentes" title="Approuvées depuis moins de 24 h, gardées ici pour un accès rapide">+ {{ _validees_recentes }} validée{{ 's' if _validees_recentes > 1 }}</span>{% endif %}</button>
             <button type="button" data-statut="approuvee"><i class="fas fa-check"></i> Approuvées
                 <span class="compte">{{ demandes|selectattr('statut', 'equalto', 'approuvee')|list|length }}</span></button>
             <button type="button" data-statut="refusee"><i class="fas fa-times"></i> Refusées
@@ -315,7 +319,7 @@
                 <tbody>
                     {% for d in demandes %}
                     {% set p = patients_par_id.get(d.patient_id) %}
-                    <tr data-statut="{{ d.statut }}" data-type="{{ d.type_demande }}">
+                    <tr data-statut="{{ d.statut }}" data-recente="{{ '1' if d.statut == 'approuvee' and d.approuve_le and d.approuve_le >= limite_recentes else '' }}" data-type="{{ d.type_demande }}">
                         <td>{{ d.created_at.strftime('%d/%m/%Y %H:%M') if d.created_at else '' }}</td>
                         <td><span class="notranslate">{{ (p.nom + ' ' + p.prenom) if p else ('Patient #' ~ d.patient_id) }}</span></td>
                         <td>{{ medecins_par_id.get(d.medecin_id, '—') }}</td>
@@ -977,7 +981,8 @@ function filtrerHistoriqueTpc() {
     const lignes = document.querySelectorAll('table.tpc-historique tbody tr[data-type]');
     let visibles = 0;
     lignes.forEach(tr => {
-        const matchStatut = statutActif === 'toutes' || tr.dataset.statut === statutActif;
+        const matchStatut = statutActif === 'toutes' || tr.dataset.statut === statutActif
+            || (statutActif === 'en_attente' && tr.dataset.recente === '1');   // ⭐ validées depuis moins de 24 h
         const matchType = typeActif === 'tous' || tr.dataset.type === typeActif;
         const matchRecherche = !q || tr.textContent.toLowerCase().includes(q);
         const visible = matchStatut && matchType && matchRecherche;

@@ -1377,6 +1377,8 @@ def page_amu_entente_prealable():
 
     return render_template(
         'amu_entente_prealable.html',
+        # ⭐ 2026-10-23 (patron) : une demande approuvée reste 24 h dans « En attente » (accès rapide)
+        limite_recentes=datetime.utcnow() - timedelta(hours=24),
         retour_url=retour_url,
         retour_libelle=retour_libelle,
         medecins_liste=medecins_liste,
@@ -1891,6 +1893,8 @@ def page_amu_tpc():
 
     return render_template(
         'amu_tpc.html',
+        # ⭐ 2026-10-23 (patron) : une demande approuvée reste 24 h dans « En attente » (accès rapide)
+        limite_recentes=datetime.utcnow() - timedelta(hours=24),
         medecins_liste=medecins_liste,
         demandes=demandes,
         patients_par_id=patients_par_id,
