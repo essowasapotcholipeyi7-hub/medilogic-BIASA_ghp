@@ -1723,6 +1723,12 @@ def _duree_lettre(jours):
     return f"{lettres} ({n}) jour{'s' if n > 1 else ''}"
 
 
+def _de_duree(jours):
+    """« d'un (1) jour », « d'une demi-journée », « de deux (2) jours »."""
+    texte = _duree_lettre(jours)
+    return f"d'{texte}" if texte.startswith('un') else f"de {texte}"
+
+
 def _reprise_apres(structure_id, fin):
     """Lendemain de la fin, avancé s'il tombe un dimanche ou un jour férié (même règle que les congés)."""
     if not fin:
@@ -1751,17 +1757,20 @@ def _numero_document(structure_id, type_document, suffixe, employe_id):
     return numero
 
 
+def _intro_lettre(objet):
+    if objet.demande_ecrite_date:
+        return f"Faisant suite à votre lettre du {objet.demande_ecrite_date.strftime('%d/%m/%Y')}"
+    if getattr(objet, 'created_at', None):
+        return f"Faisant suite à votre demande du {objet.created_at.strftime('%d/%m/%Y')}"
+    return "Faisant suite à votre demande"
+
+
 def _contexte_lettre_autorisation(structure_id, objet, employe, numero, titre_document, accorde, reprise,
                                   regularisation, ampliations_service=True):
     from utils.structure_info import get_structure_info
     structure = get_structure_info(structure_id)
     feminin = (employe.sexe or '').lower().startswith('f')
-    if objet.demande_ecrite_date:
-        intro = f"Faisant suite à votre lettre du {objet.demande_ecrite_date.strftime('%d/%m/%Y')}"
-    elif getattr(objet, 'created_at', None):
-        intro = f"Faisant suite à votre demande du {objet.created_at.strftime('%d/%m/%Y')}"
-    else:
-        intro = "Faisant suite à votre demande"
+    intro = _intro_lettre(objet)
     date_decision = objet.date_approbation or date.today()
     return {
         'structure': structure, 'employe': employe, 'objet': objet,
@@ -1808,7 +1817,7 @@ def conge_autorisation(structure_id, id):
     # ⭐ 2026-10-23 (patron) : lettre façon autorisation d'absence de la CNSS — rh/lettre_autorisation.html
     numero_ordre = _numero_document(structure_id, 'conge', 'CONGE', employe.id)
     libelle = LIBELLES_TYPE_CONGE.get(conge.type_conge, f"congé ({conge.type_conge})")
-    accorde = (f"un {libelle} de {_duree_lettre(conge.nombre_jours)} à compter du "
+    accorde = (f"un {libelle} {_de_duree(conge.nombre_jours)} à compter du "
                f"{conge.date_debut.strftime('%d/%m/%Y')} au {conge.date_fin.strftime('%d/%m/%Y')} inclus")
     if conge.type_conge == 'annuel':
         accorde += f", au titre de l'exercice {conge.annee_utilisation or conge.date_debut.year}"
@@ -2167,7 +2176,31 @@ def demande_lettre_refus(structure_id, type_demande, id):
     if not objet.demande_reference:
         _attribuer_reference(objet, type_demande, structure_id)
         db.session.commit()
-    return render_template('rh/lettre_refus.html', **_contexte_lettre(objet, type_demande, structure_id))
+    # ⭐ 2026-10-23 (patron) : même présentation que les autorisations (rh/lettre_autorisation.html, façon CNSS)
+    employe = objet.employe
+    objet_demande = _contexte_lettre(objet, type_demande, structure_id)['objet_demande']
+    if type_demande == 'permission' and objet.type_permission == 'heures':
+        jour = objet.date_permission
+        h1 = objet.heure_debut.strftime('%H:%M') if objet.heure_debut else ''
+        h2 = objet.heure_fin.strftime('%H:%M') if objet.heure_fin else ''
+        periode = f"pour le {jour.strftime('%d/%m/%Y') if jour else ''}{f' de {h1} à {h2}' if h1 and h2 else ''}"
+    else:
+        debut = objet.date_debut or getattr(objet, 'date_permission', None)
+        fin = objet.date_fin or debut
+        duree = f"{_de_duree(objet.nombre_jours)} " if objet.nombre_jours else ''
+        if debut and fin and debut != fin:
+            periode = f"{duree}du {debut.strftime('%d/%m/%Y')} au {fin.strftime('%d/%m/%Y')} inclus"
+        else:
+            periode = f"{duree}pour le {debut.strftime('%d/%m/%Y') if debut else ''}"
+    titre_document = "REFUS DE CONGÉ" if type_demande == 'conge' else "REFUS D'AUTORISATION D'ABSENCE"
+    numero = _numero_document(structure_id, 'refus', 'REFUS', employe.id)
+    contexte = _contexte_lettre_autorisation(structure_id, objet, employe, numero, titre_document, '', None, False)
+    contexte['paragraphe'] = (f"{_intro_lettre(objet)}, nous avons le regret de vous informer que votre demande de "
+                              f"{objet_demande} {periode} ne peut vous être accordée.")
+    contexte['motif'] = (objet.commentaire or '').strip().rstrip('.') or None
+    contexte['conclusion'] = ("Nous restons à votre disposition pour en discuter et, le cas échéant, "
+                              "examiner une nouvelle demande.")
+    return render_template('rh/lettre_autorisation.html', **contexte)
 
 
 @rh_bp.route('/dossier/<type_demande>/<int:id>')
@@ -2581,10 +2614,10 @@ def permission_autorisation(structure_id, id):
         debut = permission.date_debut or permission.date_permission
         fin = permission.date_fin or debut
         if debut and fin and debut != fin:
-            accorde = (f"une autorisation d'absence de {_duree_lettre(permission.nombre_jours)} à compter du "
+            accorde = (f"une autorisation d'absence {_de_duree(permission.nombre_jours)} à compter du "
                        f"{debut.strftime('%d/%m/%Y')} au {fin.strftime('%d/%m/%Y')} inclus")
         else:
-            accorde = f"une autorisation d'absence de {_duree_lettre(permission.nombre_jours)} le {debut.strftime('%d/%m/%Y') if debut else ''}"
+            accorde = f"une autorisation d'absence {_de_duree(permission.nombre_jours)} le {debut.strftime('%d/%m/%Y') if debut else ''}"
         reprise = _reprise_apres(structure_id, fin)
     accorde += {'conge': f", déductible de votre congé annuel de l'exercice {(debut or date.today()).year}",
                 'salaire': ", non rémunérée (retenue sur votre salaire)",

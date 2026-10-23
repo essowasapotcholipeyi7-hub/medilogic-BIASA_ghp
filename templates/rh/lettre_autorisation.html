@@ -9,7 +9,7 @@
         RÉGULARISATION, titre souligné d'étoiles, « Lomé, le … », destinataire, « Faisant suite à votre lettre du … »,
         reprise de service, ampliations, signature), avec l'en-tête de la structure — celui de ses résultats
         (partials/entete_a4.html) ou, à défaut, logo, nom et adresse. Contexte : routes/rh.py
-        _contexte_lettre_autorisation. -#}
+        _contexte_lettre_autorisation ; la lettre de refus (demande_lettre_refus) utilise la même page. -#}
     <style>
         /* ⭐ 2026-10-23 (patron : « ça a coupé les bords ») : lettre de 180 mm centrée — au moins 15 mm de blanc de chaque
            côté même si l'impression se fait avec des marges réduites ou « aucune » */
@@ -94,6 +94,7 @@
         {% if motif %}<p>Motif : {{ motif }}.</p>{% endif %}
         {% if reprise_texte %}<p>{{ reprise_texte }}</p>
         {% elif reprise %}<p>Vous reprendrez service le {{ reprise.strftime('%d/%m/%Y') }}.</p>{% endif %}
+        {% if conclusion %}<p>{{ conclusion }}</p>{% endif %}
     </div>
 
     <div class="bas">
