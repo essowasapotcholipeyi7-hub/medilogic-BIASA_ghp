@@ -637,6 +637,26 @@ def enregistrer_pbr_variante_patient(structure_id, patient_id, variante):
     db.session.commit()
 
 
+def patient_hospitalise(structure_id, patient_id, jour=None):
+    """⭐ 2026-10-24 (patron) : garde-fou des injections / perfusions d'un patient AMU hospitalisé, pour une vente
+    SÉPARÉE — vrai si un séjour d'hospitalisation de ce patient couvre ce jour (entré, pas encore sorti ou sorti
+    ce jour-là), ou si une vente du jour (non annulée) contient un P160. Une seule requête."""
+    if not structure_id or not patient_id:
+        return False
+    from models import db
+    from sqlalchemy import text
+    jour = jour or date.today()
+    ligne = db.session.execute(text("""
+        SELECT EXISTS (SELECT 1 FROM hospitalisations
+                       WHERE structure_id = :s AND patient_id = :p AND date_entree <= :j
+                         AND (date_sortie IS NULL OR date_sortie >= :j))
+            OR EXISTS (SELECT 1 FROM ventes
+                       WHERE structure_id = :s AND patient_id = :p AND date_vente::date = :j
+                         AND COALESCE(statut, '') <> 'annulee' AND actes::text LIKE '%P160%')"""),
+        {'s': structure_id, 'p': patient_id, 'j': jour}).fetchone()
+    return bool(ligne and ligne[0])
+
+
 def type_sejour(sejour):
     """'hospitalisation' | 'ambulatoire' (épisode de soins ambulatoires)."""
     return 'hospitalisation' if sejour.__class__.__name__ == 'Hospitalisation' else 'ambulatoire'
@@ -887,7 +907,8 @@ def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None, pbr_cac
     info = contexte_tarif_sejour(hospit, pbr_cac_par_acte, pbr_cac_variante)
     contexte = info['contexte']
     sous_total = part_amu = part_cac = reduction_liste = 0.0
-    doublons_amu = objets_doublons_amu(soins)   # un seul acte par code AMU
+    # un seul acte par code AMU ; séjour d'hospitalisation : injections / perfusions incluses dans le P160
+    doublons_amu = objets_doublons_amu(soins, type_sejour(hospit) == 'hospitalisation')
     for s in soins:
         ligne = repartir_ligne(article_tarif_soin(
             s, info, float(s.pbr or 0), bool(s.prise_en_charge_amu) and id(s) not in doublons_amu), contexte)

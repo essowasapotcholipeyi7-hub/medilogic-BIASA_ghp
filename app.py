@@ -25,7 +25,7 @@ from services import theme_service
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, remise_pct_listes, pas_arrondi_structure, appliquer_liste_tarif, lignes_sans_taux_liste, contexte_tarif_sejour, liste_tarif_patient, listes_tarif_patients, enregistrer_liste_tarif_patient, article_tarif_soin, soins_a_taux_liste, type_sejour, libelles_pbr, pbr_variante_patient, pbr_variantes_patients, erreur_pbr_variante_patient, enregistrer_pbr_variante_patient, mode_complementaire, modes_complementaires, oublier_modes_complementaires
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, remise_pct_listes, pas_arrondi_structure, appliquer_liste_tarif, lignes_sans_taux_liste, contexte_tarif_sejour, liste_tarif_patient, listes_tarif_patients, enregistrer_liste_tarif_patient, article_tarif_soin, soins_a_taux_liste, type_sejour, libelles_pbr, pbr_variante_patient, pbr_variantes_patients, erreur_pbr_variante_patient, enregistrer_pbr_variante_patient, mode_complementaire, modes_complementaires, oublier_modes_complementaires, patient_hospitalise
 from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu, arrondir_part_patient, ligne_remise
 from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
@@ -258,6 +258,9 @@ def modes_complementaires_structure():
 
 
 app.jinja_env.globals['modes_complementaires_structure'] = modes_complementaires_structure
+# ⭐ 2026-10-24 : injection / perfusion d'un patient AMU hospitalisé, incluse dans le P160 (suivi d'hospitalisation)
+from services.tarification_service import inclus_hospitalisation as _inclus_hospitalisation
+app.jinja_env.globals['inclus_hospitalisation'] = _inclus_hospitalisation
 
 
 def entete_impression_a4(structure_id=None, court=False):
@@ -12947,6 +12950,8 @@ def api_add_acte_vente():
             'mode_complementaire': mode_complementaire(structure_id, assurance2_nom),
             'applique_pbr_prive': applique_pbr_prive_vente,
             'variante': data.get('pbr_cac_variante') or 'defaut',
+            # ⭐ 2026-10-24 : patient AMU hospitalisé -> injections / perfusions non prises en charge par l'AMU
+            'patient_hospitalise': bool(est_assure_amu_vente) and patient_hospitalise(structure_id, data.get('patient_id')),
             'taux_aide': taux_aide, 'type_aide': type_aide,
         }
         # ⭐ Liste de prix choisie à la vente (patron, 2026-10-19, Clinique Valeo : « liste SMA et liste des
@@ -16819,6 +16824,18 @@ def api_portail_resultats_patients():
         return jsonify({'success': True, 'patients': patients_portail})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/patients/<int:patient_id>/hospitalise', methods=['GET'])
+@login_required
+def api_patient_hospitalise(patient_id):
+    """⭐ 2026-10-24 (patron) : séjour d'hospitalisation en cours ce jour, ou P160 vendu ce jour — la vente d'actes
+    ne fait alors pas prendre par l'AMU les injections / perfusions (voir tarification_service.inclus_hospitalisation)."""
+    try:
+        return jsonify({'hospitalise': patient_hospitalise(session.get('structure_id'), patient_id)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'hospitalise': False, 'error': str(e)})
 
 
 @app.route('/api/patients/<int:patient_id>/telephone', methods=['PUT'])
@@ -22147,7 +22164,8 @@ def api_convertir_proforma():
         # comportement inchangé (reste après AMU, non plafonné).
         pbr_cac_par_acte = charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_nom and applique_pbr_cac) else {}
 
-        appliquer_code_amu_unique(articles)   # un seul acte par code AMU
+        # un seul acte par code AMU ; ⭐ 2026-10-24 : injections / perfusions d'un patient AMU hospitalisé
+        appliquer_code_amu_unique(articles, bool(est_assure) and patient_hospitalise(structure_id, proforma.get('patient_id')))
         # ⭐ 2026-10-19 : lignes tarifées avec une liste de prix (Valeo) : PBR de la liste ; liste « remise »
         # (SMA) : aucune part privée sur ces lignes (le patient a payé le tarif réduit)
         groupes_conv = listes_tarifs(structure_id) if any(a.get('liste_tarif') for a in articles) else []
@@ -23826,7 +23844,8 @@ def api_facturer_hospitalisation(hospit_id):
         prise_en_charge_par_article = 0
         articles = []
 
-        doublons_amu = objets_doublons_amu(soins)   # un seul acte par code AMU
+        # un seul acte par code AMU ; injections / perfusions incluses dans l'hospitalisation (P160)
+        doublons_amu = objets_doublons_amu(soins, hospitalise=True)
         # ⭐ 2026-10-19 : grande liste (tarif de la compagnie / prix non assuré) et liste choisie pour ce
         # séjour (Valeo : SMA, Expatriés) — voir contexte_tarif_sejour ; taux SMA obligatoire en biologie
         reduction_sejour = 0.0   # SMA après l'AMU

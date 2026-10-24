@@ -489,3 +489,65 @@ def test_sans_amu_les_deux_regles_donnent_le_meme_montant():
         a = repartir_ligne(article, ctx(privee=True, taux_privee=80, pbr_prive=pbr))
         b = repartir_ligne(article, ctx(privee=True, taux_privee=80, pbr_prive=pbr, mode_complementaire='base'))
         assert arrondi(a) == arrondi(b)
+
+
+# ⭐ 2026-10-24 (patron) : patient AMU hospitalisé — injections IM / IV et perfusions (P152, P153, P154)
+# incluses dans le forfait P160 : l'AMU ne les prend pas, la complémentaire puis le patient les paient.
+def _panier_hospit():
+    return [
+        {'nom': 'P160 Hospitalisation Cabine climatisee', 'prix': 15000, 'pbr': 5000, 'quantite': 3},
+        {'nom': 'P152 Injection IM*', 'prix': 500, 'pbr': 175, 'quantite': 2},
+        {'nom': 'P153 Injection IV*', 'prix': 1000, 'pbr': 350, 'quantite': 1},
+        {'nom': 'P154 Perfusion*', 'prix': 2500, 'pbr': 875, 'quantite': 1},
+        {'nom': 'R111 Hemogramme', 'prix': 8050, 'pbr': 3850, 'quantite': 1},
+    ]
+
+
+def test_injections_non_prises_par_amu_avec_p160_dans_le_panier():
+    from services.tarification_service import appliquer_code_amu_unique
+    articles = appliquer_code_amu_unique(_panier_hospit())
+    inclus = [a['nom'][:4] for a in articles if a.get('amu_inclus_hospit')]
+    assert inclus == ['P152', 'P153', 'P154']
+    assert all(a['prise_en_charge_amu'] is False for a in articles if a.get('amu_inclus_hospit'))
+    assert articles[0].get('prise_en_charge_amu', True) is not False and articles[4].get('prise_en_charge_amu', True) is not False
+    # rejouable : sans le P160, les injections redeviennent prises en charge
+    reste = appliquer_code_amu_unique(articles[1:])
+    assert not any(a.get('amu_inclus_hospit') for a in reste) and all(a.get('prise_en_charge_amu', True) is not False for a in reste)
+
+
+def test_injections_vente_separee_patient_hospitalise_et_p160_decoche():
+    from services.tarification_service import appliquer_code_amu_unique
+    sans_p160 = appliquer_code_amu_unique(_panier_hospit()[1:], hospitalise=True)
+    assert [a['nom'][:4] for a in sans_p160 if a.get('amu_inclus_hospit')] == ['P152', 'P153', 'P154']
+    p160_decoche = _panier_hospit()
+    p160_decoche[0]['prise_en_charge_amu'] = False      # décocher l'AMU sur la chambre ne libère pas les injections
+    assert len([a for a in appliquer_code_amu_unique(p160_decoche) if a.get('amu_inclus_hospit')]) == 3
+
+
+def test_injection_sans_code_reconnue_jamais_un_medicament():
+    from services.tarification_service import inclus_hospitalisation
+    assert inclus_hospitalisation({'nom': 'Injection IM'}) and inclus_hospitalisation({'nom': 'Perfusion de serum'})
+    assert inclus_hospitalisation({'nom': 'injection intraveineuse'})
+    assert not inclus_hospitalisation({'nom': 'Ceftriaxone injection 1g', 'type': 'produit'})
+    assert not inclus_hospitalisation({'nom': 'Perfuseur', 'type': 'produit'})
+    assert not inclus_hospitalisation({'nom': 'R111 Hemogramme'})
+
+
+def test_panier_hospit_patient_paie_les_injections():
+    contexte = ctx(amu=True, taux_amu=80)
+    calcul = repartir_panier(_panier_hospit(), contexte)
+    injections = calcul['lignes'][1:4]
+    assert all(round(l['part_amu']) == 0 for l in injections)
+    assert round(sum(l['part_patient'] for l in injections)) == 500 * 2 + 1000 + 2500
+
+
+def test_soins_de_sejour_hospitalisation_seulement():
+    from types import SimpleNamespace
+    from services.tarification_service import objets_doublons_amu
+    soins = [SimpleNamespace(nom='P152 Injection IM*', type='acte', prise_en_charge_amu=True),
+             SimpleNamespace(nom='P154 Perfusion*', type='acte', prise_en_charge_amu=True),
+             SimpleNamespace(nom='Ceftriaxone injection 1g', type='medicament', prise_en_charge_amu=True),
+             SimpleNamespace(nom='R111 Hemogramme', type='acte', prise_en_charge_amu=True)]
+    exclus = objets_doublons_amu(soins, hospitalise=True)          # séjour d'hospitalisation
+    assert exclus == {id(soins[0]), id(soins[1])}
+    assert objets_doublons_amu(soins) == set()                       # soins ambulatoires : inchangé

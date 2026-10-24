@@ -3,7 +3,7 @@
 {% block title %}Factures Proforma{% endblock %}
 
 {% block content %}
-<script src="{{ url_for('static', filename='js/doublons_amu.js') }}"></script>
+<script src="{{ url_for('static', filename='js/doublons_amu.js', v='20261024') }}"></script>
 <script src="{{ url_for('static', filename='js/chambres_p160.js') }}"></script>
 <script src="{{ url_for('static', filename='js/listes_tarifs.js') }}"></script>
         <div class="card">
@@ -1769,7 +1769,10 @@ function boutonCouvertureProforma(item, index, cle, libelle) {
 }
 function celluleCouvertureProforma(item, index, amuActive, cacActive) {
     let html = '';
-    if (amuActive && item.amu_doublon) {
+    if (amuActive && item.amu_inclus_hospit) {
+        // ⭐ 2026-10-24 : patient AMU hospitalisé — injection / perfusion incluse dans le forfait P160
+        html += '<span class="badge bg-secondary" title="Patient hospitalisé : le forfait d\'hospitalisation (P160) couvre les injections et perfusions — l\'AMU ne prend pas cette ligne, elle reste au patient ou à son assurance complémentaire.">AMU : inclus dans l\'hospitalisation</span>' + ' ';
+    } else if (amuActive && item.amu_doublon) {
         // ⭐ même code AMU qu'une ligne au-dessus : l'AMU n'en prend qu'un par vente
         const code = window.codeActeAMU ? codeActeAMU(item.nom) : '';
         html += '<span class="badge bg-secondary" title="L\'AMU ne prend en charge qu\'un seul acte ' + code + ' par vente : celui-ci reste au patient ou à son assurance complémentaire.">AMU : ' + code + ' déjà compté</span> ';
@@ -2400,6 +2403,14 @@ function afficherModalConversion(data) {
     // fois la map reçue pour refléter le plafond dès que possible.
     pbrCacConversionMap = {};
     window.compagnieConversion = data.assurance2_nom || '';   // ⭐ 2026-10-23 : réglage de calcul de la compagnie
+    // ⭐ 2026-10-24 : patient AMU hospitalisé -> injections / perfusions sans AMU (comme le serveur à la conversion)
+    window.hospitaliseConversion = false;
+    if (data.patient_id) {
+        fetch('/api/patients/' + encodeURIComponent(data.patient_id) + '/hospitalise')
+            .then(r => r.json())
+            .then(d => { window.hospitaliseConversion = !!(d && d.hospitalise); if (window.hospitaliseConversion) mettreAJourTotauxConversion(); })
+            .catch(() => {});
+    }
     window.conversionArrondie = !!((data.assurances_data || {}).arrondi);   // ⭐ arrondi choisi à la création
     // ⭐ 2026-10-19 : lignes tarifées avec une liste (Valeo) -> PBR de la liste
     const groupeConv = groupeListeDesLignes(data.articles || []);
@@ -2867,7 +2878,7 @@ function calculePriseEnChargeConversion() {
 // assurance" ci-dessous, pour qu'ils restent toujours cohérents entre eux.
 function partAMUArticleConversion(item, tauxDefaut) {
     // ⭐ un seul acte par code AMU dans la vente (static/js/doublons_amu.js)
-    if (window.marquerDoublonsAMU && typeof panierConversion !== 'undefined') marquerDoublonsAMU(panierConversion);
+    if (window.marquerDoublonsAMU && typeof panierConversion !== 'undefined') marquerDoublonsAMU(panierConversion, !!window.hospitaliseConversion);
     if (item.amu_doublon) return 0;
     const prix = item.prix || 0;
     const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;

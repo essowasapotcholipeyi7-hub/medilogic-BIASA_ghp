@@ -45,12 +45,33 @@ _CODE_ACTE = re.compile(r'\s*([A-Z]\d{3})\b')
 # reste couvert (comme une quantité 2). Chambre (P160) et lunettes jamais concernées.
 CODES_HORS_REGLE_UNIQUE = {'P160', 'D000293'}
 
+# ⭐ 2026-10-24 (patron) : patient AMU hospitalisé — le forfait d'hospitalisation P160 couvre les soins
+# infirmiers : l'AMU ne prend pas en plus les injections IM / IV ni les perfusions. Ces lignes passent « non
+# prises en charge AMU » (la complémentaire puis le patient les paient) dès que le panier contient un P160
+# (même décoché pour l'AMU) ou que le patient a une hospitalisation en cours (vente séparée : voir
+# hospitalisation_service.patient_hospitalise). Acte sans code reconnu par son nom (jamais un médicament).
+CODES_INCLUS_HOSPITALISATION = {'P152', 'P153', 'P154'}
+_NOM_INCLUS_HOSPITALISATION = re.compile(
+    r'^\s*(injections?\s+(i\.?\s*m\.?|i\.?\s*v\.?d?|intra[\s-]*(musculaire|veineuse))\b|perfusions?\b)', re.I)
+
+
+def inclus_hospitalisation(article):
+    """Vrai pour une injection IM / IV ou une perfusion (code P152 / P153 / P154, ou nom sans code)."""
+    nom = article.get('nom') if isinstance(article, dict) else getattr(article, 'nom', '')
+    type_art = str((article.get('type') if isinstance(article, dict) else getattr(article, 'type', '')) or '').lower()
+    if 'produit' in type_art or 'pharma' in type_art or 'medicament' in type_art:
+        return False
+    code = code_acte(nom)
+    if code:
+        return code in CODES_INCLUS_HOSPITALISATION
+    return bool(_NOM_INCLUS_HOSPITALISATION.match(str(nom or '')))
+
 
 def _vrai(valeur):
     return valeur if isinstance(valeur, bool) else str(valeur).upper() not in ('FALSE', '0', '', 'NONE')
 
 
-def appliquer_code_amu_unique(articles):
+def appliquer_code_amu_unique(articles, hospitalise=False):
     """Marque (sur place) les doublons de code AMU d'un panier : prise_en_charge_amu
     passe à False, amu_doublon=True, et la valeur d'origine est gardée dans
     prise_amu_origine — rejouable : un premier passage restaure tout avant de remarquer
@@ -61,6 +82,7 @@ def appliquer_code_amu_unique(articles):
             if 'prise_amu_origine' in a:
                 a['prise_en_charge_amu'] = a.pop('prise_amu_origine')
             a.pop('amu_doublon', None)
+            a.pop('amu_inclus_hospit', None)
     vus = {}
     for a in articles or []:
         if not isinstance(a, dict) or not _vrai(a.get('prise_en_charge_amu', True)):
@@ -75,15 +97,24 @@ def appliquer_code_amu_unique(articles):
             a['prise_amu_origine'] = a.get('prise_en_charge_amu', True)
             a['prise_en_charge_amu'] = False
             a['amu_doublon'] = True
+    # ⭐ 2026-10-24 : injections / perfusions incluses dans l'hospitalisation (voir CODES_INCLUS_HOSPITALISATION)
+    if hospitalise or any(isinstance(a, dict) and code_acte(a.get('nom')) == 'P160' for a in articles or []):
+        for a in articles or []:
+            if isinstance(a, dict) and _vrai(a.get('prise_en_charge_amu', True)) and inclus_hospitalisation(a):
+                a['prise_amu_origine'] = a.get('prise_en_charge_amu', True)
+                a['prise_en_charge_amu'] = False
+                a['amu_inclus_hospit'] = True
     return articles
 
 
-def objets_doublons_amu(lignes):
+def objets_doublons_amu(lignes, hospitalise=False):
     """Même règle pour des lignes-objets (soins d'hospitalisation, soins ambulatoires :
-    attributs .nom / .prise_en_charge_amu) — renvoie l'ensemble des id() des doublons."""
-    articles = [{'nom': l.nom, 'prise_en_charge_amu': bool(l.prise_en_charge_amu), '_obj': id(l)} for l in lignes]
-    appliquer_code_amu_unique(articles)
-    return {a['_obj'] for a in articles if a.get('amu_doublon')}
+    attributs .nom / .prise_en_charge_amu) — renvoie l'ensemble des id() des lignes que l'AMU ne prend pas
+    (doublons ; et, pour un séjour d'HOSPITALISATION, hospitalise=True : injections / perfusions)."""
+    articles = [{'nom': l.nom, 'type': getattr(l, 'type', ''), 'prise_en_charge_amu': bool(l.prise_en_charge_amu),
+                 '_obj': id(l)} for l in lignes]
+    appliquer_code_amu_unique(articles, hospitalise)
+    return {a['_obj'] for a in articles if a.get('amu_doublon') or a.get('amu_inclus_hospit')}
 
 
 def code_acte(nom):
@@ -320,7 +351,8 @@ def repartir_ligne(article, contexte):
 def repartir_panier(articles, contexte):
     """Somme des lignes + aide hospitalière (patron : sur le reste après
     assurances, en % plafonné à 100 ou en montant plafonné au reste)."""
-    appliquer_code_amu_unique(articles)   # un seul acte par code AMU (voir plus haut)
+    # un seul acte par code AMU ; injections / perfusions d'un patient hospitalisé (voir plus haut)
+    appliquer_code_amu_unique(articles, contexte.get('patient_hospitalise', False))
     lignes = [repartir_ligne(a, contexte) for a in articles]
     sous_total = sum(l['total'] for l in lignes)
     base_amu = sum(l['base_amu'] for l in lignes)
