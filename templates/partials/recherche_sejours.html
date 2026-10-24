@@ -1,0 +1,71 @@
+{#- ⭐ 2026-10-24 (patron : « la liste devient longue, on n'arrive pas à rechercher ») : recherche dans la liste des
+    séjours — hospitalisation et soins ambulatoires. Patient, n°, chambre / motif, date (« 12/10 »), plusieurs mots
+    combinés, sans accents ; dans l'onglet ouvert, chaque onglet montrant son nombre de résultats.
+    À inclure dans la carte, juste avant le tableau, avec selecteur_lignes (ex. '.ligne-sejour'). La fonction
+    filtrer(el) de la page appelle appliquerFiltresSejours() après avoir changé d'onglet. -#}
+<div class="d-flex align-items-center flex-wrap gap-2 px-3 py-2 border-bottom">
+    <div class="input-group input-group-sm" style="max-width: 460px;">
+        <span class="input-group-text"><i class="fas fa-search"></i></span>
+        <input type="search" class="form-control" id="rechercheSejours" autocomplete="off"
+               placeholder="Rechercher : patient, n°, chambre / motif, date (ex. 12/10)">
+    </div>
+    <span class="small text-muted" id="rechercheSejoursInfo"></span>
+</div>
+<script>
+(function () {
+    const SELECTEUR = {{ selecteur_lignes|tojson }};
+    const normaliser = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+    window.appliquerFiltresSejours = function () {
+        const actif = document.querySelector('#filtreTabs .nav-link.active');
+        const filtre = actif ? actif.dataset.filtre : 'tous';
+        const champ = document.getElementById('rechercheSejours');
+        const mots = normaliser(champ ? champ.value.trim() : '').split(/\s+/).filter(Boolean);
+        const lignes = document.querySelectorAll(SELECTEUR);
+        const compte = { tous: 0 };
+        let visibles = 0;
+        lignes.forEach(tr => {
+            if (tr.dataset.texte === undefined) tr.dataset.texte = normaliser(tr.textContent);
+            const correspond = mots.every(m => tr.dataset.texte.includes(m));
+            const statut = tr.dataset.statut;
+            if (correspond) { compte[statut] = (compte[statut] || 0) + 1; compte.tous++; }
+            const visible = correspond && (filtre === 'tous' || statut === filtre);
+            tr.style.display = visible ? '' : 'none';
+            if (visible) visibles++;
+        });
+        // nombre de résultats sur chaque onglet (pendant une recherche seulement)
+        document.querySelectorAll('#filtreTabs .nav-link').forEach(a => {
+            let pastille = a.querySelector('.compte-onglet');
+            if (!pastille) {
+                pastille = document.createElement('span');
+                pastille.className = 'compte-onglet badge rounded-pill bg-secondary ms-1';
+                a.appendChild(pastille);
+            }
+            pastille.textContent = compte[a.dataset.filtre] || 0;
+            pastille.style.display = mots.length ? '' : 'none';
+        });
+        // ligne « aucun résultat »
+        const premiere = lignes[0];
+        if (premiere) {
+            let vide = document.getElementById('rechercheSejoursVide');
+            if (!vide) {
+                vide = document.createElement('tr');
+                vide.id = 'rechercheSejoursVide';
+                vide.innerHTML = '<td colspan="20" class="text-center text-muted py-4"></td>';
+                premiere.parentNode.appendChild(vide);
+            }
+            vide.style.display = visibles ? 'none' : '';
+            vide.firstChild.textContent = mots.length
+                ? (compte.tous ? 'Aucun résultat dans cet onglet — voir les onglets marqués d\'un nombre.' : 'Aucun séjour ne correspond à « ' + champ.value.trim() + ' ».')
+                : 'Aucun séjour dans cet onglet.';
+        }
+        const info = document.getElementById('rechercheSejoursInfo');
+        if (info) info.textContent = mots.length ? compte.tous + ' résultat' + (compte.tous > 1 ? 's' : '') + ' au total' : '';
+    };
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const champ = document.getElementById('rechercheSejours');
+        if (champ) champ.addEventListener('input', window.appliquerFiltresSejours);
+    });
+})();
+</script>

@@ -39,6 +39,7 @@
             </li>
         </ul>
     </div>
+    {% with selecteur_lignes = '.ligne-episode' %}{% include 'partials/recherche_sejours.html' %}{% endwith %}
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
@@ -174,10 +175,8 @@
 function filtrer(el) {
     document.querySelectorAll('#filtreTabs .nav-link').forEach(a => a.classList.remove('active'));
     el.classList.add('active');
-    const f = el.getAttribute('data-filtre');
-    document.querySelectorAll('.ligne-episode').forEach(tr => {
-        tr.style.display = (f === 'tous' || tr.getAttribute('data-statut') === f) ? '' : 'none';
-    });
+    // ⭐ 2026-10-24 : onglet + recherche (partials/recherche_sejours.html)
+    appliquerFiltresSejours();
 }
 
 let nePatientId = null;
