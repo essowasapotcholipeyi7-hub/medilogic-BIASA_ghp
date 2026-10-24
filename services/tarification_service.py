@@ -55,6 +55,22 @@ _NOM_INCLUS_HOSPITALISATION = re.compile(
     r'^\s*(injections?\s+(i\.?\s*m\.?|i\.?\s*v\.?d?|intra[\s-]*(musculaire|veineuse))\b|perfusions?\b)', re.I)
 
 
+# ⭐ 2026-10-24 (patron) : la mise en observation (« P160 MISE EN OBSERVATION (MEO) », ou sans code) déclenche la
+# même règle que l'hospitalisation : tout est dans son prix, injections et perfusions comprises.
+_NOM_DECLENCHE_INCLUSION = re.compile(r'mise\s+en\s+observation|\bM\.?E\.?O\b', re.I)
+
+
+def declenche_inclusion(article):
+    """Vrai pour une ligne d'hospitalisation (code P160) ou de mise en observation (P160 ou nom, jamais un produit)."""
+    nom = article.get('nom') if isinstance(article, dict) else getattr(article, 'nom', '')
+    if code_acte(nom) == 'P160':
+        return True
+    type_art = str((article.get('type') if isinstance(article, dict) else getattr(article, 'type', '')) or '').lower()
+    if 'produit' in type_art or 'pharma' in type_art or 'medicament' in type_art:
+        return False
+    return bool(_NOM_DECLENCHE_INCLUSION.search(str(nom or '')))
+
+
 def inclus_hospitalisation(article):
     """Vrai pour une injection IM / IV ou une perfusion (code P152 / P153 / P154, ou nom sans code)."""
     nom = article.get('nom') if isinstance(article, dict) else getattr(article, 'nom', '')
@@ -98,7 +114,7 @@ def appliquer_code_amu_unique(articles, hospitalise=False):
             a['prise_en_charge_amu'] = False
             a['amu_doublon'] = True
     # ⭐ 2026-10-24 : injections / perfusions incluses dans l'hospitalisation (voir CODES_INCLUS_HOSPITALISATION)
-    if hospitalise or any(isinstance(a, dict) and code_acte(a.get('nom')) == 'P160' for a in articles or []):
+    if hospitalise or any(isinstance(a, dict) and declenche_inclusion(a) for a in articles or []):
         for a in articles or []:
             if isinstance(a, dict) and _vrai(a.get('prise_en_charge_amu', True)) and inclus_hospitalisation(a):
                 a['prise_amu_origine'] = a.get('prise_en_charge_amu', True)

@@ -259,7 +259,7 @@ def modes_complementaires_structure():
 
 app.jinja_env.globals['modes_complementaires_structure'] = modes_complementaires_structure
 # ⭐ 2026-10-24 : injection / perfusion d'un patient AMU hospitalisé, incluse dans le P160 (suivi d'hospitalisation)
-from services.tarification_service import inclus_hospitalisation as _inclus_hospitalisation
+from services.tarification_service import inclus_hospitalisation as _inclus_hospitalisation, declenche_inclusion as _declenche_inclusion
 app.jinja_env.globals['inclus_hospitalisation'] = _inclus_hospitalisation
 
 
@@ -23261,7 +23261,10 @@ def page_hospitalisation_suivi(hospit_id):
     # sélecteur par LIGNE d'actes_vente.html qui reste optionnel).
     services_liste = charger_services(structure_id)
 
+    # ⭐ 2026-10-24 : lignes à ✗ non couvertes par le catalogue -> badge fixe (on ne peut pas les recocher)
+    couverture_bloquee = _couverture_bloquee_catalogue(soins, _patient_amu_tns(hospit.patient_id))
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
+                            couverture_bloquee=couverture_bloquee,
                             listes_tarifs=listes_tarifs(structure_id), groupe_liste_sejour=info_tarif_sejour['groupe'],
                             soins_taux_liste=soins_taux_liste, type_sejour_liste='hospitalisation', id_sejour_liste=hospit.id,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
@@ -23554,16 +23557,32 @@ def api_ajouter_soin_hospitalisation(hospit_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-def _catalogue_couvre(nom, type_article, assurance, tns=False):
+def _index_couverture_catalogue():
+    """{'actes'|'produits': {nom exact: ligne, nom normalisé: ligne}} — une lecture du catalogue de la structure."""
+    index = {}
+    for feuille in ('actes', 'produits'):
+        par_nom = {}
+        for r in sheets_helper.get_all_records(feuille) or []:
+            nom = str(r.get('nom', '')).strip()
+            if nom:
+                par_nom.setdefault(nom, r)
+                par_nom.setdefault('~' + normaliser_nom_article(nom), r)
+        index[feuille] = par_nom
+    return index
+
+
+def _catalogue_couvre(nom, type_article, assurance, tns=False, index=None):
     """⭐ 2026-10-16 (patron) : False seulement si le catalogue de la structure (session) dit
     explicitement FALSE pour cette assurance — on ne peut alors jamais activer la prise en charge
-    sur une ligne. Article introuvable ou case vide -> True (comme le reste du logiciel)."""
+    sur une ligne. Article introuvable ou case vide -> True (comme le reste du logiciel).
+    ⭐ 2026-10-24 : nom retrouvé aussi après normalisation (majuscules, espaces, préfixe de code) — un
+    article renommé au catalogue depuis son ajout au séjour échappait au contrôle."""
     try:
-        feuille = 'produits' if type_article in ('produit', 'medicament') else 'actes'
+        index = index or _index_couverture_catalogue()
+        par_nom = index['produits' if type_article in ('produit', 'medicament') else 'actes']
         cible = (nom or '').strip()
-        for r in sheets_helper.get_all_records(feuille) or []:
-            if str(r.get('nom', '')).strip() != cible:
-                continue
+        r = par_nom.get(cible) or par_nom.get('~' + normaliser_nom_article(cible))
+        if r is not None:
             if assurance == 'cac':
                 v = r.get('prise_en_charge_cac')
             elif tns and r.get('AMU-TNS') not in (None, ''):
@@ -23574,6 +23593,23 @@ def _catalogue_couvre(nom, type_article, assurance, tns=False):
     except Exception as e:
         print(f"⚠️ Lecture du catalogue pour la prise en charge impossible : {e}")
     return True
+
+
+def _couverture_bloquee_catalogue(lignes, tns=False):
+    """⭐ 2026-10-24 (patron) : {'amu': ids, 'cac': ids} des lignes de séjour à ✗ que le catalogue ne couvre pas
+    — la page affiche alors un badge fixe au lieu du bouton (on ne peut pas les recocher). Une lecture du catalogue."""
+    bloquees = {'amu': set(), 'cac': set()}
+    try:
+        index = _index_couverture_catalogue()
+        for l in lignes or []:
+            type_l = getattr(l, 'type', 'acte')
+            if not l.prise_en_charge_amu and not _catalogue_couvre(l.nom, type_l, 'amu', tns, index):
+                bloquees['amu'].add(l.id)
+            if not l.prise_en_charge_cac and not _catalogue_couvre(l.nom, type_l, 'cac', tns, index):
+                bloquees['cac'].add(l.id)
+    except Exception as e:
+        print(f"⚠️ Couverture du catalogue (séjour) : {e}")
+    return bloquees
 
 
 def _patient_amu_tns(patient_id):
@@ -24239,7 +24275,12 @@ def page_soins_ambulatoires_suivi(episode_id):
     # (voir son commentaire équivalent).
     services_liste = charger_services(structure_id)
 
+    # ⭐ 2026-10-24 : lignes à ✗ non couvertes par le catalogue -> badge fixe ; mise en observation dans l'épisode ->
+    # injections / perfusions incluses (pas d'AMU)
+    couverture_bloquee = _couverture_bloquee_catalogue(lignes, _patient_amu_tns(episode.patient_id))
+    observation_episode = any(_declenche_inclusion(l) for l in lignes)
     return render_template('soins_ambulatoires_suivi.html', episode=episode, lignes=lignes, solde_en_cours=solde_en_cours,
+                            couverture_bloquee=couverture_bloquee, observation_episode=observation_episode,
                             listes_tarifs=listes_tarifs(structure_id), groupe_liste_sejour=info_tarif_sejour['groupe'],
                             soins_taux_liste=soins_taux_liste, type_sejour_liste='ambulatoire', id_sejour_liste=episode.id,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac,

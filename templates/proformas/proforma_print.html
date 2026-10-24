@@ -794,7 +794,10 @@
                             <td class="text-end">{{ prix_unitaire_affiche|round(0)|int }} F</td>
                             {% if est_assure and format != '80mm' %}
                             <td class="text-end">
-                                {% if article.pbr and article.pbr != prix_unitaire_affiche %}
+                                {# ⭐ 2026-10-24 : l'AMU ne prend pas la ligne (décochée, doublon, incluse) -> PBR 0 #}
+                                {% if article.prise_en_charge_amu == false or article.amu_doublon or article.amu_inclus_hospit %}
+                                    0 F
+                                {% elif article.pbr and article.pbr != prix_unitaire_affiche %}
                                     {{ article.pbr|round(0)|int }} F
                                 {% else %}
                                     <span style="color:#b0b8c5;">-</span>

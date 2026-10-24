@@ -3,7 +3,7 @@
 {% block title %}Factures Proforma{% endblock %}
 
 {% block content %}
-<script src="{{ url_for('static', filename='js/doublons_amu.js', v='20261024') }}"></script>
+<script src="{{ url_for('static', filename='js/doublons_amu.js', v='20261024b') }}"></script>
 <script src="{{ url_for('static', filename='js/chambres_p160.js') }}"></script>
 <script src="{{ url_for('static', filename='js/listes_tarifs.js') }}"></script>
         <div class="card">
@@ -1771,7 +1771,7 @@ function celluleCouvertureProforma(item, index, amuActive, cacActive) {
     let html = '';
     if (amuActive && item.amu_inclus_hospit) {
         // ⭐ 2026-10-24 : patient AMU hospitalisé — injection / perfusion incluse dans le forfait P160
-        html += '<span class="badge bg-secondary" title="Patient hospitalisé : le forfait d\'hospitalisation (P160) couvre les injections et perfusions — l\'AMU ne prend pas cette ligne, elle reste au patient ou à son assurance complémentaire.">AMU : inclus dans l\'hospitalisation</span>' + ' ';
+        html += '<span class="badge bg-secondary" title="Hospitalisation ou mise en observation : leur prix couvre les injections et perfusions — l\'AMU ne prend pas cette ligne, elle reste au patient ou à son assurance complémentaire.">AMU : inclus (hospitalisation / observation)</span>' + ' ';
     } else if (amuActive && item.amu_doublon) {
         // ⭐ même code AMU qu'une ligne au-dessus : l'AMU n'en prend qu'un par vente
         const code = window.codeActeAMU ? codeActeAMU(item.nom) : '';
@@ -3093,7 +3093,7 @@ function rafraichirPartAssurance() {
             <tr>
                 <td>${item.nom_periode || item.nom}</td>
                 <td class="text-end">${Math.round(item.prix).toLocaleString('fr-FR')} F</td>
-                <td class="text-end">${pbr > 0 ? Math.round(pbr).toLocaleString('fr-FR') + ' F' : '<span class="text-muted">-</span>'}</td>
+                <td class="text-end">${(item.prise_en_charge_amu === false || item.amu_doublon) ? '0 F' : (pbr > 0 ? Math.round(pbr).toLocaleString('fr-FR') + ' F' : '<span class="text-muted">-</span>')}</td>
                 <td class="text-end text-success">${partAMU > 0 ? Math.round(partAMU).toLocaleString('fr-FR') + ' F' : '<span class="text-muted">-</span>'}</td>
                 ${avecCAC ? `<td class="text-end text-info">${partCAC > 0 ? Math.round(partCAC).toLocaleString('fr-FR') + ' F' : '<span class="text-muted">-</span>'}</td>` : ''}
             </tr>`;

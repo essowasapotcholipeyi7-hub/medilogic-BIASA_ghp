@@ -50,8 +50,13 @@
             if (vus[code] !== nom) item.amu_doublon = true;
         });
         if (hospitalise === undefined) hospitalise = !!window.PATIENT_HOSPITALISE_AMU;
+        // P160 (hospitalisation) ou mise en observation (même codée autrement ou sans code), jamais un produit
         var avecP160 = hospitalise || (liste || []).some(function (item) {
-            return item && String(item.nom || '').trim().split(/\s+/)[0].toUpperCase() === 'P160';
+            if (!item) return false;
+            if (String(item.nom || '').trim().split(/\s+/)[0].toUpperCase() === 'P160') return true;
+            var type = String(item.type || '').toLowerCase();
+            if (type.indexOf('produit') >= 0 || type.indexOf('pharma') >= 0 || type.indexOf('medicament') >= 0) return false;
+            return /mise\s+en\s+observation|\bM\.?E\.?O\b/i.test(String(item.nom || ''));
         });
         if (avecP160) {
             (liste || []).forEach(function (item) {

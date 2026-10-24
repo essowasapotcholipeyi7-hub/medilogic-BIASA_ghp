@@ -551,3 +551,19 @@ def test_soins_de_sejour_hospitalisation_seulement():
     exclus = objets_doublons_amu(soins, hospitalise=True)          # séjour d'hospitalisation
     assert exclus == {id(soins[0]), id(soins[1])}
     assert objets_doublons_amu(soins) == set()                       # soins ambulatoires : inchangé
+
+
+def test_mise_en_observation_comme_le_p160():
+    """⭐ 2026-10-24 (patron) : mise en observation (codée P160 ou sans code) -> injections / perfusions sans AMU."""
+    from services.tarification_service import appliquer_code_amu_unique, declenche_inclusion
+    assert declenche_inclusion({'nom': 'P160 MISE EN OBSERVATION (MEO)'})
+    assert declenche_inclusion({'nom': 'MISE EN OBSERVATION (MEO)'})
+    assert declenche_inclusion({'nom': 'Mise en observation adulte'})
+    assert not declenche_inclusion({'nom': 'R111 Hemogramme'})
+    assert not declenche_inclusion({'nom': 'Lecture observation', 'type': 'produit'})
+    panier = [{'nom': 'MISE EN OBSERVATION (MEO)', 'prix': 5000, 'pbr': 2000, 'quantite': 1},
+              {'nom': 'P153 Injection IV*', 'prix': 1000, 'pbr': 350, 'quantite': 2},
+              {'nom': 'R111 Hemogramme', 'prix': 8050, 'pbr': 3850, 'quantite': 1}]
+    appliquer_code_amu_unique(panier)
+    assert [a['nom'][:4] for a in panier if a.get('amu_inclus_hospit')] == ['P153']
+    assert panier[0].get('prise_en_charge_amu', True) is not False      # la MEO elle-même reste à l'AMU

@@ -1786,6 +1786,9 @@ function afficherPanier() {
         cellPBR.style.verticalAlign = 'middle';
         if (!estAssurePourPanier) {
             cellPBR.innerHTML = `<span class="text-muted">-</span>`;
+        } else if (item.prise_en_charge_amu === false || item.amu_doublon) {
+            // ⭐ 2026-10-24 (patron) : l'AMU ne prend pas la ligne -> PBR 0
+            cellPBR.innerHTML = `<span class="badge bg-secondary" title="L'AMU ne prend pas cette ligne">0 F</span>`;
         } else if (pbr === 0) {
             cellPBR.innerHTML = `<span class="badge bg-secondary">Non pris en charge</span>`;
         } else {

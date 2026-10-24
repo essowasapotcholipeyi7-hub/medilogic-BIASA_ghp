@@ -640,7 +640,7 @@ def enregistrer_pbr_variante_patient(structure_id, patient_id, variante):
 def patient_hospitalise(structure_id, patient_id, jour=None):
     """⭐ 2026-10-24 (patron) : garde-fou des injections / perfusions d'un patient AMU hospitalisé, pour une vente
     SÉPARÉE — vrai si un séjour d'hospitalisation de ce patient couvre ce jour (entré, pas encore sorti ou sorti
-    ce jour-là), ou si une vente du jour (non annulée) contient un P160. Une seule requête."""
+    ce jour-là), ou si une vente du jour (non annulée) contient un P160 ou une mise en observation. Une requête."""
     if not structure_id or not patient_id:
         return False
     from models import db
@@ -652,7 +652,8 @@ def patient_hospitalise(structure_id, patient_id, jour=None):
                          AND (date_sortie IS NULL OR date_sortie >= :j))
             OR EXISTS (SELECT 1 FROM ventes
                        WHERE structure_id = :s AND patient_id = :p AND date_vente::date = :j
-                         AND COALESCE(statut, '') <> 'annulee' AND actes::text LIKE '%P160%')"""),
+                         AND COALESCE(statut, '') <> 'annulee'
+                         AND (actes::text LIKE '%P160%' OR actes::text ILIKE '%mise en observation%'))"""),
         {'s': structure_id, 'p': patient_id, 'j': jour}).fetchone()
     return bool(ligne and ligne[0])
 
