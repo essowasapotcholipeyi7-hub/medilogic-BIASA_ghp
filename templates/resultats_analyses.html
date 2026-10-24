@@ -679,7 +679,20 @@ function figerFormulaire() {
         p.querySelectorAll('.mf-photo-vide').forEach(x => x.remove());
         if (!p.querySelector('img')) p.remove();
     });
-    c.querySelectorAll('tr.mf-retiree').forEach(tr => tr.remove());
+    // ⭐ 2026-10-24 (patron, Lumière de Vie : « Adulte : 30 – 150 UI/l » resté seul sous la glycémie) : une ligne
+    // retirée emporte les lignes qu'elle couvre par fusion verticale (rowspan, ex. PAL : normes enfant / adulte
+    // sur deux lignes), sauf si une valeur y a été saisie
+    const retirerLigne = tr => {
+        const n = Math.max(1, ...[...tr.cells].map(td => td.rowSpan || 1));
+        let suivante = tr.nextElementSibling;
+        for (let k = 1; k < n && suivante; k++) {
+            const s = suivante;
+            suivante = suivante.nextElementSibling;
+            if (![...s.querySelectorAll('.mf-valeur')].some(x => !x.dataset.vide)) s.remove();
+        }
+        tr.remove();
+    };
+    c.querySelectorAll('tr.mf-retiree').forEach(retirerLigne);
     if (document.getElementById('mfMasquerVides').checked) {
         // cadre d'identification : une case vide disparaît avec son intitulé (ex. pas d'hypothèse)
         c.querySelectorAll('.mf-identite .mf-item').forEach(it => {
@@ -706,7 +719,7 @@ function figerFormulaire() {
         [...c.querySelectorAll('tr')].reverse().forEach(tr => {
             if (tr.closest('.mf-identite') || tr.closest('.mf-entete')) return;
             const champs = tr.querySelectorAll('.mf-valeur');
-            if (champs.length && [...champs].every(x => x.dataset.vide)) tr.remove();
+            if (champs.length && [...champs].every(x => x.dataset.vide) && c.contains(tr)) retirerLigne(tr);
         });
         c.querySelectorAll('table').forEach(t => { if (!t.querySelector('tr')) t.remove(); });
     }
