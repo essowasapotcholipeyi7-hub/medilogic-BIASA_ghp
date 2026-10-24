@@ -1868,9 +1868,29 @@ function chargerSocietesAssurance(assuranceNom, datalistId) {
 // Les champs d'origine restent ceux qui sont enregistrés (taux, numéro, société inchangés).
 // ============================================
 const TUILES_ASSURANCE = {
-    ajout: { select: 'type_assurance', nomCac: 'assurance2_nom', resultats: 'assurance2NomsResultats', toggleCac: () => toggleAssurance2() },
-    edit: { select: 'editAssurance', nomCac: 'editAssurance2_nom', resultats: 'editAssurance2NomsResultats', toggleCac: () => toggleEditAssurance2() },
+    ajout: { select: 'type_assurance', nomCac: 'assurance2_nom', resultats: 'assurance2NomsResultats', toggleCac: () => toggleAssurance2(), liste: 'liste_tarif_patient' },
+    edit: { select: 'editAssurance', nomCac: 'editAssurance2_nom', resultats: 'editAssurance2NomsResultats', toggleCac: () => toggleEditAssurance2(), liste: 'editListeTarifPatient' },
 };
+// ⭐ 2026-10-24 (patron : « à côté, il faut écrire assurance étrangère […] bien visible, pour qu'ils puissent
+// cliquer dessus ») : chaque liste de prix qui n'est pas une réduction (Elite : « Assurance étrangère », Valeo :
+// « Expatriés ») a sa case à côté de « Pas de complémentaire » / « Assurance complémentaire ». Elle pose la liste de
+// prix du patient (vente, proforma, séjours la prennent seuls) et demande le nom de l'assurance — ceux déjà tapés
+// sont proposés en cases, un nouveau se tape.
+const LISTES_ASSURANCE = {{ ((listes_tarifs or [])|rejectattr('remise')|map(attribute='groupe')|list)|tojson }};
+let assurancesDesListes = {};   // {liste: [noms déjà tapés]}
+if (LISTES_ASSURANCE.length) {
+    fetch('/api/assurances-listes-patients').then(r => r.json()).then(d => { assurancesDesListes = d || {}; }).catch(() => {});
+}
+function _libelleListe(groupe) { return String(groupe || '').replace(/^Liste\s+/, ''); }
+function _listeAssurance(cle) {
+    const sel = document.getElementById(TUILES_ASSURANCE[cle].liste);
+    return sel && LISTES_ASSURANCE.includes(sel.value) ? sel.value : '';
+}
+function _poserListe(cle, groupe) {
+    // groupe vide : retire seulement une liste « assurance » (une réduction SMA choisie dans la liste reste)
+    const sel = document.getElementById(TUILES_ASSURANCE[cle].liste);
+    if (sel && (groupe || LISTES_ASSURANCE.includes(sel.value))) sel.value = groupe || '';
+}
 (function stylesTuilesAssurance() {
     const st = document.createElement('style');
     st.textContent = `
@@ -1934,9 +1954,21 @@ function choisirTypePrincipale(cle, valeur) {
     majPrincipale(cle, 'choisi');
 }
 // ---- assurance complémentaire
-function majComplementaire(cle, mode) {
+function majComplementaire(cle, mode, groupe) {
     const c = TUILES_ASSURANCE[cle], champ = document.getElementById(c.nomCac), boite = _boiteTuiles(cle, 'C');
     if (!boite) return;
+    if (mode === 'etrangere') {
+        // ⭐ 2026-10-24 : liste « assurance étrangère » — ses assurances déjà tapées, ou une nouvelle
+        _poserListe(cle, groupe);
+        const colonne = champ.closest('[class*="col-"]');
+        if (colonne) colonne.style.display = 'none';
+        const noms = assurancesDesListes[groupe] || [];
+        boite.innerHTML = `<div class="small text-muted mb-1"><i class="fas fa-globe-africa me-1"></i><strong>${_escT(_libelleListe(groupe))}</strong> : choisissez l'assurance du patient${noms.length ? '' : ' (aucune encore enregistrée : tapez son nom)'}</div><div class="grille">`
+            + noms.map(n => `<button type="button" class="tuile" onclick='choisirComplementaire("${cle}", ${JSON.stringify(n).replace(/'/g, "&apos;")})'>${_escT(n)}</button>`).join('')
+            + `<button type="button" class="tuile" onclick="majComplementaire('${cle}', 'autre')"><i class="fas fa-pen me-1"></i>Nouvelle (taper le nom)</button></div>`
+            + `<button type="button" class="lien" onclick="_poserListe('${cle}', ''); majComplementaire('${cle}', 'etape1')"><i class="fas fa-arrow-left me-1"></i>Retour</button>`;
+        return;
+    }
     const colonne = champ.closest('[class*="col-"]');
     if (colonne) colonne.style.display = mode === 'autre' ? '' : 'none';
     const res = document.getElementById(c.resultats);
@@ -1944,23 +1976,32 @@ function majComplementaire(cle, mode) {
     let html = '';
     if (mode === 'liste') {
         const vus = new Set(), noms = [];
+        Object.values(assurancesDesListes).forEach(l => (l || []).forEach(n => vus.add((n || '').trim().toUpperCase())));
         (compagniesConnuesPatients || []).forEach(n => { const k = (n || '').trim().toUpperCase(); if (k && !vus.has(k)) { vus.add(k); noms.push(n.trim()); } });
         html = '<div class="small text-muted mb-1">Choisissez la compagnie :</div><div class="grille">'
             + noms.map(n => `<button type="button" class="tuile" onclick='choisirComplementaire("${cle}", ${JSON.stringify(n).replace(/'/g, "&apos;")})'>${_escT(n)}</button>`).join('')
             + `<button type="button" class="tuile" onclick="majComplementaire('${cle}', 'autre')"><i class="fas fa-pen me-1"></i>Autre (taper le nom)</button></div>`
             + `<button type="button" class="lien" onclick="majComplementaire('${cle}', 'etape1')"><i class="fas fa-arrow-left me-1"></i>Retour</button>`;
     } else if (mode === 'autre') {
-        html = `<div class="small text-muted">Tapez le nom de la compagnie ci-dessous.</div>`
-            + `<button type="button" class="lien" onclick="majComplementaire('${cle}', 'liste')"><i class="fas fa-arrow-left me-1"></i>Retour à la liste</button>`;
+        const listeEtr = _listeAssurance(cle);
+        html = listeEtr
+            ? `<div class="small text-muted"><i class="fas fa-globe-africa me-1"></i>${_escT(_libelleListe(listeEtr))} : tapez le nom de l'assurance ci-dessous.</div>`
+              + `<button type="button" class="lien" onclick='majComplementaire("${cle}", "etrangere", ${JSON.stringify(listeEtr).replace(/'/g, "&apos;")})'><i class="fas fa-arrow-left me-1"></i>Retour</button>`
+            : `<div class="small text-muted">Tapez le nom de la compagnie ci-dessous.</div>`
+              + `<button type="button" class="lien" onclick="majComplementaire('${cle}', 'liste')"><i class="fas fa-arrow-left me-1"></i>Retour à la liste</button>`;
         champ.value = ''; c.toggleCac();
         setTimeout(() => champ.focus(), 50);
     } else if (mode === 'choisi') {
         const nom = champ.value.trim();
-        html = `<div class="choix"><span><i class="fas fa-circle-check"></i>${nom ? 'Vous avez choisi : ' + _escT(nom) : "Pas d'assurance complémentaire"}</span>`
+        const listeEtr = _listeAssurance(cle);
+        const texteListe = listeEtr ? ` <span class="badge bg-success ms-1"><i class="fas fa-globe-africa me-1"></i>${_escT(_libelleListe(listeEtr))}</span>` : '';
+        html = `<div class="choix"><span><i class="fas fa-circle-check"></i>${nom ? 'Vous avez choisi : ' + _escT(nom) : (listeEtr ? 'Assurance non précisée' : "Pas d'assurance complémentaire")}${texteListe}</span>`
             + `<button type="button" class="changer" onclick="majComplementaire('${cle}', 'etape1')"><i class="fas fa-arrow-left me-1"></i>Changer</button></div>`;
     } else {
-        html = `<div class="grille"><button type="button" class="tuile" onclick="choisirComplementaire('${cle}', '')">Pas de complémentaire</button>`
-            + `<button type="button" class="tuile" onclick="majComplementaire('${cle}', 'liste')"><i class="fas fa-plus-circle me-1"></i>Assurance complémentaire</button></div>`;
+        html = `<div class="grille"><button type="button" class="tuile" onclick="_poserListe('${cle}', ''); choisirComplementaire('${cle}', '')">Pas de complémentaire</button>`
+            + `<button type="button" class="tuile" onclick="_poserListe('${cle}', ''); majComplementaire('${cle}', 'liste')"><i class="fas fa-plus-circle me-1"></i>Assurance complémentaire</button>`
+            + LISTES_ASSURANCE.map(g => `<button type="button" class="tuile" style="border-color:#0E9D67;" onclick='majComplementaire("${cle}", "etrangere", ${JSON.stringify(g).replace(/'/g, "&apos;")})'><i class="fas fa-globe-africa me-1"></i>${_escT(_libelleListe(g))}</button>`).join('')
+            + `</div>`;
     }
     boite.innerHTML = html;
 }

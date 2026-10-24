@@ -4059,6 +4059,35 @@ def api_recherche_globale():
     return jsonify(resultats[:40])
 
 
+@app.route('/api/assurances-listes-patients', methods=['GET'])
+@login_required
+def api_assurances_listes_patients():
+    """⭐ 2026-10-24 (patron, Cabinet Médical Elite) : noms des assurances déjà tapés pour les patients de chaque
+    liste de prix (« Liste Assurance étrangère » : ALLIANZ, CIGNA...) — {liste: [noms]}, proposés en cases à
+    la prochaine fiche ; un nom nouveau se tape et rejoint la liste."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({})
+    try:
+        lignes = db.session.execute(text("""
+            SELECT t.liste_tarif, TRIM(p.assurance2_nom) AS nom, COUNT(*) AS n
+            FROM patients_liste_tarif t JOIN patients p ON p.id = t.patient_id AND p.structure_id = t.structure_id
+            WHERE t.structure_id = :s AND t.liste_tarif IS NOT NULL
+              AND p.assurance2_nom IS NOT NULL AND TRIM(p.assurance2_nom) <> ''
+            GROUP BY 1, 2 ORDER BY 1, 3 DESC, 2
+        """), {'s': structure_id}).fetchall()
+    except Exception as e:
+        print(f"⚠️ Assurances des listes de prix : {e}")
+        db.session.rollback()
+        return jsonify({})
+    resultat = {}
+    for liste, nom, _ in lignes:
+        noms = resultat.setdefault(liste, [])
+        if nom.upper() not in {n.upper() for n in noms}:
+            noms.append(nom)
+    return jsonify(resultat)
+
+
 @app.route('/api/compagnies-complementaires', methods=['GET'])
 @login_required
 def api_compagnies_complementaires():
