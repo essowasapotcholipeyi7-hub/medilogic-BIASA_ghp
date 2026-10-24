@@ -1904,7 +1904,7 @@ def _marquer_ep_definitive(demande, date_entree, date_sortie):
     return nb_nuitees
 
 
-from services.hospitalisation_service import jours_demandes_ep, echeance_ep_sejour, ep_obligatoire_sejour
+from services.hospitalisation_service import jours_demandes_ep, echeance_ep_sejour, ep_obligatoire_sejour, ventiler_stock_conversion
 
 
 def eps_hospit_par_sejour(structure_id, hospit_ids):
@@ -10405,7 +10405,7 @@ def api_add_produit():
         return jsonify({'success': False, 'error': str(e)}), 500
 def _log_mouvement_stock(structure_id, produit_id, produit_nom, type_mouvement,
                           delta, stock_apres, reference_type=None, reference_id=None,
-                          user_nom=None):
+                          user_nom=None, motif=None):
     """Journalise un événement de stock (vente, réapprovisionnement,
     annulation, ajustement, point de départ initial) dans mouvements_stock —
     permet ensuite de répondre à "quel stock avait-on à la date T ?" dans
@@ -10414,6 +10414,18 @@ def _log_mouvement_stock(structure_id, produit_id, produit_nom, type_mouvement,
     stock elle-même (le mouvement Sheets, la vraie source de vérité du
     stock, est déjà fait avant cet appel)."""
     try:
+        if motif:   # ⭐ 2026-10-24 : ex. « Hospitalisation n° 3 — patient » (repli sans motif si colonne absente)
+            try:
+                db.execute_query("""
+                    INSERT INTO mouvements_stock
+                        (structure_id, produit_id, produit_nom, type_mouvement,
+                         quantite_delta, stock_apres, reference_type, reference_id, created_by_nom, motif)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (structure_id, str(produit_id), produit_nom, type_mouvement,
+                      delta, stock_apres, reference_type, reference_id, user_nom, motif[:255]))
+                return
+            except Exception as e_motif:
+                print(f"⚠️ Mouvement de stock sans motif (repli) : {e_motif}")
         db.execute_query("""
             INSERT INTO mouvements_stock
                 (structure_id, produit_id, produit_nom, type_mouvement,
@@ -10479,6 +10491,98 @@ def _lire_quantite_stock(valeur):
         return int(float(s)) if s else 0
     except (ValueError, TypeError):
         return 0
+
+
+def _ajuster_stock_produit(structure_id, produit_id, delta):
+    """Ajoute `delta` (négatif = sortie) au stock d'un produit ; le stock ne descend pas sous 0.
+    (avant, après) ou None si le produit est introuvable."""
+    sheet_name = f"struct_{structure_id}_produits"
+    from services.feuilles_neon import est_feuille_neon, ajuster_stock
+    if est_feuille_neon(sheet_name):
+        r = ajuster_stock(sheet_name, produit_id, delta)
+        return (r[0], r[1]) if r else None
+    worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
+    cellule = worksheet.find(str(produit_id).strip(), in_column=1)
+    if not cellule:
+        return None
+    ligne = worksheet.row_values(cellule.row)
+    avant = _lire_quantite_stock(ligne[5] if len(ligne) > 5 else '')
+    apres = max(avant + int(delta), 0)
+    worksheet.update_cell(cellule.row, 6, apres)   # colonne F = stock
+    sheets_helper.clear_cache(sheet_name)
+    return avant, apres
+
+
+# ⭐ 2026-10-24 (patron : « dès qu'on ajoute un produit, que le stock diminue, avant qu'on ne facture ») — produits
+# d'un séjour d'hospitalisation / d'un épisode de soins ambulatoires : sortie du stock à l'ajout de la ligne, retour
+# si on la retire, journalisés par ligne (reference_type ci-dessous, reference_id = id de la ligne). La conversion
+# de la proforma ne décompte ensuite que la différence (_stock_deja_sorti_sejour).
+REF_STOCK_HOSPITALISATION = 'soin_hospitalisation'
+REF_STOCK_SOINS_AMBULATOIRES = 'soin_ambulatoire'
+
+
+def _stock_sorti_par_produit(structure_id, reference_type, ids_lignes):
+    """{produit_id: quantité nette sortie du stock} par les lignes de soin données."""
+    ids = [int(i) for i in ids_lignes or [] if i]
+    if not ids:
+        return {}
+    marques = ', '.join(['%s'] * len(ids))
+    lignes = db.execute_query(f"""
+        SELECT produit_id, -SUM(quantite_delta) AS sorti FROM mouvements_stock
+        WHERE structure_id = %s AND reference_type = %s AND reference_id IN ({marques})
+        GROUP BY produit_id
+    """, [structure_id, reference_type] + ids) or []
+    return {str(l['produit_id']).strip(): int(float(l['sorti'] or 0)) for l in lignes if float(l['sorti'] or 0) > 0}
+
+
+def _sortir_stock_ligne_soin(structure_id, ligne, reference_type, user_nom, motif):
+    """Sortie du stock à l'ajout d'un produit au séjour / à l'épisode. Jamais bloquant : renvoie un avertissement
+    à afficher (stock insuffisant, produit introuvable...) ou None. Ce qui n'a pas pu sortir ici sortira à la
+    conversion de la proforma, comme avant."""
+    if getattr(ligne, 'type', None) != 'medicament' or not ligne.reference_id or int(ligne.quantite or 0) <= 0:
+        return None
+    quantite = int(ligne.quantite)
+    try:
+        r = _ajuster_stock_produit(structure_id, ligne.reference_id, -quantite)
+    except Exception as e:
+        print(f"❌ Sortie de stock ({ligne.nom}) : {e}")
+        return f"Le stock de « {ligne.nom} » n'a pas pu être mis à jour : il sera décompté à la facturation."
+    if r is None:
+        return f"« {ligne.nom} » est introuvable dans le stock des produits : il n'a pas été décompté."
+    avant, apres = r
+    _log_mouvement_stock(structure_id, ligne.reference_id, ligne.nom, 'vente', apres - avant, apres,
+                         reference_type=reference_type, reference_id=ligne.id, user_nom=user_nom, motif=motif)
+    if avant < quantite:
+        return (f"Stock insuffisant pour « {ligne.nom} » : il n'en restait que {avant}, {quantite} donné(s). "
+                f"Le stock est maintenant à 0 : pensez à l'approvisionnement.")
+    return None
+
+
+def _rendre_stock_ligne_soin(structure_id, ligne, reference_type, user_nom, motif):
+    """Retour en stock de ce que la ligne retirée avait réellement sorti (rien pour une ligne ajoutée avant
+    le 24/10/2026, jamais sortie du stock)."""
+    if getattr(ligne, 'type', None) != 'medicament' or not ligne.reference_id:
+        return
+    sorti = _stock_sorti_par_produit(structure_id, reference_type, [ligne.id]).get(str(ligne.reference_id).strip(), 0)
+    if sorti <= 0:
+        return
+    r = _ajuster_stock_produit(structure_id, ligne.reference_id, sorti)
+    if r:
+        _log_mouvement_stock(structure_id, ligne.reference_id, ligne.nom, 'annulation', r[1] - r[0], r[1],
+                             reference_type=reference_type, reference_id=ligne.id, user_nom=user_nom, motif=motif)
+
+
+def _stock_deja_sorti_sejour(structure_id, proforma):
+    """{produit_id: quantité} déjà sortie du stock par les lignes du séjour / de l'épisode facturé par cette proforma."""
+    if proforma.get('hospitalisation_id'):
+        ids = [i for (i,) in SoinHospitalisation.query.with_entities(SoinHospitalisation.id).filter_by(
+            hospitalisation_id=proforma['hospitalisation_id'], structure_id=structure_id).all()]
+        return _stock_sorti_par_produit(structure_id, REF_STOCK_HOSPITALISATION, ids)
+    if proforma.get('soins_ambulatoires_id'):
+        ids = [i for (i,) in LigneSoinAmbulatoire.query.with_entities(LigneSoinAmbulatoire.id).filter_by(
+            soins_ambulatoires_id=proforma['soins_ambulatoires_id'], structure_id=structure_id).all()]
+        return _stock_sorti_par_produit(structure_id, REF_STOCK_SOINS_AMBULATOIRES, ids)
+    return {}
 
 
 def _decrementer_stocks_produits(sheet_name, lignes, structure_id, vente_id, user_nom):
@@ -11165,8 +11269,10 @@ def api_situation_periodique_mouvements():
         ORDER BY date_mouvement, id
     """, (structure_id, produit_id, debut, fin)) or []
 
-    ids_ventes = sorted({int(r['reference_id']) for r in rows
-                         if r.get('reference_id') and r.get('type_mouvement') in ('vente', 'annulation')})
+    def _ref_vente(r):   # ⭐ 2026-10-24 : sorties d'un séjour / épisode = référence à une ligne de soin
+        return (r.get('reference_id') and r.get('type_mouvement') in ('vente', 'annulation')
+                and (r.get('reference_type') or 'vente') == 'vente')
+    ids_ventes = sorted({int(r['reference_id']) for r in rows if _ref_vente(r)})
     ventes = {}
     if ids_ventes:
         marques = ', '.join(['%s'] * len(ids_ventes))
@@ -11189,8 +11295,10 @@ def api_situation_periodique_mouvements():
             'reference': '', 'patient': '', 'prix_unitaire': None, 'montant': None,
         }
         v = None
-        if r.get('reference_id') and r.get('type_mouvement') in ('vente', 'annulation'):
+        if _ref_vente(r):
             v = ventes.get(int(r['reference_id']))
+        elif r.get('reference_type') in (REF_STOCK_HOSPITALISATION, REF_STOCK_SOINS_AMBULATOIRES):
+            m['reference'] = r.get('motif') or ('Hospitalisation' if r.get('reference_type') == REF_STOCK_HOSPITALISATION else 'Soins ambulatoires')
         if v:
             m['reference'] = f"Vente n° {v.get('numero_local') or v['id']}" + (' (annulée)' if v.get('statut') == 'annulee' else '')
             m['vente_id'] = v['id']
@@ -22747,16 +22855,28 @@ def api_convertir_proforma():
         # ⭐ Tout le panier en 2 appels Google (voir _decrementer_stocks_produits).
         try:
             produits_vendus = [a for a in articles_transformes if a.get('type') == 'produit' and a.get('id')]
-            if produits_vendus:
-                print(f"📦 {len(produits_vendus)} produit(s) à mettre à jour dans le stock")
+            lignes_stock = [(a.get('id'), a.get('quantite'), a.get('nom', 'Inconnu')) for a in produits_vendus]
+            # ⭐ 2026-10-24 : séjour / épisode — les produits sont déjà sortis du stock à l'ajout des lignes :
+            # on ne décompte que la différence (quantité augmentée dans la proforma), et on remet en stock ce
+            # qui a été baissé ou retiré de la proforma.
+            deja_sortis = _stock_deja_sorti_sejour(structure_id, proforma)
+            if deja_sortis:
+                lignes_stock, a_rendre = ventiler_stock_conversion(lignes_stock, deja_sortis)
+                print(f"📦 Séjour : déjà sortis du stock {deja_sortis} ; reste {lignes_stock} ; retour {a_rendre}")
+                for pid, quantite, nom in a_rendre:
+                    r = _ajuster_stock_produit(structure_id, pid, quantite)
+                    if r:
+                        _log_mouvement_stock(structure_id, pid, nom or '', 'annulation', r[1] - r[0], r[1],
+                                             reference_type='vente', reference_id=vente_id, user_nom=user_name,
+                                             motif=f"Retiré de la proforma n° {proforma.get('numero_proforma') or proforma_id}")
+            if lignes_stock:
+                print(f"📦 {len(lignes_stock)} produit(s) à mettre à jour dans le stock")
                 echecs_stock = _decrementer_stocks_produits(
-                    f"struct_{structure_id}_produits",
-                    [(a.get('id'), a.get('quantite'), a.get('nom', 'Inconnu')) for a in produits_vendus],
-                    structure_id, vente_id, user_name)
+                    f"struct_{structure_id}_produits", lignes_stock, structure_id, vente_id, user_name)
                 if echecs_stock:
                     print(f"   ⚠️ Échecs mise à jour stock: {'; '.join(echecs_stock)}")
             else:
-                print("ℹ️ Aucun produit à mettre à jour (seulement des actes)")
+                print("ℹ️ Aucun produit à décompter maintenant (actes seulement, ou déjà sortis au séjour)")
         except Exception as e:
             print(f"   ❌ ERREUR mise à jour stock Sheets: {e}")
             import traceback
@@ -23720,7 +23840,12 @@ def api_ajouter_soin_hospitalisation(hospit_id):
             ids_crees.append(soin.id)
 
         db.session.commit()
-        return jsonify({'success': True, 'soin_ids': ids_crees, 'lignes': len(ids_crees)})
+        # ⭐ 2026-10-24 : le produit sort du stock maintenant (et plus à la facturation)
+        avertissement_stock = _sortir_stock_ligne_soin(
+            structure_id, soin, REF_STOCK_HOSPITALISATION, user_name,
+            f"Hospitalisation n° {hospit.numero_local or hospit.id} — {hospit.patient_nom}")
+        return jsonify({'success': True, 'soin_ids': ids_crees, 'lignes': len(ids_crees),
+                        'avertissement_stock': avertissement_stock})
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur ajout soin hospitalisation: {e}")
@@ -23834,6 +23959,11 @@ def api_supprimer_soin_hospitalisation(hospit_id, soin_id):
             return jsonify({'success': False, 'error': 'Ligne introuvable'}), 404
         if soin.statut != 'en_cours':
             return jsonify({'success': False, 'error': 'Cette ligne est déjà facturée'}), 400
+        # ⭐ 2026-10-24 : ligne retirée -> le produit revient en stock (avant la suppression : si elle échouait,
+        # le séjour serait de toute façon décompté en entier à la facturation)
+        hospit = Hospitalisation.query.get(hospit_id)
+        _rendre_stock_ligne_soin(structure_id, soin, REF_STOCK_HOSPITALISATION, session.get('user_name', 'System'),
+                                 f"Ligne retirée — Hospitalisation n° {hospit.numero_local or hospit.id} — {hospit.patient_nom}")
         db.session.delete(soin)
         db.session.commit()
         return jsonify({'success': True})
@@ -24650,7 +24780,11 @@ def api_ajouter_ligne_soin_ambulatoire(episode_id):
         )
         db.session.add(ligne)
         db.session.commit()
-        return jsonify({'success': True, 'ligne_id': ligne.id})
+        # ⭐ 2026-10-24 : le produit sort du stock maintenant (et plus à la facturation)
+        avertissement_stock = _sortir_stock_ligne_soin(
+            structure_id, ligne, REF_STOCK_SOINS_AMBULATOIRES, user_name,
+            f"Soins ambulatoires n° {episode.numero_local or episode.id} — {episode.patient_nom or ''}")
+        return jsonify({'success': True, 'ligne_id': ligne.id, 'avertissement_stock': avertissement_stock})
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur ajout ligne soins ambulatoires: {e}")
@@ -24700,6 +24834,10 @@ def api_supprimer_ligne_soin_ambulatoire(episode_id, ligne_id):
             return jsonify({'success': False, 'error': 'Ligne introuvable'}), 404
         if ligne.statut != 'en_cours':
             return jsonify({'success': False, 'error': 'Cette ligne est déjà facturée'}), 400
+        # ⭐ 2026-10-24 : ligne retirée -> le produit revient en stock
+        episode = SoinsAmbulatoires.query.get(episode_id)
+        _rendre_stock_ligne_soin(structure_id, ligne, REF_STOCK_SOINS_AMBULATOIRES, session.get('user_name', 'System'),
+                                 f"Ligne retirée — Soins ambulatoires n° {episode.numero_local or episode.id} — {episode.patient_nom or ''}")
         db.session.delete(ligne)
         db.session.commit()
         return jsonify({'success': True})

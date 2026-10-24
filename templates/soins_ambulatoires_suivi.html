@@ -624,6 +624,8 @@ async function ajouterLigne(type, confirmerDoublon) {
             return;
         }
         if (data.success) {
+            // ⭐ 2026-10-24 : le produit est sorti du stock à l'ajout — stock insuffisant ou produit introuvable
+            if (data.avertissement_stock) await afficherMessage(data.avertissement_stock, {type: 'warning'});
             window.location.reload();
         } else {
             await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
@@ -640,7 +642,7 @@ function basculerCouvertureLigne(ligneId, assurance, prise) {
 }
 
 async function supprimerLigne(ligneId) {
-    if (!await demanderConfirmation('Retirer cette ligne de l\'épisode ?')) return;
+    if (!await demanderConfirmation('Retirer cette ligne de l\'épisode ? Un produit retourne en stock.')) return;
     fetch(`/api/soins-ambulatoires/${EPISODE_ID}/lignes/${ligneId}`, { method: 'DELETE' })
         .then(r => r.json())
         .then(async data => { if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });

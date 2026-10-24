@@ -1005,3 +1005,34 @@ def ep_obligatoire_sejour(hospit):
         and 'observation' not in (deduire_categorie_salle(hospit.chambre_acte_nom),
                                   deduire_categorie_salle(hospit.chambre_service))
     )
+
+
+# ===================== Stock des produits d'un séjour / épisode =====================
+def ventiler_stock_conversion(lignes, deja_sortis):
+    """⭐ 2026-10-24 (patron : « au moment de la facturation, que le stock ne diminue plus parce que c'est déjà
+    diminué ») — produits d'une vente issue d'un séjour / épisode dont une partie est déjà sortie du stock à
+    l'ajout des lignes. lignes : [(produit_id, quantite, nom)] de la vente ; deja_sortis : {produit_id: quantité}.
+    Renvoie (a_sortir, a_rendre) : ce qui reste à décompter, et ce qui revient en stock (quantité baissée ou
+    ligne retirée dans la proforma avant la conversion)."""
+    vendus, noms, ordre = {}, {}, []
+    for pid, quantite, nom in lignes:
+        pid = str(pid or '').strip()
+        if not pid:
+            continue
+        if pid not in vendus:
+            ordre.append(pid)
+            vendus[pid] = 0
+            noms[pid] = nom
+        vendus[pid] += int(quantite or 0)
+    deja = {str(k).strip(): int(v or 0) for k, v in (deja_sortis or {}).items()}
+    a_sortir, a_rendre = [], []
+    for pid in ordre:
+        reste = vendus[pid] - deja.get(pid, 0)
+        if reste > 0:
+            a_sortir.append((pid, reste, noms[pid]))
+        elif reste < 0:
+            a_rendre.append((pid, -reste, noms[pid]))
+    for pid, q in deja.items():
+        if pid not in vendus and q > 0:
+            a_rendre.append((pid, q, None))
+    return a_sortir, a_rendre
