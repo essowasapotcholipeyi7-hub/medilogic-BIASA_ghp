@@ -33,6 +33,10 @@
         .cr-formulaire > .card-body { padding: 0 !important; }
     }
     .resultat-contenu-html img { max-width: 100%; }
+    /* ⭐ PDF protégé (html2pdf peint l'écran, pas les règles d'impression) : même allure qu'à l'impression */
+    .pdf-export-resultat .cr-formulaire { border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
+    .pdf-export-resultat .cr-formulaire > .card-body { padding: 0 !important; }
+    .pdf-export-resultat #resultatContenu { box-shadow: none !important; }
 </style>
 {% endblock %}
 
@@ -171,9 +175,17 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
             {% if patient_email %}
             <button onclick="modifierEmailPatient()" class="btn btn-outline-secondary btn-sm" title="Modifier l'email du patient"><i class="fas fa-pen"></i></button>
             {% endif %}
+            {% if resultat.contenu_html %}
+            {# ⭐ 2026-10-24 (patron : le PDF envoyé aux patients montrait le code de mise en page en texte brut) :
+               le PDF est fait ici, à partir de la page telle qu'elle s'imprime, puis protégé par le serveur #}
+            <button id="btnPdfProtege" onclick="telechargerPdfProtege()" class="btn btn-primary btn-sm" title="PDF chiffré — code d'ouverture = code d'accès portail du patient">
+                <i class="fas fa-lock"></i> PDF protégé
+            </button>
+            {% else %}
             <a href="{{ url_for('api_pdf_protege_resultat', resultat_id=resultat.id) }}" target="_blank" class="btn btn-primary btn-sm" title="PDF chiffré — code d'ouverture = code d'accès portail du patient">
                 <i class="fas fa-lock"></i> PDF protégé
             </a>
+            {% endif %}
             <button onclick="voirCodePortailResultat()" class="btn btn-outline-dark btn-sm" title="Code d'accès (portail + PDF protégé)"><i class="fas fa-key"></i></button>
             <button onclick="fermerResultat()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
         </div>
@@ -243,6 +255,61 @@ let emailPatientActuel = {{ (patient_email or '') | tojson }};
 // c'est AUSSI le mot de passe qui ouvre le "PDF protégé" ci-dessus, pas un
 // second code séparé. Voir api_pdf_protege_resultat (app.py).
 const patientNomResultat = {{ demande.patient_nom | tojson }};
+
+// ⭐ 2026-10-24 (patron) : PDF protégé d'un compte rendu rédigé en ligne — fait par le navigateur à partir de la
+// page telle qu'elle s'imprime (en-tête, cadre du patient, tableaux, signature, code-barres ; même outil que les
+// reçus), puis envoyé au serveur qui le chiffre avec le code d'accès du patient. Avant : le serveur retirait les
+// balises et gardait tout le reste en texte, y compris les règles de mise en page.
+async function telechargerPdfProtege() {
+    const btn = document.getElementById('btnPdfProtege');
+    const texte = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> PDF…';
+    const el = document.getElementById('resultatContenu');
+    document.body.classList.add('pdf-export-resultat');
+    // images de l'en-tête (logo) écrites avec l'adresse complète du site : servies par le serveur courant le
+    // temps du PDF, sinon le navigateur refuse de les copier quand on passe par une autre adresse
+    const images = [...el.querySelectorAll('img')].filter(img => {
+        const m = (img.getAttribute('src') || '').match(/^https?:\/\/[^/]+(\/static\/.+)$/);
+        return m && new URL(img.src).origin !== location.origin;
+    });
+    await Promise.all(images.map(img => new Promise(ok => {
+        img.dataset.srcOrigine = img.getAttribute('src');
+        img.onload = img.onerror = ok;
+        img.src = img.dataset.srcOrigine.replace(/^https?:\/\/[^/]+/, '');
+    })));
+    try {
+        const blob = await html2pdf().set({
+            margin: [10, 10, 10, 10],
+            image: { type: 'jpeg', quality: 0.95 },
+            html2canvas: { scale: 2, useCORS: true, logging: false },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            pagebreak: { mode: ['css', 'legacy'] },
+        }).from(el).outputPdf('blob');
+        const fd = new FormData();
+        fd.append('pdf', blob, 'resultat.pdf');
+        const r = await fetch('{{ url_for('api_pdf_protege_resultat', resultat_id=resultat.id) }}', { method: 'POST', body: fd });
+        if (!r.ok) {
+            let msg = 'Le PDF protégé n’a pas pu être fait.';
+            try { msg = (await r.json()).error || msg; } catch (e) {}
+            throw new Error(msg);
+        }
+        const nom = ((r.headers.get('Content-Disposition') || '').match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/) || [])[1];
+        const lien = document.createElement('a');
+        lien.href = URL.createObjectURL(await r.blob());
+        lien.download = nom ? decodeURIComponent(nom) : 'Resultat_protege_{{ resultat.id }}.pdf';
+        document.body.appendChild(lien);
+        lien.click();
+        setTimeout(() => { URL.revokeObjectURL(lien.href); lien.remove(); }, 2000);
+    } catch (e) {
+        await afficherMessage(e.message || 'Le PDF protégé n’a pas pu être fait.', {type: 'danger'});
+    } finally {
+        images.forEach(img => { img.onload = img.onerror = null; img.src = img.dataset.srcOrigine; });
+        document.body.classList.remove('pdf-export-resultat');
+        btn.disabled = false;
+        btn.innerHTML = texte;
+    }
+}
 
 // ⭐ 2026-10-18 : « Fermer » par défaut (Entrée) ; régénération sur bouton explicite, confirmée
 async function voirCodePortailResultat() {

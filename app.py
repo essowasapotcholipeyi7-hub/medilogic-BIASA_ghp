@@ -16687,7 +16687,7 @@ def _obtenir_pdf_resultat_non_protege_ghp(resultat, demande):
     return _generer_pdf_resultat_texte_ghp(resultat, demande), None
 
 
-@app.route('/api/resultats-analyses/<int:resultat_id>/pdf-protege')
+@app.route('/api/resultats-analyses/<int:resultat_id>/pdf-protege', methods=['GET', 'POST'])
 @login_required
 def api_pdf_protege_resultat(resultat_id):
     """Télécharge le résultat en PDF chiffré par mot de passe — réutilise
@@ -16706,10 +16706,19 @@ def api_pdf_protege_resultat(resultat_id):
         flash('Demande introuvable', 'danger')
         return redirect(url_for('page_resultats_analyses'))
 
-    pdf_bytes, erreur = _obtenir_pdf_resultat_non_protege_ghp(resultat, demande)
-    if erreur:
-        flash(erreur, 'danger')
-        return redirect(url_for('page_imprimer_resultat', resultat_id=resultat_id))
+    if request.method == 'POST':
+        # ⭐ 2026-10-24 (patron : le PDF envoyé aux patients montrait le code de mise en page en texte brut) :
+        # compte rendu rédigé en ligne — PDF fait par la page d'impression (html2pdf, comme les reçus), le
+        # serveur ne fait que le chiffrer. Jamais gardé.
+        fichier = request.files.get('pdf')
+        pdf_bytes = fichier.read(20 * 1024 * 1024 + 1) if fichier else b''
+        if not pdf_bytes.startswith(b'%PDF') or len(pdf_bytes) > 20 * 1024 * 1024:
+            return jsonify({'success': False, 'error': "PDF invalide ou trop lourd (20 Mo au plus)."}), 400
+    else:
+        pdf_bytes, erreur = _obtenir_pdf_resultat_non_protege_ghp(resultat, demande)
+        if erreur:
+            flash(erreur, 'danger')
+            return redirect(url_for('page_imprimer_resultat', resultat_id=resultat_id))
 
     acces = obtenir_ou_creer_code_acces(structure_id, demande.patient_id, session.get('user_name', 'System'))
 
