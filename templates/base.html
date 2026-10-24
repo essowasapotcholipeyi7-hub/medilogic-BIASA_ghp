@@ -3042,6 +3042,14 @@ async function appliquerPropositionTheme() {
             </a>
         </li>
         {% endif %}
+        {# ⭐ 2026-10-24 (patron) : le laboratoire et la radiologie donnent aussi l'accès aux résultats (QR à scanner) #}
+        {% if session.role in ['laborantin', 'radiologue'] %}
+        <li class="nav-item">
+            <a class="nav-link-top" href="{{ url_for('page_portail_resultats_accueil') }}">
+                <i class="fas fa-qrcode"></i> Portail résultats (Rs)
+            </a>
+        </li>
+        {% endif %}
         {% if role_compta_seul %}{# ⭐ comptable / agent comptable : leurs onglets seulement #}
         <li class="nav-item">
             <a class="nav-link-top" href="{{ url_for('comptabilite.index') }}">
