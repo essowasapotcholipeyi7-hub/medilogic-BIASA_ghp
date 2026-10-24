@@ -1622,20 +1622,198 @@ function afficherAlerteScanProforma(message, estErreur) {
         champ.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 })();
+// ============================================
+// ⭐ 2026-10-24 (patron) : FENÊTRE « AJOUTER UN ARTICLE » — création, conversion en vente et modification
+// d'une proforma. On choisit d'abord Acte ou Médicament, on cherche dans le catalogue (nom ou code, sans
+// accents, plusieurs mots) et, si l'article n'y est pas, on le saisit à la main. Remplace les questions à la
+// suite (« Cliquez OK pour Acte, Annuler pour Produit ») et la saisie d'un nom sans code.
+// Renvoie {catalogue, type, nom, prix, pbr, quantite, id, prise_en_charge_amu, prise_en_charge_amu_tns,
+// prise_en_charge_cac, statut, quantite_stock, date_peremption} ou null si annulé.
+// ============================================
+function _vraiCatalogue(v) { return !(v === false || String(v).toLowerCase() === 'false'); }
+function _echapperAjout(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
+function _modalAjoutArticle() {
+    let m = document.getElementById('ajoutArticleModal');
+    if (m) return m;
+    m = document.createElement('div');
+    m.className = 'modal fade';
+    m.id = 'ajoutArticleModal';
+    m.tabIndex = -1;
+    m.innerHTML = `
+      <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="ajoutArticleTitre"><i class="fas fa-plus-circle me-1"></i> Ajouter un article</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button></div>
+        <div class="modal-body">
+          <div class="btn-group w-100 mb-3" role="group" aria-label="Type d'article">
+            <input type="radio" class="btn-check" name="ajoutArticleType" id="ajoutTypeActe" value="acte" checked>
+            <label class="btn btn-outline-primary" for="ajoutTypeActe"><i class="fas fa-stethoscope me-1"></i> Acte</label>
+            <input type="radio" class="btn-check" name="ajoutArticleType" id="ajoutTypeProduit" value="produit">
+            <label class="btn btn-outline-success" for="ajoutTypeProduit"><i class="fas fa-pills me-1"></i> Médicament / produit</label>
+          </div>
+          <div id="ajoutZoneCatalogue">
+            <input type="search" class="form-control" id="ajoutArticleRecherche" autocomplete="off"
+                   placeholder="Rechercher dans le catalogue : nom ou code (ex. « nfs », « para 500 »)">
+            <div id="ajoutArticleResultats" class="list-group mt-2" style="max-height:280px;overflow:auto"></div>
+            <div id="ajoutArticleChoisi" class="alert alert-success py-2 mt-2 mb-0" style="display:none"></div>
+          </div>
+          <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" id="ajoutArticleManuel">
+            <label class="form-check-label" for="ajoutArticleManuel">L'article n'est pas dans le catalogue : je le saisis à la main</label>
+          </div>
+          <div id="ajoutZoneManuelle" class="row g-2 mt-1" style="display:none">
+            <div class="col-md-8"><label class="form-label mb-1">Nom de l'article</label>
+              <input type="text" class="form-control" id="ajoutArticleNom"></div>
+            <div class="col-md-4"><label class="form-label mb-1">Prix unitaire (FCFA)</label>
+              <input type="number" class="form-control" id="ajoutArticlePrix" min="0" step="1"></div>
+          </div>
+          <div class="row g-2 mt-2"><div class="col-md-3"><label class="form-label mb-1">Quantité</label>
+            <input type="number" class="form-control" id="ajoutArticleQte" value="1" min="1"></div></div>
+          <div id="ajoutArticleErreur" class="text-danger small mt-2"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+          <button type="button" class="btn btn-primary" id="ajoutArticleValider"><i class="fas fa-plus me-1"></i> Ajouter</button>
+        </div>
+      </div></div>`;
+    document.body.appendChild(m);
+    return m;
+}
+
+function demanderArticle(titre) {
+    return new Promise(resolve => {
+        const m = _modalAjoutArticle();
+        const $ = id => document.getElementById(id);
+        $('ajoutArticleTitre').innerHTML = '<i class="fas fa-plus-circle me-1"></i> ' + _echapperAjout(titre || 'Ajouter un article');
+        let choisi = null, resultat = null, trouves = [];
+        const type = () => $('ajoutTypeProduit').checked ? 'produit' : 'acte';
+        const manuel = () => $('ajoutArticleManuel').checked;
+        $('ajoutTypeActe').checked = true;
+        $('ajoutArticleRecherche').value = '';
+        $('ajoutArticleManuel').checked = false;
+        $('ajoutArticleNom').value = '';
+        $('ajoutArticlePrix').value = '';
+        $('ajoutArticleQte').value = '1';
+        $('ajoutArticleErreur').textContent = '';
+
+        function afficherChoix() {
+            const z = $('ajoutArticleChoisi');
+            if (!choisi) { z.style.display = 'none'; return; }
+            z.style.display = '';
+            z.innerHTML = '<i class="fas fa-check-circle me-1"></i> <strong>' + _echapperAjout(choisi.nom) + '</strong> — '
+                + Math.round(choisi.prix).toLocaleString('fr-FR') + ' F'
+                + (choisi.type === 'produit' ? ' · stock : ' + (choisi.quantite_stock || 0) : '');
+        }
+        async function chercher() {
+            const q = $('ajoutArticleRecherche').value.trim();
+            const zone = $('ajoutArticleResultats');
+            if (manuel()) { zone.innerHTML = ''; return; }
+            const cle = type() === 'produit' ? 'produits' : 'actes';
+            if (!q) { zone.innerHTML = '<div class="small text-muted px-1">Tapez le nom ou le code ; la liste s’affiche ici.</div>'; trouves = []; return; }
+            zone.innerHTML = '<div class="small text-muted px-1"><i class="fas fa-spinner fa-spin me-1"></i> Recherche…</div>';
+            const liste = await chargerCatalogueProforma(cle);
+            if ($('ajoutArticleRecherche').value.trim() !== q || (type() === 'produit' ? 'produits' : 'actes') !== cle) return;
+            trouves = filtrerCatalogue(liste, q, ['nom', 'code', 'ID', 'id']).slice(0, 40);
+            if (!trouves.length) {
+                zone.innerHTML = '<div class="small text-muted px-1">Rien dans le catalogue pour « ' + _echapperAjout(q) + ' ». '
+                    + '<a href="#" id="ajoutPasserManuel">Le saisir à la main</a></div>';
+                $('ajoutPasserManuel').onclick = e => { e.preventDefault(); $('ajoutArticleManuel').checked = true; basculerManuel(); };
+                return;
+            }
+            zone.innerHTML = trouves.map((x, i) => {
+                const prix = parseFloat(cle === 'produits' ? x.prix_vente : x.prix) || 0;
+                const info = cle === 'produits' ? ' · stock ' + (parseInt(x.quantite_stock) || 0) : '';
+                return '<button type="button" class="list-group-item list-group-item-action py-1 d-flex justify-content-between" data-i="' + i + '">'
+                    + '<span>' + _echapperAjout(x.nom) + '</span><span class="text-muted small text-nowrap ms-2">'
+                    + Math.round(prix).toLocaleString('fr-FR') + ' F' + info + '</span></button>';
+            }).join('');
+            zone.querySelectorAll('[data-i]').forEach(b => b.onclick = () => choisir(trouves[+b.dataset.i]));
+        }
+        function choisir(x) {
+            const produit = type() === 'produit';
+            const pbr = parseFloat(x.pbr);
+            choisi = {
+                catalogue: true, type: type(), nom: x.nom, id: x.id || x.ID || null,
+                prix: parseFloat(produit ? x.prix_vente : x.prix) || 0,
+                pbr: isNaN(pbr) ? null : pbr,
+                prise_en_charge_amu: _vraiCatalogue(x.prise_en_charge_amu),
+                prise_en_charge_amu_tns: _vraiCatalogue(x.prise_en_charge_amu_tns),
+                prise_en_charge_cac: _vraiCatalogue(x.prise_en_charge_cac),
+                statut: x.statut || 'DIRECT',
+                quantite_stock: parseInt(x.quantite_stock) || 0, date_peremption: x.date_peremption || '',
+            };
+            afficherChoix();
+            $('ajoutArticleQte').focus();
+            $('ajoutArticleQte').select();
+        }
+        function basculerManuel() {
+            const oui = manuel();
+            $('ajoutZoneManuelle').style.display = oui ? '' : 'none';
+            $('ajoutZoneCatalogue').style.display = oui ? 'none' : '';
+            if (oui) {
+                choisi = null; afficherChoix();
+                if (!$('ajoutArticleNom').value) $('ajoutArticleNom').value = $('ajoutArticleRecherche').value.trim();
+                $('ajoutArticleNom').focus();
+            } else {
+                $('ajoutArticleRecherche').focus();
+                chercher();
+            }
+        }
+        function valider() {
+            const qte = parseInt($('ajoutArticleQte').value) || 0;
+            if (qte < 1) { $('ajoutArticleErreur').textContent = 'Quantité invalide.'; return; }
+            if (manuel()) {
+                const nom = $('ajoutArticleNom').value.trim();
+                const prix = parseFloat($('ajoutArticlePrix').value) || 0;
+                if (!nom) { $('ajoutArticleErreur').textContent = "Saisissez le nom de l'article."; return; }
+                if (prix <= 0) { $('ajoutArticleErreur').textContent = 'Saisissez un prix valide.'; return; }
+                resultat = {catalogue: false, type: type(), nom: nom, prix: prix, quantite: qte};
+            } else {
+                if (!choisi) { $('ajoutArticleErreur').textContent = "Choisissez un article dans la liste, ou cochez la saisie à la main."; return; }
+                // médicament : pas en rupture, pas plus que le stock (même contrôle que la liste de la création)
+                if (choisi.type === 'produit' && choisi.quantite_stock <= 0) {
+                    $('ajoutArticleErreur').textContent = `« ${choisi.nom} » est en rupture de stock.`; return;
+                }
+                if (choisi.type === 'produit' && qte > choisi.quantite_stock) {
+                    $('ajoutArticleErreur').textContent = `Stock insuffisant pour « ${choisi.nom} » : ${choisi.quantite_stock} disponible(s).`; return;
+                }
+                resultat = Object.assign({}, choisi, {quantite: qte});
+            }
+            bootstrap.Modal.getInstance(m).hide();
+        }
+        $('ajoutTypeActe').onchange = $('ajoutTypeProduit').onchange = () => { choisi = null; afficherChoix(); chercher(); };
+        $('ajoutArticleManuel').onchange = basculerManuel;
+        let attente;
+        $('ajoutArticleRecherche').oninput = () => { choisi = null; afficherChoix(); clearTimeout(attente); attente = setTimeout(chercher, 120); };
+        $('ajoutArticleRecherche').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); if (trouves.length) choisir(trouves[0]); } };
+        $('ajoutArticleQte').onkeydown = $('ajoutArticlePrix').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); valider(); } };
+        $('ajoutArticleValider').onclick = valider;
+        $('ajoutZoneManuelle').style.display = 'none';
+        $('ajoutZoneCatalogue').style.display = '';
+        afficherChoix();
+        chercher();
+        chargerCatalogueProforma('actes'); chargerCatalogueProforma('produits');   // prêts avant la frappe
+        m.addEventListener('shown.bs.modal', () => $('ajoutArticleRecherche').focus(), {once: true});
+        m.addEventListener('hidden.bs.modal', () => resolve(resultat), {once: true});
+        bootstrap.Modal.getOrCreateInstance(m).show();
+    });
+}
+
 async function ajouterArticlePersonnalise() {
-    const nom = await demanderSaisie('Nom de l\'article :');
-    if (!nom) return;
-    
-    const type = await demanderConfirmation('Cliquez OK pour "Acte", Annuler pour "Produit"') ? 'acte' : 'produit';
-    const prix = parseFloat(await demanderSaisie('Prix unitaire (FCFA) :')) || 0;
-    const qte = parseInt(await demanderSaisie('Quantité :')) || 1;
-    
-    if (prix <= 0) {
-        await afficherMessage('Prix invalide');
+    const a = await demanderArticle('Ajouter un article à la proforma');
+    if (!a) return;
+    if (!a.catalogue) {
+        ajouterAuPanier(a.nom, a.type, a.prix, a.quantite);
         return;
     }
-    
-    ajouterAuPanier(nom, type, prix, qte);
+    // article du catalogue : mêmes vérifications que la liste (EP, prise en charge, stock, péremption)
+    const patientAssuranceProforma = document.getElementById('assuranceNom').value;
+    const isAMU = patientAssuranceProforma && patientAssuranceProforma !== '' && patientAssuranceProforma !== 'Non assuré';
+    const isCAC = assurance2Active && assurance2Nom && assurance2Nom !== 'Aucune';
+    if (a.type === 'acte') {
+        await validerEtAjouterActeProforma(a, a.quantite, isAMU, isCAC, patientAssuranceProforma);
+    } else {
+        await validerEtAjouterProduitProforma(Object.assign({}, a, {prix_vente: a.prix}), a.quantite, isAMU, isCAC, patientAssuranceProforma);
+    }
 }
 
 function ajouterAuPanierComplet(nom, type, prix, pbr, qte, priseEnChargeAMU, priseEnChargeCAC, serviceId, serviceNom) {
@@ -3366,35 +3544,45 @@ async function supprimerTousArticlesConversion() {
 }
 
 async function ajouterArticleConversion() {
-    const nom = await demanderSaisie('Nom de l\'article :');
-    if (!nom) return;
-    
-    const prix = parseFloat(await demanderSaisie('Prix unitaire (FCFA) :')) || 0;
-    const qte = parseInt(await demanderSaisie('Quantité :')) || 1;
-    
-    if (prix <= 0) {
-        await afficherMessage('Prix invalide');
-        return;
+    // ⭐ 2026-10-24 (patron) : Acte ou Médicament choisi d'abord, recherche dans le catalogue, saisie à la main
+    // seulement si l'article n'y est pas (voir demanderArticle)
+    const a = await demanderArticle('Ajouter un article oublié');
+    if (!a) return;
+    const qte = a.quantite;
+    const type = a.type;
+    const nom = a.nom;
+    let article;
+    if (a.catalogue) {
+        // tarif du patient, comme à la création : tarif privé de sa compagnie (assurance privée active),
+        // sinon prix non assuré (aucune assurance), sinon prix du catalogue ; PBR et couvertures du catalogue
+        const c = couverturesConversionActives();
+        const tns = (proformaConversionData || {}).assurance_nom === 'amu_tns';
+        const priseAMU = tns ? a.prise_en_charge_amu_tns : a.prise_en_charge_amu;
+        const entree = pbrCacConversionMap[nom];
+        const tarifPrive = entree ? parseFloat(entree.tarif_prive) || 0 : 0;
+        const na = parseFloat((PRIX_NA_PROFORMA[type] || {})[nom]) || 0;
+        let prix = a.prix, source = 'base';
+        if (c.cac && a.prise_en_charge_cac && tarifPrive > 0) { prix = tarifPrive; source = 'prive'; }
+        else if (!c.amu && !c.cac && na > 0) { prix = na; source = 'non_assure'; }
+        article = {
+            id: a.id, nom: nom, type: type, quantite: qte, prix: prix, prix_unitaire: prix, _prix_proforma: prix,
+            prix_base: a.prix, source_tarif: source, prix_non_assure: na || null,
+            pbr: a.pbr !== null && a.pbr !== undefined ? a.pbr : 0,
+            prise_en_charge_amu: priseAMU, prise_en_charge_cac: a.prise_en_charge_cac,
+            total: prix * qte,
+        };
+    } else {
+        article = {id: null, nom: nom, type: type, quantite: qte, prix: a.prix, prix_unitaire: a.prix, pbr: a.prix,
+                   prix_modifie: true, total: a.prix * qte};
     }
-    
-    const type = await demanderConfirmation('Cliquez OK pour "Acte", Annuler pour "Produit"') ? 'acte' : 'produit';
-    
-    panierConversion.push({
-        id: null,
-        nom: nom,
-        type: type,
-        quantite: qte,
-        prix: prix,
-        prix_unitaire: prix,
-        pbr: prix,
-        total: prix * qte
-    });
-    
+    const prix = article.prix;
+    panierConversion.push(article);
+
     const tbody = document.getElementById('convertPanierBody');
     const index = panierConversion.length - 1;
     const row = tbody.insertRow();
     row.innerHTML = `
-        <td>${nom}<div class="convert-couv">${celluleCouvertureConversion(panierConversion[index], index)}</div></td>
+        <td>${_echapperAjout(nom)}<div class="convert-couv">${celluleCouvertureConversion(panierConversion[index], index)}</div></td>
         <td><span class="badge ${type === 'acte' ? 'bg-primary' : 'bg-success'}">${type === 'acte' ? 'Acte' : 'Produit'}</span></td>
         <td>
             <input type="number" class="form-control form-control-sm" value="${qte}" 
@@ -3903,21 +4091,8 @@ function modifierProforma(id) {
 
                         <div class="row mt-2">
                             <div class="col-md-4">
-                                <label class="form-label">Ajouter un article</label>
-                                <input type="text" class="form-control" id="modifNewArticleNom" placeholder="Nom de l'article">
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label">Prix</label>
-                                <input type="number" class="form-control" id="modifNewArticlePrix" placeholder="0">
-                            </div>
-                            <div class="col-md-2">
-                                <label class="form-label">Qté</label>
-                                <input type="number" class="form-control" id="modifNewArticleQte" value="1" min="1">
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label">&nbsp;</label>
-                                <button class="btn btn-primary w-100" onclick="ajouterArticleModif()">
-                                    <i class="fas fa-plus"></i> Ajouter
+                                <button class="btn btn-primary w-100" onclick="ajouterArticleModif()" title="Acte ou médicament : recherche dans le catalogue, ou saisie à la main">
+                                    <i class="fas fa-plus"></i> Ajouter un article
                                 </button>
                             </div>
                         </div>
@@ -4164,31 +4339,24 @@ async function supprimerArticleModif(index) {
 }
 
 async function ajouterArticleModif() {
-    const nom = document.getElementById('modifNewArticleNom').value.trim();
-    const prix = parseFloat(document.getElementById('modifNewArticlePrix').value) || 0;
-    const qte = parseInt(document.getElementById('modifNewArticleQte').value) || 1;
-    
-    if (!nom) {
-        await afficherMessage('Veuillez entrer un nom');
-        return;
-    }
-    if (prix <= 0) {
-        await afficherMessage('Veuillez entrer un prix valide');
-        return;
-    }
-    
+    // ⭐ 2026-10-24 (patron) : Acte ou Médicament choisi d'abord, recherche dans le catalogue, saisie à la main
+    // seulement si l'article n'y est pas (voir demanderArticle) — avant : un nom tapé, toujours enregistré « acte »
+    const a = await demanderArticle('Ajouter un article à la proforma');
+    if (!a) return;
     const articles = window.modifArticles || [];
-    // ⭐ article libre : prix saisi, pas de PBR AMU (comme un article perso à la création)
-    articles.push({nom: nom, type: 'acte', quantite: qte, prix: prix, pbr: 0,
-                   prise_en_charge_amu: true, prise_en_charge_cac: true, prix_modifie: true});
+    if (a.catalogue) {
+        // prix du catalogue ; le tarif du patient (privé, non assuré) est appliqué par le calcul, comme à la création
+        const tns = (document.getElementById('modifAssuranceNom').value || '').trim() === 'amu_tns';
+        articles.push({nom: a.nom, id: a.id, type: a.type, quantite: a.quantite, prix: a.prix, prix_base: a.prix,
+                       pbr: a.pbr !== null && a.pbr !== undefined ? a.pbr : 0,
+                       prise_en_charge_amu: tns ? a.prise_en_charge_amu_tns : a.prise_en_charge_amu,
+                       prise_en_charge_cac: a.prise_en_charge_cac, prix_modifie: false});
+    } else {
+        // article libre : prix saisi, pas de PBR AMU (comme un article perso à la création)
+        articles.push({nom: a.nom, type: a.type, quantite: a.quantite, prix: a.prix, pbr: 0,
+                       prise_en_charge_amu: true, prise_en_charge_cac: true, prix_modifie: true});
+    }
     window.modifArticles = articles;
-    
-    document.getElementById('modifNewArticleNom').value = '';
-    document.getElementById('modifNewArticlePrix').value = '';
-    document.getElementById('modifNewArticleQte').value = '1';
-    // ⭐ FIX : faute de frappe ("calcularTotalModif" n'existe pas — vraie
-    // fonction : calculerTotalModif) qui levait une ReferenceError et
-    // empêchait le total de se rafraîchir après l'ajout d'un article.
     calculerTotalModif();
 }
 
