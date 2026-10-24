@@ -3678,6 +3678,56 @@ window.addEventListener('load', ajusterHauteurNavbar);
 setTimeout(ajusterHauteurNavbar, 1000);
 
 // ============================================
+// ⭐ 2026-10-24 (patron : « que la machine rappelle ») : séjours dont les jours d'hospitalisation demandés à
+// l'AMU sont atteints — petit rappel en bas à droite, au plus toutes les 30 minutes (une requête), pas sur les
+// pages Hospitalisation / Entente Préalable qui l'affichent déjà.
+// ============================================
+{% if (session.role in ['admin', 'gestionnaire', 'medecin', 'secretaire', 'caissier', 'paramedical'] or session.is_admin)
+      and not onglet_cache('hospitalisation') and not (cacher_navigation is defined and cacher_navigation)
+      and request.endpoint not in ['page_hospitalisation', 'page_hospitalisation_suivi', 'page_amu_entente_prealable'] %}
+(function rappelEpHospitalisation() {
+    let dernier = 0;
+    try { dernier = parseInt(sessionStorage.getItem('rappelEpHospitVu') || '0', 10) || 0; } catch (e) {}
+    if (Date.now() - dernier < 30 * 60 * 1000) return;
+    fetch('/api/hospitalisation/rappels-ep').then(r => r.json()).then(d => {
+        try { sessionStorage.setItem('rappelEpHospitVu', String(Date.now())); } catch (e) {}
+        const rappels = (d && d.rappels) || [];
+        if (!rappels.length) return;
+        const boite = document.createElement('div');
+        boite.className = 'alert alert-danger shadow position-fixed mb-0';
+        boite.style.cssText = 'right:16px; bottom:16px; z-index:2000; max-width:min(420px, calc(100vw - 32px));';
+        boite.innerHTML = '<button type="button" class="btn-close float-end ms-2" aria-label="Fermer"></button>'
+            + '<div class="fw-bold mb-1"><i class="fas fa-bell me-1"></i> Rappel Entente Préalable</div>'
+            + '<div class="small mb-1">Jours d\'hospitalisation demandés à l\'AMU atteints : libérez le patient ou faites une demande de prolongation.</div>'
+            + '<ul class="small mb-0 ps-3"></ul>';
+        const liste = boite.querySelector('ul');
+        rappels.slice(0, 6).forEach(r => {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.href = r.url;
+            a.className = 'notranslate alert-link';
+            a.textContent = r.patient;
+            li.appendChild(a);
+            li.appendChild(document.createTextNode(' — ' + r.jours + ' jours demandés, '
+                + (r.retard === 0 ? "c'est aujourd'hui" : 'atteints le ' + r.echeance)));
+            liste.appendChild(li);
+        });
+        if (rappels.length > 6) {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.href = '/hospitalisation';
+            a.className = 'alert-link';
+            a.textContent = 'et ' + (rappels.length - 6) + ' autre(s)';
+            li.appendChild(a);
+            liste.appendChild(li);
+        }
+        boite.querySelector('.btn-close').addEventListener('click', () => boite.remove());
+        document.body.appendChild(boite);
+    }).catch(() => {});
+})();
+{% endif %}
+
+// ============================================
 // BADGE "DEMANDES EN ATTENTE" (admin uniquement)
 // ============================================
 {% if session.is_admin %}

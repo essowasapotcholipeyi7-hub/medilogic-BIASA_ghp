@@ -964,3 +964,44 @@ def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None, pbr_cac
         'est_assure_amu': est_assure,
         'a_cac': a_cac,
     }
+
+
+# ===================== Entente Préalable d'hospitalisation : jours demandés =====================
+def jours_demandes_ep(demande):
+    """⭐ 2026-10-24 : jours d'hospitalisation demandés à l'AMU, prolongations comprises — hospit_jours, sinon
+    le nombre écrit dans la durée probable des demandes plus anciennes (« 5 jours »). None si inconnu."""
+    if demande is None:
+        return None
+    if demande.hospit_jours:
+        return int(demande.hospit_jours)
+    if demande.definitive_le:
+        return None   # la durée écrite est devenue la durée réelle (nuitées)
+    m = re.search(r'\d+', demande.hospit_duree_sejour or '')
+    return int(m.group()) if m else None
+
+
+def echeance_ep_sejour(hospit, ep):
+    """⭐ 2026-10-24 (patron : « vous avez fait une demande de 5 jours, les 5 jours sont arrivés, c'est
+    aujourd'hui : soit vous le libérez, soit vous faites une demande de prolongation ») — pour un séjour en
+    cours : {'ep', 'jours', 'debut', 'echeance', 'retard'} (retard < 0 : pas encore atteint, 0 : c'est
+    aujourd'hui), None sans demande ou sans nombre de jours. Échéance = date d'admission + jours demandés
+    (5 jours à partir du 10 -> le 15, jour de sortie)."""
+    if not ep or hospit.statut != 'en_cours':
+        return None
+    jours = jours_demandes_ep(ep)
+    debut = ep.hospit_date_admission or hospit.date_entree
+    if not jours or not debut:
+        return None
+    echeance = debut + timedelta(days=jours)
+    return {'ep': ep, 'jours': jours, 'debut': debut, 'echeance': echeance, 'retard': (date.today() - echeance).days}
+
+
+def ep_obligatoire_sejour(hospit):
+    """Séjour qui doit avoir une Entente Préalable d'hospitalisation : patient AMU (assurance active), hors
+    mise en observation (patron, 2026-10-01) — même règle qu'à la clôture (api_sortie_hospitalisation)."""
+    return bool(
+        hospit.est_assure_amu and str(hospit.assurance_nom).lower().startswith('amu')
+        and hospit.chambre_categorie_amu != 'observation'
+        and 'observation' not in (deduire_categorie_salle(hospit.chambre_acte_nom),
+                                  deduire_categorie_salle(hospit.chambre_service))
+    )

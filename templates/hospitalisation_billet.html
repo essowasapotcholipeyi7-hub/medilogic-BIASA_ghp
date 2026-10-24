@@ -155,8 +155,8 @@
         </div>
 
         <div class="jours-box">
-            <div class="nombre">{{ hospit.nombre_jours }}</div>
-            <div class="label">jour{{ 's' if hospit.nombre_jours != 1 else '' }} d'hospitalisation</div>
+            <div class="nombre">{{ jours_billet }}</div>
+            <div class="label">jour{{ 's' if jours_billet != 1 else '' }} d'hospitalisation</div>
             <div class="periode">
                 <div class="item">
                     <div>Entrée</div>
@@ -164,12 +164,13 @@
                 </div>
                 <div class="item">
                     <div>Sortie</div>
-                    <div class="val">{{ hospit.date_sortie.strftime('%d/%m/%Y') if hospit.date_sortie else 'En cours' }}</div>
+                    {# ⭐ 2026-10-24 (patron) : plus « En cours » — date choisie ci-dessous, aujourd'hui par défaut #}
+                    <div class="val">{{ sortie_billet.strftime('%d/%m/%Y') }}</div>
                 </div>
             </div>
-            {% if hospit.dernier_jour_facture %}
+            {% if dernier_jour_billet %}
             <div style="text-align:center; font-size:11px; color:#666; margin-top:8px;">
-                (nuitées facturées du {{ hospit.date_entree.strftime('%d/%m/%Y') }} au {{ hospit.dernier_jour_facture.strftime('%d/%m/%Y') }} — la sortie elle-même n'est pas une nuitée)
+                (nuitées facturées du {{ hospit.date_entree.strftime('%d/%m/%Y') }} au {{ dernier_jour_billet.strftime('%d/%m/%Y') }} — la sortie elle-même n'est pas une nuitée)
             </div>
             {% endif %}
         </div>
@@ -213,8 +214,20 @@
         </div>
     </div>
 
+    {% if date_sortie_modifiable %}
+    <!-- ⭐ 2026-10-24 (patron) : séjour pas encore clôturé — on choisit la date de sortie ici, elle est gardée
+         pour la clôture (fenêtre « Clôturer le séjour »). -->
+    <div class="no-print" style="text-align:center;">
+        <label style="font-weight:600;">Date de sortie sur le billet :
+            <input type="date" id="dateSortieBillet" value="{{ sortie_billet.strftime('%Y-%m-%d') }}"
+                   min="{{ hospit.date_entree.strftime('%Y-%m-%d') if hospit.date_entree else '' }}"
+                   onchange="changerDateSortieBillet(this.value)" style="padding:4px 8px; margin-left:6px;">
+        </label>
+        <div style="font-size:12px; color:#666; margin-top:4px;">Séjour pas encore clôturé : cette date sera reprise à la clôture.</div>
+    </div>
+    {% endif %}
     <div class="no-print">
-        <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+        <button class="btn-print" onclick="garderDateSortieBillet().then(() => window.print())"><i class="fas fa-print"></i> Imprimer</button>
         <button class="btn-pdf" onclick="telechargerPDF()"><i class="fas fa-file-pdf"></i> PDF</button>
         {% if ep_liee %}
         <!-- ⭐ Patron : "cette demande [...] doit être accompagnée de billet
@@ -247,7 +260,29 @@
             pagebreak: { mode: 'avoid-all' }
         };
     }
-    function telechargerPDF() {
+    // ⭐ 2026-10-24 : date de sortie du billet (séjour pas encore clôturé), reprise à la clôture
+    const DATE_SORTIE_MODIFIABLE = {{ 'true' if date_sortie_modifiable else 'false' }};
+    let dateSortieEnregistree = {{ 'true' if hospit.date_sortie_billet else 'false' }};
+    async function enregistrerDateSortieBillet(valeur) {
+        try {
+            const r = await fetch('{{ url_for('api_date_sortie_billet', hospit_id=hospit.id) }}', {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({date_sortie: valeur})});
+            const d = await r.json();
+            if (!d.success) { alert(d.error || 'Erreur'); return false; }
+            dateSortieEnregistree = true;
+            return true;
+        } catch (e) { alert('Erreur réseau : ' + e); return false; }
+    }
+    async function changerDateSortieBillet(valeur) {
+        if (valeur && await enregistrerDateSortieBillet(valeur)) location.reload();
+    }
+    // la date imprimée / envoyée (aujourd'hui par défaut) est gardée pour la clôture
+    async function garderDateSortieBillet() {
+        const champ = document.getElementById('dateSortieBillet');
+        if (DATE_SORTIE_MODIFIABLE && !dateSortieEnregistree && champ && champ.value) await enregistrerDateSortieBillet(champ.value);
+    }
+    async function telechargerPDF() {
+        await garderDateSortieBillet();
         html2pdf().set(optionsPdfBillet()).from(document.getElementById('billetContenu')).save();
     }
 
@@ -261,15 +296,17 @@
         'assureur': 'INAM' if ep_liee.type_amu == 'amu_inam' else 'CNSS',
         'numero': whatsapp_depot.get(ep_liee.type_amu) or '',
         'definitive': ep_liee.definitive_le is not none,
+        'prolongation': ep_liee.prolongation_de_id is not none,
         'patient': hospit.patient_nom or '',
         'structure': structure_nom,
     }|tojson }};
-    function preparerEnvoiAmu() {
+    async function preparerEnvoiAmu() {
+        await garderDateSortieBillet();
         EnvoiAmu.ouvrir({
             titre: `Envoi à l'AMU-${ENVOI_EP.assureur} : EP + billet`,
             assureur: ENVOI_EP.assureur,
             numero: ENVOI_EP.numero,
-            message: `Bonjour, veuillez trouver ci-joint la demande d'Entente Préalable ${ENVOI_EP.definitive ? 'définitive ' : ''}d'hospitalisation AMU-${ENVOI_EP.assureur} de ${ENVOI_EP.patient} (${ENVOI_EP.structure}) et son billet d'hospitalisation. Merci.`,
+            message: `Bonjour, veuillez trouver ci-joint la demande d'Entente Préalable ${ENVOI_EP.definitive ? 'définitive ' : ''}${ENVOI_EP.prolongation ? 'de prolongation ' : ''}d'hospitalisation AMU-${ENVOI_EP.assureur} de ${ENVOI_EP.patient} (${ENVOI_EP.structure}) et son billet d'hospitalisation. Merci.`,
             fichiers: [
                 {libelle: ENVOI_EP.definitive ? "Demande définitive d'Entente Préalable" : "Demande d'Entente Préalable",
                  obtenir: () => EnvoiAmu.depuisUrl(ENVOI_EP.url_ep, 'EP_hospitalisation.pdf')},

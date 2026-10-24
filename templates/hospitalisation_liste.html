@@ -22,6 +22,22 @@
     — <a href="#" onclick="ouvrirNouveauSejour(); return false;">créer son séjour</a>
 </div>
 
+{# ⭐ 2026-10-24 (patron) : rappel quand les jours demandés à l'AMU sont atteints #}
+{% set _echus = [] %}
+{% for h in hospitalisations if h.id in echeances_ep and echeances_ep[h.id].retard >= 0 %}{% set _ = _echus.append(h) %}{% endfor %}
+{% if _echus %}
+<div class="alert alert-danger">
+    <i class="fas fa-bell me-1"></i> <strong>Rappel Entente Préalable :</strong> les jours d'hospitalisation demandés à
+    l'AMU sont atteints. Libérez le patient ou faites une demande de prolongation :
+    <ul class="mb-0 mt-1">
+        {% for h in _echus %}{% set e = echeances_ep[h.id] %}
+        <li><a href="{{ url_for('page_hospitalisation_suivi', hospit_id=h.id) }}"><span class="notranslate">{{ h.patient_nom }}</span></a>
+            — {{ e.jours }} jours demandés, {% if e.retard == 0 %}c'est aujourd'hui{% else %}atteints le {{ e.echeance.strftime('%d/%m/%Y') }}{% endif %}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
 <style>
 /* ⭐ Bootstrap donne à .nav-tabs .nav-link.active un fond CLAIR par défaut
    (pensé pour un en-tête clair) — sur ce card-header bg-dark, l'onglet
@@ -85,6 +101,11 @@
                                 <span class="badge bg-warning text-dark">Sorti — à facturer</span>
                             {% else %}
                                 <span class="badge bg-secondary">Facturé</span>
+                            {% endif %}
+                            {% if h.id in echeances_ep and echeances_ep[h.id].retard >= 0 %}
+                                <span class="badge bg-danger" title="Jours demandés à l'AMU atteints : libérer le patient ou demander une prolongation">EP : jours atteints</span>
+                            {% elif h.id in ep_manquantes %}
+                                <span class="badge bg-warning text-dark" title="Patient AMU : l'Entente Préalable d'hospitalisation n'a pas été faite">EP à faire</span>
                             {% endif %}
                         </td>
                         <td class="text-end">
@@ -317,7 +338,8 @@ async function creerSejour() {
     .then(r => r.json())
     .then(async data => {
         if (data.success) {
-            window.location.href = '/hospitalisation/' + data.hospitalisation_id;
+            // ⭐ 2026-10-24 (patron) : patient AMU -> on remplit tout de suite l'Entente Préalable, puis retour au séjour
+            window.location.href = data.ep_url || ('/hospitalisation/' + data.hospitalisation_id);
         } else {
             await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
             btn.disabled = false;

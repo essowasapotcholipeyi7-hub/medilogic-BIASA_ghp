@@ -103,6 +103,22 @@
         </button>
     </div>
     {% endif %}
+    {# ⭐ 2026-10-24 (patron) : arrivée obligatoire juste après l'ouverture du séjour, ou prolongation #}
+    {% if apres_sejour %}
+    <div class="alert alert-warning mb-3">
+        <i class="fas fa-bed me-2"></i><strong>Séjour enregistré.</strong> Le patient est assuré AMU : son hospitalisation
+        demande une <strong>Entente Préalable</strong>. Remplissez-la maintenant (patient, séjour et date d'admission sont
+        déjà remplis) : dès qu'elle est enregistrée, vous revenez au séjour.
+    </div>
+    {% endif %}
+    {% if prolongation %}
+    <div class="alert alert-primary mb-3">
+        <i class="fas fa-calendar-plus me-2"></i><strong>Demande de prolongation d'hospitalisation.</strong>
+        Demande du {{ prolongation.date_demande }} : <strong>{{ prolongation.jours_precedents }} jour{{ 's' if prolongation.jours_precedents > 1 }}</strong>
+        depuis l'admission du {{ prolongation.date_admission_affichee }}. Indiquez les jours à ajouter : la date d'admission
+        reste la même et la fiche sera marquée « PROLONGATION ».
+    </div>
+    {% endif %}
 
     <div class="ep-card">
         <h6><i class="fas fa-plus-circle me-1"></i>Nouvelle demande</h6>
@@ -256,8 +272,15 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label small">Durée probable du séjour</label>
-                            <input type="text" class="form-control" id="hospitDureeSejour" placeholder="Ex : 5 jours">
+                            <!-- ⭐ 2026-10-24 (patron) : un nombre de jours (et plus un texte libre) : à l'échéance,
+                                 rappel pour libérer le patient ou demander une prolongation -->
+                            <label class="form-label small" id="hospitJoursLabel" for="hospitJours">Nombre de jours demandés</label>
+                            <div class="input-group">
+                                <input type="number" min="1" step="1" class="form-control" id="hospitJours" placeholder="Ex : 5">
+                                <span class="input-group-text">jour(s)</span>
+                            </div>
+                            <div class="small text-muted mt-1" id="hospitJoursTotal" style="display:none;"></div>
+                            <input type="hidden" id="hospitDureeSejour">
                         </div>
                     </div>
                 </div>
@@ -344,6 +367,7 @@
                             {% if d.inclure_actes %}<span class="ep-badge-type">Actes</span>{% endif %}
                             {% if d.inclure_produits %}<span class="ep-badge-type">Produits</span>{% endif %}
                             {% if d.inclure_hospitalisation %}<span class="ep-badge-type">Hospit.</span>{% endif %}
+                            {% if d.prolongation_de_id %}<span class="badge bg-primary">Prolongation</span>{% endif %}
                         </td>
                         <td><span class="ep-badge-statut ep-badge-{{ d.statut }}">
                             {{ {'en_attente': 'En attente', 'approuvee': 'Approuvée', 'refusee': 'Refusée'}.get(d.statut, d.statut) }}
@@ -461,7 +485,11 @@ function revenirPageOrigine() {
     // l'onglet d'origine (panier intact). Sinon (onglet ouvert à la main,
     // fermeture refusée par le navigateur), on y navigue directement.
     if (window.opener && !window.opener.closed) {
-        try { window.opener.focus(); } catch (e) { /* onglet d'origine inaccessible */ }
+        try {
+            window.opener.focus();
+            // ⭐ 2026-10-24 : le séjour affiche tout de suite la nouvelle demande
+            if (RETOUR_URL.startsWith('/hospitalisation/') && window.opener.location.pathname === RETOUR_URL) window.opener.location.reload();
+        } catch (e) { /* onglet d'origine inaccessible */ }
         window.close();
     }
     setTimeout(function() { if (!window.closed && RETOUR_URL) location.href = RETOUR_URL; }, 300);
@@ -472,6 +500,24 @@ const HOSPITALISATION_ID_PREREMPLI = {{ hospitalisation_id_prerempli|tojson|safe
 const HOSPIT_DATE_ADMISSION_PREREMPLI = {{ hospit_date_admission_prerempli|tojson|safe if hospit_date_admission_prerempli else 'null' }};
 const DEMANDES_DETAIL = {{ demandes_detail|tojson|safe }};
 let demandeEnEditionId = null;
+// ⭐ 2026-10-24 (patron) : prolongation d'une demande d'hospitalisation (?prolongation_de=) — les jours saisis
+// s'ajoutent aux jours déjà demandés (5 + 10 = 15). En modification : {id, jours_precedents} de la demande.
+const PROLONGATION = {{ prolongation|tojson|safe if prolongation else 'null' }};
+let prolongationEnCours = PROLONGATION;
+function majTotalJours() {
+    const total = document.getElementById('hospitJoursTotal');
+    const label = document.getElementById('hospitJoursLabel');
+    if (!prolongationEnCours) {
+        total.style.display = 'none';
+        label.textContent = 'Nombre de jours demandés';
+        return;
+    }
+    label.textContent = 'Jours à ajouter (prolongation)';
+    const deja = prolongationEnCours.jours_precedents || 0;
+    const ajout = parseInt(document.getElementById('hospitJours').value, 10) || 0;
+    total.innerHTML = `${deja} jour(s) déjà demandé(s) + ${ajout} = <strong>${deja + ajout} jours</strong> depuis l'admission`;
+    total.style.display = '';
+}
 
 let patientChoisi = null;
 let lignesActes = [];
@@ -663,13 +709,14 @@ function voirDetails(id) {
     }
     if (d.inclure_hospitalisation) {
         const ecart = d.hospitalisation_date_entree && d.hospit_date_admission && d.hospitalisation_date_entree !== d.hospit_date_admission;
-        html += `<p class="mb-1"><strong>Hospitalisation</strong> ${d.definitive_le ? '<span class="badge bg-dark">Définitive</span>' : '<span class="badge bg-secondary">Pré-accord</span>'}</p>
+        html += `<p class="mb-1"><strong>Hospitalisation</strong> ${d.definitive_le ? '<span class="badge bg-dark">Définitive</span>' : '<span class="badge bg-secondary">Pré-accord</span>'} ${d.prolongation_de_id ? '<span class="badge bg-primary">Prolongation</span>' : ''}</p>
             <ul>
                 <li>Date d'admission (EP) : ${escapeHtml(d.hospit_date_admission) || '—'}</li>
                 ${d.hospitalisation_id ? `<li>Date d'entrée (séjour lié) : ${escapeHtml(d.hospitalisation_date_entree) || '—'}${d.hospitalisation_date_sortie ? ' · Date de sortie : ' + escapeHtml(d.hospitalisation_date_sortie) : ''}</li>` : ''}
                 <li>Motif : ${escapeHtml(d.hospit_motif) || '—'}</li>
                 <li>Catégorie de salle : ${d.hospit_categorie_salle === 'autre' ? ('Autre — ' + (escapeHtml(d.hospit_categorie_autre_precision) || 'non précisé')) : 'Cabine ventilée à 2 lits'}</li>
                 <li>Durée ${d.definitive_le ? 'réelle' : 'probable'} du séjour : ${escapeHtml(d.hospit_duree_sejour) || '—'}</li>
+                ${d.prolongation_de_id ? `<li>Prolongation : ${(d.hospit_jours || 0) - (d.jours_prolongation || 0)} jour(s) déjà demandé(s) + ${d.jours_prolongation || 0} = ${d.hospit_jours || 0} jours</li>` : ''}
             </ul>
             ${ecart ? `<p class="small text-danger"><i class="fas fa-exclamation-circle"></i> La date d'admission de l'EP ne correspond pas à la date d'entrée du séjour lié — vérifiez et ajustez si besoin.</p>` : ''}
             ${d.hospitalisation_id ? `<a class="btn btn-sm btn-outline-dark" href="/hospitalisation/${encodeURIComponent(d.hospitalisation_id)}/billet" target="_blank"><i class="fas fa-receipt"></i> Imprimer le billet d'hospitalisation</a>` : ''}`;
@@ -715,6 +762,12 @@ function modifierDemande(id) {
     document.getElementById(d.hospit_categorie_salle === 'autre' ? 'hospitCatAutre' : 'hospitCatVentilee').checked = true;
     document.getElementById('hospitCategorieAutrePrecision').value = d.hospit_categorie_autre_precision;
     toggleHospitAutre();
+    // ⭐ 2026-10-24 : jours demandés ; une prolongation garde la date d'admission de la première demande
+    prolongationEnCours = d.prolongation_de_id
+        ? {id: d.prolongation_de_id, jours_precedents: (d.hospit_jours || 0) - (d.jours_prolongation || 0)} : null;
+    document.getElementById('hospitJours').value = (d.prolongation_de_id ? d.jours_prolongation : d.hospit_jours) || '';
+    document.getElementById('hospitDateAdmission').readOnly = !!d.prolongation_de_id;
+    majTotalJours();
 
     const btn = document.querySelector('#formEp button[type="submit"]');
     btn.innerHTML = '<i class="fas fa-save me-1"></i>Mettre à jour la demande';
@@ -724,6 +777,9 @@ function modifierDemande(id) {
 
 function annulerEdition() {
     demandeEnEditionId = null;
+    prolongationEnCours = null;
+    document.getElementById('hospitDateAdmission').readOnly = false;
+    setTimeout(majTotalJours);
     document.getElementById('formEp').reset();
     patientChoisi = null;
     document.getElementById('patientId').value = '';
@@ -817,6 +873,11 @@ document.getElementById('formEp').addEventListener('submit', async function(e) {
     if (inclureHospitalisation && (!document.getElementById('hospitDateAdmission').value || !document.getElementById('hospitMotif').value)) {
         await afficherMessage("Renseignez la date d'admission et le motif d'hospitalisation."); return;
     }
+    if (inclureHospitalisation && !(parseInt(document.getElementById('hospitJours').value, 10) >= 1)) {
+        await afficherMessage(prolongationEnCours ? 'Indiquez le nombre de jours à ajouter.' : "Indiquez le nombre de jours d'hospitalisation demandés.");
+        document.getElementById('hospitJours').focus();
+        return;
+    }
 
     const url = demandeEnEditionId
         ? `/api/amu/entente-prealable/${demandeEnEditionId}/modifier`
@@ -840,6 +901,8 @@ document.getElementById('formEp').addEventListener('submit', async function(e) {
             hospit_categorie_salle: document.querySelector('input[name="hospitCategorie"]:checked').value,
             hospit_categorie_autre_precision: document.getElementById('hospitCategorieAutrePrecision').value,
             hospit_duree_sejour: document.getElementById('hospitDureeSejour').value,
+            hospit_jours: parseInt(document.getElementById('hospitJours').value, 10) || null,
+            prolongation_de_id: (!demandeEnEditionId && prolongationEnCours) ? prolongationEnCours.id : null,
         }),
     })
     .then(r => r.json())
@@ -849,6 +912,13 @@ document.getElementById('formEp').addEventListener('submit', async function(e) {
             // revenir tout de suite, l'EP devant de toute façon être approuvée
             // par un médecin avant impression.
             if (RETOUR_URL && !demandeEnEditionId) {
+                // ⭐ 2026-10-24 (patron : « quand il finit de remplir, ça le ramène dans l'hospitalisation »)
+                if (RETOUR_URL.startsWith('/hospitalisation/')) {
+                    await afficherMessage("Entente Préalable enregistrée. Elle doit être approuvée par un médecin avant impression.\n\nRetour au séjour.",
+                                          {type: 'success', titre: 'Demande enregistrée'});
+                    revenirPageOrigine();
+                    return;
+                }
                 const revenir = await demanderConfirmation(
                     "Entente Préalable enregistrée. Elle doit être approuvée par un médecin avant impression.\n\nRevenir à " + RETOUR_LIBELLE + " ?",
                     {type: 'success', titre: 'Demande enregistrée', texteOk: 'Revenir à ' + RETOUR_LIBELLE, texteAnnuler: 'Rester sur cette page'});
@@ -977,6 +1047,23 @@ if (HOSPITALISATION_ID_PREREMPLI) {
         document.getElementById('hospitDateAdmission').value = HOSPIT_DATE_ADMISSION_PREREMPLI;
     }
 }
+// ⭐ 2026-10-24 : prolongation — tout vient de la demande prolongée, il ne reste que les jours à ajouter
+if (PROLONGATION) {
+    document.getElementById('medecinId').value = PROLONGATION.medecin_id || '';
+    verifierSignatureMedecin();
+    document.getElementById('chkHospitalisation').checked = true;
+    toggleSection('Hospitalisation');
+    document.getElementById('hospitalisationId').value = PROLONGATION.hospitalisation_id || '';
+    document.getElementById('hospitDateAdmission').value = PROLONGATION.hospit_date_admission;
+    document.getElementById('hospitDateAdmission').readOnly = true;
+    document.getElementById('hospitMotif').value = PROLONGATION.hospit_motif;
+    document.getElementById(PROLONGATION.hospit_categorie_salle === 'autre' ? 'hospitCatAutre' : 'hospitCatVentilee').checked = true;
+    document.getElementById('hospitCategorieAutrePrecision').value = PROLONGATION.hospit_categorie_autre_precision;
+    toggleHospitAutre();
+    document.getElementById('hospitJours').focus();
+}
+document.getElementById('hospitJours').addEventListener('input', majTotalJours);
+majTotalJours();
 
 // ===================== HISTORIQUE : recherche + filtre par type =====================
 // ⭐ Patron, 2026-10-02 : "il faut bien ranger ces historiques acte à part,

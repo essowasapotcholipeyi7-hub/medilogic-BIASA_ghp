@@ -91,6 +91,51 @@
     </a>
 </div>
 
+{# ⭐ 2026-10-24 (patron) : Entente Préalable d'hospitalisation obligatoire, puis rappel quand les jours demandés
+   sont atteints : libérer le patient (à la date prévue) ou demander une prolongation #}
+{% if echeance_ep and echeance_ep.retard >= 0 %}
+<div class="alert alert-danger d-flex flex-wrap align-items-center gap-2" id="rappelEcheanceEp">
+    <div class="flex-grow-1">
+        <i class="fas fa-bell me-1"></i> <strong>Rappel Entente Préalable :</strong>
+        vous avez demandé <strong>{{ echeance_ep.jours }} jour{{ 's' if echeance_ep.jours > 1 }}</strong> d'hospitalisation
+        pour ce patient (admission le {{ echeance_ep.debut.strftime('%d/%m/%Y') }}).
+        {% if echeance_ep.retard == 0 %}
+        Les {{ echeance_ep.jours }} jours sont arrivés : <strong>c'est aujourd'hui</strong>.
+        {% else %}
+        Les {{ echeance_ep.jours }} jours sont arrivés le <strong>{{ echeance_ep.echeance.strftime('%d/%m/%Y') }}</strong>
+        ({{ echeance_ep.retard }} jour{{ 's' if echeance_ep.retard > 1 }} de plus).
+        {% endif %}
+        Soit vous libérez le patient, soit vous faites une demande de prolongation.
+    </div>
+    <button type="button" class="btn btn-sm btn-warning" onclick="ouvrirModalCloture('{{ echeance_ep.echeance.strftime('%Y-%m-%d') }}')">
+        <i class="fas fa-door-open me-1"></i> Libérer le patient
+    </button>
+    {% if a_acces('entente_prealable') %}
+    <a class="btn btn-sm btn-primary" href="{{ url_for('page_amu_entente_prealable', prolongation_de=echeance_ep.ep.id, retour=request.path) }}">
+        <i class="fas fa-calendar-plus me-1"></i> Demander une prolongation
+    </a>
+    {% endif %}
+</div>
+{% elif ep_manquante %}
+<div class="alert alert-warning d-flex flex-wrap align-items-center gap-2">
+    <div class="flex-grow-1">
+        <i class="fas fa-file-medical me-1"></i> <strong>Entente Préalable d'hospitalisation à faire :</strong>
+        le patient est assuré AMU, son hospitalisation doit avoir une Entente Préalable.
+        {% if not a_acces('entente_prealable') %}Demandez-la au secrétariat ou à la caisse.{% endif %}
+    </div>
+    {% if a_acces('entente_prealable') %}
+    <a class="btn btn-sm btn-warning" href="{{ url_for('page_amu_entente_prealable', patient_id=hospit.patient_id, hospit=1, hospitalisation_id=hospit.id, retour=request.path) }}">
+        <i class="fas fa-file-medical me-1"></i> Remplir l'Entente Préalable
+    </a>
+    {% endif %}
+</div>
+{% elif echeance_ep %}
+<div class="small text-muted mb-2">
+    <i class="fas fa-file-medical me-1"></i> Entente Préalable : {{ echeance_ep.jours }} jours demandés{% if echeance_ep.ep.prolongation_de_id %} (prolongation comprise){% endif %}
+    — échéance le {{ echeance_ep.echeance.strftime('%d/%m/%Y') }} (dans {{ -echeance_ep.retard }} jour{{ 's' if -echeance_ep.retard > 1 }}).
+</div>
+{% endif %}
+
 <div class="row g-3 mb-3">
     <div class="col-md-3">
         <div class="card text-center h-100">
@@ -123,6 +168,9 @@
             <div class="card-body">
                 <div class="text-muted small">Sortie</div>
                 <div class="fw-bold">{{ hospit.date_sortie.strftime('%d/%m/%Y') if hospit.date_sortie else 'En cours' }}</div>
+                {% if not hospit.date_sortie and hospit.date_sortie_billet %}
+                <div class="text-muted" style="font-size:11px;">sortie sur le billet : {{ hospit.date_sortie_billet.strftime('%d/%m/%Y') }}</div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -426,7 +474,12 @@
             <div class="modal-body">
                 <div class="mb-3">
                     <label class="form-label">Date de sortie</label>
-                    <input type="date" class="form-control" id="dateSortieInput" value="{{ hospit.date_sortie.strftime('%Y-%m-%d') if hospit.date_sortie else '' }}">
+                    {# ⭐ 2026-10-24 (patron) : la date choisie sur le billet revient ici par défaut #}
+                    {% set _sortie_defaut = hospit.date_sortie or hospit.date_sortie_billet %}
+                    <input type="date" class="form-control" id="dateSortieInput" value="{{ _sortie_defaut.strftime('%Y-%m-%d') if _sortie_defaut else '' }}">
+                    {% if not hospit.date_sortie and hospit.date_sortie_billet %}
+                    <div class="form-text">Date de sortie choisie sur le billet d'hospitalisation.</div>
+                    {% endif %}
                 </div>
 
                 <hr>
@@ -1260,9 +1313,14 @@ document.addEventListener('click', function(e) {
 let chambreChoisie = null;
 let debounceChambre = null;
 
-function ouvrirModalCloture() {
+function ouvrirModalCloture(dateSortie) {
     const modalEl = document.getElementById('modalCloture');
     if (!modalEl) return;
+    // ⭐ 2026-10-24 : « Libérer le patient » depuis le rappel -> sortie à la date des jours demandés
+    if (typeof dateSortie === 'string' && dateSortie) {
+        document.getElementById('dateSortieInput').value = dateSortie;
+        majNuiteesEpDefinitive();
+    }
     // ⭐ Préremplit avec le tarif de chambre déjà choisi pendant le séjour
     // (voir carte "Tarif de chambre" plus haut) — évite de le rechercher
     // deux fois ; reste modifiable ici si besoin de changer au moment de

@@ -2983,6 +2983,9 @@ class Hospitalisation(db.Model):
     patient_nom = db.Column(db.String(255), nullable=False)
     date_entree = db.Column(db.Date, nullable=False)
     date_sortie = db.Column(db.Date)  # NULL tant que le séjour est en cours
+    # ⭐ 2026-10-24 (patron) : date de sortie choisie sur le billet avant la clôture (le billet ne dit plus
+    # « En cours ») — reprise par défaut dans la fenêtre de clôture (migrate_ep_prolongation.py).
+    date_sortie_billet = db.Column(db.Date)
     # ⭐ chambre_service reste le texte affiché partout (dérivé automatiquement
     # de service > chambre > lit à la création si lit_id est fourni, saisi
     # à la main sinon — structure n'ayant pas encore configuré son
@@ -3665,6 +3668,12 @@ class DemandeEntentePrealable(db.Model):
     # probable). Pas de nouveau cycle d'approbation médecin pour ce passage
     # pré-accord -> définitive, seulement pour inclure_hospitalisation=True.
     definitive_le = db.Column(db.DateTime)
+    # ⭐ 2026-10-24 (patron) : jours d'hospitalisation demandés, prolongations comprises — à l'échéance, la
+    # machine rappelle : libérer le patient ou demander une prolongation. Une prolongation garde la date
+    # d'admission de la première demande et ajoute ses jours (5 + 10 = 15). migrate_ep_prolongation.py
+    hospit_jours = db.Column(db.Integer)
+    prolongation_de_id = db.Column(db.Integer)   # demande prolongée (même séjour)
+    jours_prolongation = db.Column(db.Integer)   # jours ajoutés par cette prolongation
 
 
 # ⭐⭐ TPC (Traitement des Pathologies Chroniques) — même logique que l'EP

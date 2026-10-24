@@ -338,6 +338,17 @@ CNSS_ZONE_MOIS = (409, 439)
 CNSS_ZONE_ANNEE = (457, 473)
 
 
+def mention_prolongation(demande):
+    """⭐ 2026-10-24 (patron : « cette entente préalable sera marquée entente préalable d'hospitalisation de
+    prolongation ») — écrite à côté du titre HOSPITALISATION, dans le blanc de la fiche. '' si ce n'est pas
+    une prolongation."""
+    if not getattr(demande, 'prolongation_de_id', None):
+        return ''
+    total = int(demande.hospit_jours or 0)
+    ajout = int(demande.jours_prolongation or 0)
+    return f"PROLONGATION : {total - ajout} j déjà demandés + {ajout} j = {total} jours"
+
+
 def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire, signature=None):
     """demande: DemandeEntentePrealable ; patient: Patient ; medecin: Medecin.
     Retourne les bytes du PDF (2 pages, page 2 = encart contact imprimé
@@ -387,6 +398,7 @@ def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire, signatu
                 _texte(c, h, 29, 615, demande.hospit_date_admission.strftime('%d/%m/%Y'), taille=FONT_SIZE_TABLE, largeur_max=45)
             _texte(c, h, 80, 615, demande.hospit_motif or '', taille=FONT_SIZE_TABLE, largeur_max=120)
             _texte(c, h, 327, 615, demande.hospit_duree_sejour or '', taille=FONT_SIZE_TABLE, largeur_max=50)
+            _texte(c, h, 172, 548, mention_prolongation(demande), largeur_max=385)
             if demande.hospit_categorie_salle == 'cabine_ventilee':
                 _coche(c, h, 230.2, 243.5, 645.5, 655.6)  # case "Oui"
             elif demande.hospit_categorie_salle == 'autre':
@@ -457,6 +469,7 @@ def remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire, signatu
                 _texte(c, h, 23, 648, demande.hospit_date_admission.strftime('%d/%m/%Y'), taille=FONT_SIZE_TABLE, largeur_max=72)
             _texte_cellule(c, h, 102, 648, demande.hospit_motif or '', 148, lignes_max=4, depuis_le_haut=True)
             _texte(c, h, 442, 648, demande.hospit_duree_sejour or '', taille=FONT_SIZE_TABLE, largeur_max=92)
+            _texte(c, h, 120, 582, mention_prolongation(demande), largeur_max=410)
             if demande.hospit_categorie_salle == 'cabine_ventilee':
                 _coche(c, h, 298.0, 308.3, 665.6, 676.0)  # case "Oui"
             elif demande.hospit_categorie_salle == 'autre':

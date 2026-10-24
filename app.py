@@ -1320,6 +1320,10 @@ def page_amu_entente_prealable():
             'hospit_categorie_salle': d.hospit_categorie_salle or 'cabine_ventilee',
             'hospit_categorie_autre_precision': d.hospit_categorie_autre_precision or '',
             'hospit_duree_sejour': d.hospit_duree_sejour or '',
+            # ⭐ 2026-10-24 : jours demandés (prolongations comprises) et prolongation
+            'hospit_jours': jours_demandes_ep(d) if d.inclure_hospitalisation else None,
+            'prolongation_de_id': d.prolongation_de_id,
+            'jours_prolongation': d.jours_prolongation,
             'cree_par_nom': d.cree_par_nom or '',
             'motif_refus': d.motif_refus or '',
             'hospitalisation_id': d.hospitalisation_id,
@@ -1346,6 +1350,33 @@ def page_amu_entente_prealable():
             patient_prerempli = {
                 'id': p.id, 'nom': p.nom, 'prenom': p.prenom, 'telephone': p.telephone,
                 'numero_assure': p.numero_assure, 'type_assurance': p.type_assurance,
+            }
+
+    # ⭐ 2026-10-24 (patron : « soit on libère le patient, soit on fait une demande de prolongation ») :
+    # ?prolongation_de=<id> -> demande de prolongation d'hospitalisation : même patient, même séjour, même
+    # date d'admission que la première demande ; il ne reste qu'à dire combien de jours on ajoute.
+    prolongation = None
+    prolongation_de = request.args.get('prolongation_de', type=int)
+    if prolongation_de:
+        ep_prec = DemandeEntentePrealable.query.filter_by(id=prolongation_de, structure_id=structure_id).first()
+        p = Patient.query.filter_by(id=ep_prec.patient_id, structure_id=structure_id).first() if ep_prec else None
+        if p and ep_prec.inclure_hospitalisation and ep_prec.statut != 'refusee':
+            p = dechiffrer_patients_orm([p])[0]
+            patient_prerempli = {
+                'id': p.id, 'nom': p.nom, 'prenom': p.prenom, 'telephone': p.telephone,
+                'numero_assure': p.numero_assure, 'type_assurance': ep_prec.type_amu,
+            }
+            prolongation = {
+                'id': ep_prec.id,
+                'medecin_id': ep_prec.medecin_id,
+                'hospitalisation_id': ep_prec.hospitalisation_id,
+                'hospit_date_admission': ep_prec.hospit_date_admission.strftime('%Y-%m-%d') if ep_prec.hospit_date_admission else '',
+                'date_admission_affichee': ep_prec.hospit_date_admission.strftime('%d/%m/%Y') if ep_prec.hospit_date_admission else '—',
+                'hospit_motif': ep_prec.hospit_motif or '',
+                'hospit_categorie_salle': ep_prec.hospit_categorie_salle or 'cabine_ventilee',
+                'hospit_categorie_autre_precision': ep_prec.hospit_categorie_autre_precision or '',
+                'jours_precedents': jours_demandes_ep(ep_prec) or 0,
+                'date_demande': ep_prec.created_at.strftime('%d/%m/%Y') if ep_prec.created_at else '',
             }
 
     # ⭐ 2026-10-22 (patron) : l'acte / le médicament sous EP qui a déclenché la demande depuis la vente
@@ -1406,6 +1437,9 @@ def page_amu_entente_prealable():
         lignes_prerempli=lignes_prerempli,
         hospitalisation_id_prerempli=hospitalisation_id_param,
         hospit_date_admission_prerempli=hospit_date_admission_prerempli,
+        prolongation=prolongation,
+        # ⭐ 2026-10-24 : on arrive ici juste après avoir ouvert le séjour (EP obligatoire, retour au séjour ensuite)
+        apres_sejour=request.args.get('apres_sejour') == '1',
     )
 
 
@@ -1454,7 +1488,7 @@ def api_amu_ep_patients():
     ]})
 
 
-def _valider_champs_ep(data, structure_id):
+def _valider_champs_ep(data, structure_id, demande_existante=None):
     """Validation partagée création/modification d'une Entente Préalable —
     retourne (champs: dict, None) si tout est valide, ou (None, (message,
     code_http)) sinon. Factorisé pour que api_amu_ep_creer() et
@@ -1500,6 +1534,8 @@ def _valider_champs_ep(data, structure_id):
         return None, ('Ajoutez au moins un produit', 400)
 
     hospit_date_admission = None
+    hospit_jours = jours_prolongation = ep_prolongee = None
+    hospit_duree_sejour = (data.get('hospit_duree_sejour') or '').strip() or None
     if inclure_hospitalisation:
         if not data.get('hospit_date_admission') or not data.get('hospit_motif') or not data.get('hospit_categorie_salle'):
             return None, ("Date d'admission, motif et catégorie de salle sont requis pour l'hospitalisation", 400)
@@ -1507,6 +1543,34 @@ def _valider_champs_ep(data, structure_id):
             hospit_date_admission = datetime.strptime(data.get('hospit_date_admission'), '%Y-%m-%d').date()
         except (TypeError, ValueError):
             return None, ("Date d'admission invalide", 400)
+        # ⭐ 2026-10-24 (patron) : nombre de jours demandés — sert au rappel quand ils sont atteints
+        try:
+            jours_saisis = int(data.get('hospit_jours') or 0)
+        except (TypeError, ValueError):
+            jours_saisis = 0
+        if jours_saisis < 1:
+            return None, ("Indiquez le nombre de jours d'hospitalisation demandés", 400)
+        hospit_jours = jours_saisis
+        # Prolongation : même séjour et même date d'admission que la demande prolongée, ses jours s'ajoutent
+        # aux jours déjà demandés (5 + 10 = 15).
+        if data.get('prolongation_de_id'):
+            ep_prolongee = DemandeEntentePrealable.query.filter_by(
+                id=data.get('prolongation_de_id'), structure_id=structure_id).first()
+            if (not ep_prolongee or not ep_prolongee.inclure_hospitalisation or ep_prolongee.statut == 'refusee'
+                    or ep_prolongee.patient_id != patient.id):
+                return None, ("La demande d'hospitalisation à prolonger est introuvable ou a été refusée", 400)
+            deja_prolongee = DemandeEntentePrealable.query.filter(
+                DemandeEntentePrealable.structure_id == structure_id,
+                DemandeEntentePrealable.prolongation_de_id == ep_prolongee.id,
+                DemandeEntentePrealable.statut != 'refusee',
+                DemandeEntentePrealable.id != (demande_existante.id if demande_existante else 0),
+            ).first()
+            if deja_prolongee:
+                return None, ("Cette demande a déjà une prolongation : prolongez la plus récente", 400)
+            jours_prolongation = jours_saisis
+            hospit_jours = (jours_demandes_ep(ep_prolongee) or 0) + jours_saisis
+            hospit_date_admission = ep_prolongee.hospit_date_admission or hospit_date_admission
+        hospit_duree_sejour = f"{hospit_jours} jour{'s' if hospit_jours > 1 else ''}"
 
     try:
         date_prescription = datetime.strptime(data.get('date_prescription'), '%Y-%m-%d').date()
@@ -1520,7 +1584,10 @@ def _valider_champs_ep(data, structure_id):
     # ne jamais lier une EP à l'hospitalisation d'un autre patient. Ignoré
     # silencieusement si invalide plutôt que de bloquer l'enregistrement.
     hospitalisation_id = None
-    if inclure_hospitalisation and data.get('hospitalisation_id'):
+    if ep_prolongee:
+        # la prolongation reste attachée au séjour de la demande prolongée
+        hospitalisation_id = ep_prolongee.hospitalisation_id
+    elif inclure_hospitalisation and data.get('hospitalisation_id'):
         h = Hospitalisation.query.filter_by(
             id=data.get('hospitalisation_id'), structure_id=structure_id, patient_id=patient.id
         ).first()
@@ -1560,7 +1627,10 @@ def _valider_champs_ep(data, structure_id):
         'hospit_motif': (data.get('hospit_motif') or '').strip() or None if inclure_hospitalisation else None,
         'hospit_categorie_salle': data.get('hospit_categorie_salle') if inclure_hospitalisation else None,
         'hospit_categorie_autre_precision': (data.get('hospit_categorie_autre_precision') or '').strip() or None if inclure_hospitalisation else None,
-        'hospit_duree_sejour': (data.get('hospit_duree_sejour') or '').strip() or None if inclure_hospitalisation else None,
+        'hospit_duree_sejour': hospit_duree_sejour if inclure_hospitalisation else None,
+        'hospit_jours': hospit_jours,
+        'prolongation_de_id': ep_prolongee.id if ep_prolongee else None,
+        'jours_prolongation': jours_prolongation,
         'hospitalisation_id': hospitalisation_id,
     }, None
 
@@ -1600,7 +1670,9 @@ def api_amu_ep_modifier(demande_id):
     if demande.statut != 'en_attente':
         return jsonify({'success': False, 'error': 'Seule une demande en attente peut être modifiée'}), 400
 
-    champs, erreur = _valider_champs_ep(request.json or {}, structure_id)
+    # ⭐ 2026-10-24 : une prolongation le reste (jamais choisie depuis le formulaire de modification)
+    champs, erreur = _valider_champs_ep(dict(request.json or {}, prolongation_de_id=demande.prolongation_de_id),
+                                        structure_id, demande_existante=demande)
     if erreur:
         return jsonify({'success': False, 'error': erreur[0]}), erreur[1]
     # ⭐ Le lien hospitalisation_id se pose automatiquement à la création
@@ -1760,7 +1832,7 @@ def page_amu_ep_imprimer(demande_id):
     demande.imprime_le = datetime.utcnow()
     db.session.commit()
     return Response(pdf_bytes, mimetype='application/pdf', headers={
-        'Content-Disposition': f'inline; filename="{nom_fichier_pdf_amu("EP_definitive" if demande.definitive_le else "EP", demande, patient)}"'
+        'Content-Disposition': f'inline; filename="{nom_fichier_pdf_amu("EP_definitive" if demande.definitive_le else "EP_prolongation" if demande.prolongation_de_id else "EP", demande, patient)}"'
     })
 
 
@@ -1830,6 +1902,52 @@ def _marquer_ep_definitive(demande, date_entree, date_sortie):
     demande.hospit_duree_sejour = f"{nb_nuitees} nuitée(s)"
     demande.definitive_le = datetime.utcnow()
     return nb_nuitees
+
+
+from services.hospitalisation_service import jours_demandes_ep, echeance_ep_sejour, ep_obligatoire_sejour
+
+
+def eps_hospit_par_sejour(structure_id, hospit_ids):
+    """Entente Préalable d'hospitalisation en vigueur de chaque séjour : la plus récente non refusée (une
+    prolongation prend la place de la demande qu'elle prolonge)."""
+    if not hospit_ids:
+        return {}
+    eps = DemandeEntentePrealable.query.filter(
+        DemandeEntentePrealable.structure_id == structure_id,
+        DemandeEntentePrealable.hospitalisation_id.in_(list(hospit_ids)),
+        DemandeEntentePrealable.inclure_hospitalisation == True,
+        DemandeEntentePrealable.statut != 'refusee',
+    ).order_by(DemandeEntentePrealable.created_at).all()
+    return {ep.hospitalisation_id: ep for ep in eps}   # la plus récente l'emporte
+
+
+def rappels_ep_hospitalisation(structure_id):
+    """Séjours en cours dont les jours demandés à l'AMU sont atteints (à libérer ou à prolonger)."""
+    en_cours = Hospitalisation.query.filter_by(structure_id=structure_id, statut='en_cours').all()
+    eps = eps_hospit_par_sejour(structure_id, [h.id for h in en_cours])
+    rappels = []
+    for h in en_cours:
+        e = echeance_ep_sejour(h, eps.get(h.id))
+        if e and e['retard'] >= 0:
+            rappels.append({
+                'hospitalisation_id': h.id, 'numero': h.numero_local or h.id, 'patient': h.patient_nom,
+                'jours': e['jours'], 'echeance': e['echeance'].strftime('%d/%m/%Y'), 'retard': e['retard'],
+                'url': url_for('page_hospitalisation_suivi', hospit_id=h.id),
+            })
+    return sorted(rappels, key=lambda r: -r['retard'])
+
+
+# Rôles qui suivent les séjours : ils reçoivent le rappel sur toutes les pages (base.html)
+ROLES_RAPPEL_EP_HOSPIT = ('admin', 'gestionnaire', 'medecin', 'secretaire', 'caissier', 'paramedical')
+
+
+@app.route('/api/hospitalisation/rappels-ep')
+@login_required
+def api_rappels_ep_hospitalisation():
+    """⭐ 2026-10-24 : rappel affiché sur toutes les pages (base.html, au plus toutes les 30 minutes)."""
+    if session.get('role') not in ROLES_RAPPEL_EP_HOSPIT and not session.get('is_admin'):
+        return jsonify({'success': True, 'rappels': []})
+    return jsonify({'success': True, 'rappels': rappels_ep_hospitalisation(session.get('structure_id'))})
 
 
 # ============================================================
@@ -22974,7 +23092,18 @@ def page_hospitalisation():
         .filter_by(structure_id=structure_id, actif=True)\
         .filter(db.or_(ServiceHospitalisation.hospitalisation.is_(None), ServiceHospitalisation.hospitalisation.is_(True)))\
         .first() is not None
-    return render_template('hospitalisation_liste.html', hospitalisations=hospitalisations, a_inventaire=a_inventaire)
+    # ⭐ 2026-10-24 (patron) : séjours AMU sans Entente Préalable, et séjours dont les jours demandés sont atteints
+    en_cours = [h for h in hospitalisations if h.statut == 'en_cours']
+    eps = eps_hospit_par_sejour(structure_id, [h.id for h in en_cours])
+    echeances_ep, ep_manquantes = {}, set()
+    for h in en_cours:
+        e = echeance_ep_sejour(h, eps.get(h.id))
+        if e:
+            echeances_ep[h.id] = e
+        elif h.id not in eps and ep_obligatoire_sejour(h):
+            ep_manquantes.add(h.id)
+    return render_template('hospitalisation_liste.html', hospitalisations=hospitalisations, a_inventaire=a_inventaire,
+                           echeances_ep=echeances_ep, ep_manquantes=ep_manquantes)
 
 
 @app.route('/api/hospitalisation', methods=['POST'])
@@ -23097,7 +23226,14 @@ def api_creer_hospitalisation():
             ep_a_lier.hospitalisation_id = hospit.id
             db.session.commit()
 
-        return jsonify({'success': True, 'hospitalisation_id': hospit.id, 'numero_local': numero_local})
+        # ⭐ 2026-10-24 (patron : « après l'enregistrement, ça doit le conduire directement dans l'entente
+        # préalable [...] quand il finit de remplir, ça le ramène dans l'hospitalisation ») — patient AMU sans
+        # EP déjà faite : on enchaîne sur le formulaire d'EP (patient, séjour et date d'admission remplis).
+        ep_url = None
+        if not ep_a_lier and ep_obligatoire_sejour(hospit) and a_acces('entente_prealable'):
+            ep_url = url_for('page_amu_entente_prealable', patient_id=patient.id, hospit=1, hospitalisation_id=hospit.id,
+                             retour=url_for('page_hospitalisation_suivi', hospit_id=hospit.id), apres_sejour=1)
+        return jsonify({'success': True, 'hospitalisation_id': hospit.id, 'numero_local': numero_local, 'ep_url': ep_url})
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur création hospitalisation: {e}")
@@ -23173,6 +23309,10 @@ def page_hospitalisation_suivi(hospit_id):
         ep_liee and ep_liee.hospit_date_admission and hospit.date_entree
         and ep_liee.hospit_date_admission != hospit.date_entree
     )
+    # ⭐ 2026-10-24 (patron) : demande en vigueur (prolongations comprises) et échéance des jours demandés
+    ep_active = eps_hospit_par_sejour(structure_id, [hospit.id]).get(hospit.id)
+    echeance_ep = echeance_ep_sejour(hospit, ep_active)
+    ep_manquante = hospit.statut == 'en_cours' and not ep_active and ep_obligatoire_sejour(hospit)
 
     # ⭐ Aperçu "part patient / part assurance" pendant le séjour (avant même
     # la clôture) — même calcul que la facturation finale
@@ -23290,6 +23430,7 @@ def page_hospitalisation_suivi(hospit_id):
                             soins_taux_liste=soins_taux_liste, type_sejour_liste='hospitalisation', id_sejour_liste=hospit.id,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
                             ep_liee=ep_liee, ep_date_ecart=ep_date_ecart,
+                            ep_active=ep_active, echeance_ep=echeance_ep, ep_manquante=ep_manquante,
                             ep_definitive_possible=bool(ep_liee and not _erreur_ep_definitive(ep_liee)),
                             repartition=repartition, ligne_chambre_projetee=ligne_chambre_projetee,
                             montant_pbr_defaut=montant_pbr_defaut, montant_pbr_alternatif=montant_pbr_alternatif,
@@ -24065,7 +24206,18 @@ def hospitalisation_billet(hospit_id):
         hospitalisation_id=hospit.id, structure_id=structure_id
     ).order_by(DemandeEntentePrealable.created_at.desc()).first()
 
+    # ⭐ 2026-10-24 (patron : « actuellement si on n'a pas clôturé et on clique sur le billet, ça sort en
+    # cours ») : séjour pas encore clôturé -> date de sortie choisie sur le billet (gardée pour la clôture),
+    # aujourd'hui par défaut ; séjour clôturé -> sa date de sortie, comme avant.
+    sortie_billet = hospit.date_sortie or hospit.date_sortie_billet or date.today()
+    if hospit.date_entree and sortie_billet < hospit.date_entree:
+        sortie_billet = hospit.date_entree
+    jours_billet = max((sortie_billet - hospit.date_entree).days, 0) if hospit.date_entree else 0
+
     return render_template('hospitalisation_billet.html', hospit=hospit, a_amu=a_amu, a_cac=a_cac,
+                            sortie_billet=sortie_billet, jours_billet=jours_billet,
+                            dernier_jour_billet=sortie_billet - timedelta(days=1) if jours_billet > 0 else None,
+                            date_sortie_modifiable=not hospit.date_sortie and hospit.statut == 'en_cours',
                             structure_nom=structure_info.get('nom', 'SSoftOneV10'),
                             structure_adresse=structure_info.get('adresse', ''),
                             structure_telephone=structure_info.get('telephone', ''),
@@ -24075,6 +24227,27 @@ def hospitalisation_billet(hospit_id):
                             nom_fichier_billet='Billet_hospitalisation_{}_{}.pdf'.format(
                                 _nom_pour_fichier(hospit.patient_nom) or f'patient{hospit.patient_id}',
                                 hospit.date_entree.strftime('%Y-%m-%d') if hospit.date_entree else hospit.id))
+
+
+@app.route('/api/hospitalisation/<int:hospit_id>/date_sortie_billet', methods=['POST'])
+@login_required
+def api_date_sortie_billet(hospit_id):
+    """⭐ 2026-10-24 (patron) : date de sortie choisie sur le billet d'un séjour pas encore clôturé — elle
+    revient par défaut dans la fenêtre de clôture. Ne clôture rien (lit, chambre, statut inchangés)."""
+    hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=session.get('structure_id')).first()
+    if not hospit:
+        return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
+    if hospit.date_sortie or hospit.statut != 'en_cours':
+        return jsonify({'success': False, 'error': 'Séjour déjà clôturé : la date de sortie est celle de la clôture'}), 400
+    try:
+        d = datetime.strptime((request.json or {}).get('date_sortie') or '', '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Date invalide'}), 400
+    if hospit.date_entree and d < hospit.date_entree:
+        return jsonify({'success': False, 'error': "La date de sortie ne peut pas précéder la date d'entrée"}), 400
+    hospit.date_sortie_billet = d
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @app.route('/hospitalisation/<int:hospit_id>/releve')
