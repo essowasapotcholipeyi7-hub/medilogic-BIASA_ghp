@@ -780,18 +780,27 @@ def lignes_sans_taux_liste(structure_id, articles, groupe_nom):
     return manquants
 
 
+# ⭐ 2026-10-24 (patron : « par défaut, il faut un arrondissement ») : toutes les structures arrondissent la part
+# patient à 50 F (comme la Clinique Valeo depuis le 19/10) — 280 995 -> 281 000. Sur chaque vente / proforma /
+# conversion, la case « arrondir » se décoche toujours.
+PAS_ARRONDI_DEFAUT = 50.0
+
+
 def pas_arrondi_structure(structure_id):
-    """Pas d'arrondi de la part patient réglé pour la structure (ex. 50 FCFA), 0 = pas d'arrondi.
-    Table parametrage_tarification (migrate_tarifs_listes_nuit.py) ; absente = 0."""
+    """Pas d'arrondi de la part patient de la structure : son réglage (table parametrage_tarification,
+    migrate_tarifs_listes_nuit.py ; 0 = la structure ne veut pas d'arrondi), sinon PAS_ARRONDI_DEFAUT (pas de
+    réglage, ou table absente comme sur la base BIASA)."""
     from models import db
     from sqlalchemy import text
     try:
         with db.session.begin_nested():
             r = db.session.execute(text("SELECT arrondi_pas FROM parametrage_tarification WHERE structure_id = :s"),
                                    {'s': structure_id}).fetchone()
-        return float(r[0]) if r and r[0] else 0.0
+        if r is None or r[0] is None:
+            return PAS_ARRONDI_DEFAUT
+        return float(r[0])
     except Exception:
-        return 0.0
+        return PAS_ARRONDI_DEFAUT
 
 
 def charger_prix_non_assure(structure_id, type_article='acte'):
