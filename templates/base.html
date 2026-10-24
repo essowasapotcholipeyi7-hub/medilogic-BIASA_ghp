@@ -2931,7 +2931,11 @@ async function appliquerPropositionTheme() {
         <!-- ⭐ Même répertoire que sidebar_menu.html ("Paramètres") — rien
              de déplacé, chaque lien existe déjà ailleurs, juste un accès
              rapide de plus. -->
-        {# ⭐ Visible pour tous (2026-10-10) : chacun y change son mot de passe et règle son thème. #}
+        {% endif %} {# fin restriction laborantin/radiologue #}
+
+        {# ⭐ Visible pour tous (2026-10-10) : chacun y change son mot de passe et règle son thème.
+           ⭐ 2026-10-24 (patron) : laboratoire, radiologie, RH et comptables compris — le menu était resté dans
+           le bloc qui leur est masqué ; chaque lien garde sa propre condition de rôle. #}
         {% set _parametres_visible_top = True %}
         {% if _parametres_visible_top and not _bloq %}
         <li class="nav-item nav-item-parametres">
@@ -3007,8 +3011,6 @@ async function appliquerPropositionTheme() {
             </div>
         </li>
         {% endif %}
-
-        {% endif %} {# fin restriction laborantin/radiologue #}
 
         <!-- ⭐ FAQ — visible à TOUS les rôles sans exception dans
              sidebar_menu.html (placé hors de toute restriction). "Guide

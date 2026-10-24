@@ -350,6 +350,11 @@
                      Radiologie...) : rien n'est déplacé ni retiré de sa
                      place habituelle, ceci n'est qu'un raccourci
                      supplémentaire qui les rassemble. -->
+                {% endif %} {# fin 2e restriction laborantin/radiologue (section ADMINISTRATION) #}
+
+                {# ⭐ 2026-10-24 (patron) : « Paramètres » ouvert aussi au laboratoire, à la radiologie, à la RH et aux
+                   comptables (mot de passe, thème ; modèles et signatures pour labo / radio) — chaque lien garde sa
+                   propre condition de rôle. #}
                 {% set _parametres_visible = True %}{# ⭐ Thème & apparence : ouvert à tous (2026-10-09) #}
                 {% if _parametres_visible %}
                 {% set _parametres_actif = request.endpoint in ['admin_structure', 'page_parametres_theme', 'page_changer_mot_de_passe', 'page_classification_actes', 'page_pbr_complementaires', 'sync_gestion_patients_config', 'page_modeles_resultats', 'page_signatures_intervenants', 'page_taux_part_medecin', 'page_catalogue', 'page_classification_services', 'page_rapport_recettes_service', 'page_services_structure', 'page_hospitalisation_configuration'] %}
@@ -390,8 +395,6 @@
                     {% endif %}
                 </div>
                 {% endif %}
-
-                {% endif %} {# fin 2e restriction laborantin/radiologue (section ADMINISTRATION) #}
 
                 <!-- ===== GUIDE D'UTILISATION (visible à tous les utilisateurs) ===== -->
                 <a class="nav-link {% if request.endpoint == 'guide_utilisation' %}active{% endif %}" href="{{ url_for('guide_utilisation') }}">
