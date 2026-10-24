@@ -1893,7 +1893,7 @@ function celluleCouvertureActes(item, index, ctx) {
     let html = '';
     if (ctx.amu && item.amu_inclus_hospit) {
         // ⭐ 2026-10-24 : patient AMU hospitalisé — injection / perfusion incluse dans le forfait P160
-        html += '<span class="badge bg-secondary" title="Hospitalisation ou mise en observation : leur prix couvre les injections et perfusions — l\'AMU ne prend pas cette ligne, elle reste au patient ou à son assurance complémentaire.">AMU : inclus (hospitalisation / observation)</span>' + '<br>';
+        html += '<span class="badge bg-secondary" style="cursor:help;" onclick="afficherMessage(this.title)" title="Hospitalisation ou mise en observation : leur prix couvre les injections et perfusions — l\'AMU ne prend pas cette ligne, elle reste au patient ou à son assurance complémentaire.">✗ AMU</span>' + '<br>';
     } else if (ctx.amu && item.amu_doublon) {
         // ⭐ même code AMU qu'une ligne au-dessus : l'AMU n'en prend qu'un par vente
         html += '<span class="badge bg-secondary" title="L\'AMU ne prend en charge qu\'un seul acte ' + (window.codeActeAMU ? codeActeAMU(item.nom) : '') + ' par vente : celui-ci reste au patient ou à son assurance complémentaire.">AMU : ' + (window.codeActeAMU ? codeActeAMU(item.nom) : '') + ' déjà compté</span><br>';
