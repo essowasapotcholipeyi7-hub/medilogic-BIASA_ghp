@@ -5287,6 +5287,7 @@ def facture(vente_id, type):
         cumul_categories = cumuler_articles_par_categorie(articles, classification_map)
 
     return render_template('facture_client.html',
+                         ecart_arrondi=_ecart_arrondi_vente(locals().get('v')),   # ⭐ 2026-10-24
                          vente_id=vente_id,
                          numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
@@ -5517,6 +5518,7 @@ def facture_structure(vente_id, type):
         cumul_categories = cumuler_articles_par_categorie(articles, classification_map)
 
     return render_template('facture_structure.html',
+                         ecart_arrondi=_ecart_arrondi_vente(locals().get('v')),   # ⭐ 2026-10-24
                          vente_id=vente_id,
                          numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
@@ -5823,6 +5825,17 @@ def recus_deux_a4(vente_id, type):
     reçu (/recu, /recu_structure avec demi_page=1), qui vérifie lui-même les droits
     sur la vente ; cette page ne fait que les assembler."""
     return _documents_deux_a4(vente_id, type, 'Reçu', 'recu', 'recu_structure')
+
+
+def _ecart_arrondi_vente(v):
+    """⭐ 2026-10-24 : écart d'arrondi de la part patient enregistré avec la vente (assurances['arrondi']['ecart'])."""
+    try:
+        a = v.get('assurances') if isinstance(v, dict) else None
+        if isinstance(a, str):
+            a = json.loads(a)
+        return float(((a or {}).get('arrondi') or {}).get('ecart') or 0)
+    except (ValueError, TypeError, AttributeError):
+        return 0.0
 
 
 @app.route('/factures_deux/<int:vente_id>/<string:type>')

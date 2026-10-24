@@ -880,7 +880,16 @@
                     {% set net_a_payer = (sous_total|default(proforma.sous_total)) - prise_en_charge - (prise_en_charge2|default(0)) - aide_hospitaliere %}
                     {% if net_a_payer < 0 %}{% set net_a_payer = 0 %}{% endif %}
                     {# ⭐ 2026-10-19 : part patient arrondie comme à l'enregistrement (3 696 -> 3 700) #}
+                    {% set _net_avant_arrondi = net_a_payer %}
                     {% if pas_arrondi and net_a_payer > 0 %}{% set net_a_payer = ((net_a_payer / pas_arrondi + 0.5000001)|int) * pas_arrondi %}{% endif %}
+                    {# ⭐ 2026-10-24 : l'arrondi se voit (traçable) #}
+                    {% set _ecart_arrondi = net_a_payer - _net_avant_arrondi %}
+                    {% if (_ecart_arrondi|round(0)|int) != 0 %}
+                    <div class="ligne">
+                        <span>Arrondi</span>
+                        <span>{{ '+' if _ecart_arrondi > 0 else '-' }} {{ _ecart_arrondi|abs|round(0)|int }} FCFA</span>
+                    </div>
+                    {% endif %}
                     <div class="ligne total">
                         <span>Net à payer</span>
                         <span>{{ net_a_payer|round(0)|int }} FCFA</span>

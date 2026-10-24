@@ -720,23 +720,33 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
                                           or item.get('prix_vente') or item.get('prix') or item.get('montant'))
                 totaux_par_compte[compte_produits] = totaux_par_compte.get(compte_produits, 0) + montant_item
 
+        # ⭐ 2026-10-24 (patron : « ce qu'on a arrondi doit être dans les écritures ») : part patient arrondie vers
+        # le HAUT (280 995 -> 281 000) : l'écart est crédité sur sa propre ligne « Arrondi de la part patient »
+        # (produits divers), plus noyé dans l'ajustement « Autres prestations » ci-dessous.
+        arrondi_haut = round(ecart_arrondi, 2) if ecart_arrondi > 0.005 else 0.0
+        total_ventes = total_debit - arrondi_haut
+
         if not totaux_par_compte:
             # Repli si la vente n'a aucun détail d'articles exploitable
             if vente.type in ('pharma', 'pharmacie'):
-                totaux_par_compte[COMPTE_VENTES_PHARMACIE] = total_debit
+                totaux_par_compte[COMPTE_VENTES_PHARMACIE] = total_ventes
             elif vente.type in ('lunettes', 'lunetterie', 'optique'):
-                totaux_par_compte[COMPTE_VENTES_LUNETTERIE] = total_debit
+                totaux_par_compte[COMPTE_VENTES_LUNETTERIE] = total_ventes
             else:
-                totaux_par_compte[COMPTE_AUTRES_PRESTATIONS] = total_debit
+                totaux_par_compte[COMPTE_AUTRES_PRESTATIONS] = total_ventes
 
         somme_items = sum(totaux_par_compte.values())
         if somme_items <= 0.5:
-            totaux_par_compte = {COMPTE_AUTRES_PRESTATIONS: total_debit}
-        elif abs(somme_items - total_debit) > 1:
+            totaux_par_compte = {COMPTE_AUTRES_PRESTATIONS: total_ventes}
+        elif abs(somme_items - total_ventes) > 1:
             # Ajustement d'arrondi sur "Autres prestations" pour garantir
             # l'équilibre de l'écriture sans bloquer la vente.
-            ecart = round(total_debit - somme_items, 2)
+            ecart = round(total_ventes - somme_items, 2)
             totaux_par_compte[COMPTE_AUTRES_PRESTATIONS] = totaux_par_compte.get(COMPTE_AUTRES_PRESTATIONS, 0) + ecart
+        if arrondi_haut:
+            lignes.append({'numero_compte': COMPTE_PRODUITS_DIVERS,
+                            'libelle': f"Arrondi de la part patient — {vente.patient_nom}",
+                            'credit': arrondi_haut})
 
         # ⭐ TVA collectée : les prix de l'appli sont TTC (confirmé) — chaque
         # montant TTC par catégorie de vente est donc éclaté en (part HT

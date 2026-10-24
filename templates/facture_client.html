@@ -511,6 +511,13 @@
     {% endif %}
     {% endif %}
     
+    {# ⭐ 2026-10-24 : part patient arrondie (ex. 280 995 -> 281 000), comme sur le reçu #}
+    {% if ecart_arrondi and (ecart_arrondi|round(0)|int) != 0 %}
+    <div style="display:flex; justify-content:space-between; color:#6c757d;">
+        <span>Arrondi :</span>
+        <span>{{ '+' if ecart_arrondi > 0 else '-' }} {{ ecart_arrondi|abs|round(0)|int }} FCFA</span>
+    </div>
+    {% endif %}
     <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; padding-top:8px; border-top:2px solid #ddd;">
         <span>NET À PAYER :</span>
         <span class="montant-net-a-payer" style="color:#dc3545;">{{ net_a_payer|default(0)|round(0)|int }} FCFA</span>

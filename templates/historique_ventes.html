@@ -1271,7 +1271,8 @@ async function voirDetailVente(venteId, type) {
             </div>
             <div class="col-md-3">
                 <h6><i class="fas fa-money-bill"></i> Net à payer</h6>
-                <p class="fw-bold">${Math.round(v.net_a_payer || 0).toLocaleString('fr-FR')} F</p>
+                <p class="fw-bold mb-0">${Math.round(v.net_a_payer || 0).toLocaleString('fr-FR')} F</p>
+                ${Math.round(ecartArrondiVente(v)) ? `<p class="small text-muted">dont arrondi ${texteArrondi(ecartArrondiVente(v))}</p>` : ''}
             </div>
             <div class="col-md-3">
                 <h6><i class="fas fa-hand-holding-usd"></i> Payé</h6>
@@ -1746,6 +1747,16 @@ function styleImpressionNB() {
 // quels que soient les filtres : le numéro d'un patient ne change pas d'une impression à l'autre). Un même
 // patient revenu dans la journée garde son numéro ; une vente sans patient enregistré a le sien.
 var NOM_STRUCTURE = {{ (session.get('structure_nom') or '')|tojson }};
+// ⭐ 2026-10-24 : écart d'arrondi de la part patient enregistré avec la vente (traçabilité)
+function ecartArrondiVente(v) {
+    var a = v && v.assurances;
+    if (typeof a === 'string') { try { a = JSON.parse(a); } catch (e) { a = null; } }
+    return Number(((a || {}).arrondi || {}).ecart || 0) || 0;
+}
+function texteArrondi(montant) {
+    var m = Math.round(montant);
+    return (m > 0 ? '+ ' : '− ') + Math.abs(m).toLocaleString('fr-FR') + ' F';
+}
 var _ordresDuJour = null;
 // ⭐ 2026-10-22 (patron) : à côté du nom du patient, « payé par Mixx by Yas » (Flooz, carte, chèque, virement…)
 // quand la vente n'est pas payée en espèces ; espèces (le cas par défaut) : rien.
@@ -1973,6 +1984,10 @@ async function imprimerHistorique() {
             '<tr><td>Part des patients (à payer par les patients)</td><td class="text-end">' + fmtR(partPatients) + '</td></tr>' +
             '<tr><td>&nbsp;&nbsp;Payé par les patients (encaissé)</td><td class="text-end">' + fmtR(payePatients) + '</td></tr>' +
             '<tr><td>&nbsp;&nbsp;Reste à payer par les patients</td><td class="text-end">' + fmtR(resteDuPatients) + '</td></tr>' +
+            (function () {   // ⭐ 2026-10-24 : arrondis de la part patient de la période (déjà compris dans la part des patients)
+                var arr = ventesFiltrees.reduce(function (s, v) { return s + ecartArrondiVente(v); }, 0);
+                return Math.round(arr) ? '<tr><td>&nbsp;&nbsp;dont écarts d\'arrondi de la part patient</td><td class="text-end">' + texteArrondi(arr) + '</td></tr>' : '';
+            })() +
             '<tr><td>Ce que les assurances doivent</td><td class="text-end">' + fmtR(duAssurances) + '</td></tr>' +
             '<tr class="ligne-ca" style="font-size:17px;"><td><strong>CHIFFRE D\'AFFAIRES' + (bilanDuJour ? ' DU JOUR' : ' DE LA PÉRIODE') + '</strong> (part des patients + assurances)</td><td class="text-end"><strong>' + fmtR(partPatients + duAssurances) + '</strong></td></tr>' +
             '</tbody></table></div>';
