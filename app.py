@@ -12921,10 +12921,14 @@ def api_add_acte_vente():
         # ⭐ 2026-10-23 (patron) : chambre P160 d'un assuré AMU découpée par période (1re semaine / 8e-14e jour /
         # 15 jours et plus) avec le PBR de la grille AMU, exactement comme au module d'hospitalisation — plus de
         # refus au-delà de 7 jours. Le refus ne reste que si la grille ne connaît pas cette chambre.
-        from services.hospitalisation_service import decouper_chambres_vente
+        from services.hospitalisation_service import decouper_chambres_vente, palier_chambre
         actes_data = decouper_chambres_vente(structure_id, actes_data, est_assure_amu_vente)
         for acte in actes_data:
             if acte.get('_chambre_decoupee'):
+                continue
+            # ⭐ 2026-10-24 : ligne « 15 jours et plus » (venue du module d'hospitalisation, déjà au palier dégressif) :
+            # ce palier n'a pas de limite de durée, ses jours au-delà de 7 sont normaux (proforma 110, structure 1)
+            if palier_chambre(acte.get('nom')) == 3:
                 continue
             erreur_p160 = erreur_p160_quantite_hors_hospitalisation(
                 acte.get('nom'), acte.get('quantite'), acte.get('prise_en_charge_amu', True), est_assure_amu_vente
@@ -22097,10 +22101,14 @@ def api_convertir_proforma():
         est_assure_amu_conversion = est_assure and str(assurance_nom).lower().startswith('amu') and taux_assurance > 0
         # ⭐ 2026-10-23 (patron) : chambre P160 découpée par période comme à l'hospitalisation (plus de refus
         # au-delà de 7 jours) ; la ligne prend le nom de sa période sur la vente (voir 'nom' plus bas)
-        from services.hospitalisation_service import decouper_chambres_vente
+        from services.hospitalisation_service import decouper_chambres_vente, palier_chambre
         articles = decouper_chambres_vente(structure_id, articles, est_assure_amu_conversion)
         for a in articles:
             if a.pop('_chambre_decoupee', None) or a.get('nom_periode'):
+                continue
+            # ⭐ 2026-10-24 : ligne « 15 jours et plus » (venue du module d'hospitalisation, déjà au palier dégressif) :
+            # ce palier n'a pas de limite de durée, ses jours au-delà de 7 sont normaux (proforma 110, structure 1)
+            if palier_chambre(a.get('nom')) == 3:
                 continue
             erreur_p160 = erreur_p160_quantite_hors_hospitalisation(
                 a.get('nom'), a.get('quantite'), a.get('prise_en_charge_amu', True), est_assure_amu_conversion

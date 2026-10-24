@@ -290,6 +290,13 @@ def est_assure_amu_nom(assurance_nom, taux):
     return str(assurance_nom or '').strip().lower().startswith('amu') and float(taux or 0) > 0
 
 
+def palier_chambre(nom):
+    """1 (première semaine), 2 (8e au 14e jour), 3 (15 jours et plus) ou None, d'après le nom de l'acte P160."""
+    if not nom or 'p160' not in str(nom).lower():
+        return None
+    return _decouper_suffixe(_normaliser(nom))[1]
+
+
 def est_chambre_p160(article):
     return 'P160' in str(article.get('nom') or '')
 
