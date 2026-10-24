@@ -567,3 +567,15 @@ def test_mise_en_observation_comme_le_p160():
     appliquer_code_amu_unique(panier)
     assert [a['nom'][:4] for a in panier if a.get('amu_inclus_hospit')] == ['P153']
     assert panier[0].get('prise_en_charge_amu', True) is not False      # la MEO elle-même reste à l'AMU
+
+
+def test_r418_marqueurs_hepatite_b_tous_pris_par_l_amu():
+    """⭐ 2026-10-24 (patron) : anticorps anti-HBe et anti-HBc (même code R418) dans le même panier -> l'AMU prend
+    les deux ; un autre code éclaté (Q436) reste limité à une ligne."""
+    from services.tarification_service import appliquer_code_amu_unique
+    articles = [{'nom': 'R418 Serologie de l’hepatite B : Anticorps anti-HBe', 'prise_en_charge_amu': True},
+                {'nom': 'R418 Serologie de l’hepatite B : Anticorps anti-HBc totaux', 'prise_en_charge_amu': True},
+                {'nom': 'Q436 Echo doppler arteriel', 'prise_en_charge_amu': True},
+                {'nom': 'Q436 Echo doppler veineux', 'prise_en_charge_amu': True}]
+    appliquer_code_amu_unique(articles)
+    assert [a['prise_en_charge_amu'] for a in articles] == [True, True, True, False]

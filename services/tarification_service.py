@@ -43,7 +43,9 @@ _CODE_ACTE = re.compile(r'\s*([A-Z]\d{3})\b')
 # (sous un AUTRE nom) passent « non prises en charge AMU » — le patient ou son
 # assurance complémentaire (taux / PBR privé) les couvrent. Le même acte sur deux lignes
 # reste couvert (comme une quantité 2). Chambre (P160) et lunettes jamais concernées.
-CODES_HORS_REGLE_UNIQUE = {'P160', 'D000293'}
+# ⭐ 2026-10-24 (patron) : R418 « autres marqueurs de l'hépatite B » couvre des analyses DIFFÉRENTES (anticorps anti-HBe,
+# anticorps anti-HBc...) qu'on peut demander ensemble : l'AMU les prend toutes, même dans le même panier.
+CODES_HORS_REGLE_UNIQUE = {'P160', 'D000293', 'R418'}
 
 # ⭐ 2026-10-24 (patron) : patient AMU hospitalisé — le forfait d'hospitalisation P160 couvre les soins
 # infirmiers : l'AMU ne prend pas en plus les injections IM / IV ni les perfusions. Ces lignes passent « non

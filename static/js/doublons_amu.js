@@ -8,8 +8,9 @@
 // serveur la réapplique de toute façon à l'enregistrement.
 (function () {
     var MOTIFS = [/^P160$/, /^D000293$/, /^S1[0-2][0-9]$/, /^S130$/, /^R[1-9][0-9]{2}$/, /^Q[1-5][0-9]{2}$/];
-    // codes jamais concernés : chambre (une ligne par type de chambre), lunettes
-    var EXCLUS = { P160: true, D000293: true };
+    // codes jamais concernés : chambre (une ligne par type de chambre), lunettes ; ⭐ 2026-10-24 : R418
+    // (anticorps anti-HBe, anti-HBc... : analyses différentes, toutes prises par l'AMU dans le même panier)
+    var EXCLUS = { P160: true, D000293: true, R418: true };
 
     function codeActeAMU(nom) {
         var premier = String(nom || '').trim().split(/\s+/)[0].toUpperCase();
