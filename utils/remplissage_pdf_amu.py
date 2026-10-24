@@ -120,7 +120,7 @@ def _nom_medecin(medecin):
         try:
             valeur = fonction()
             if valeur:
-                return str(valeur)
+                return ' '.join(str(valeur).split())
         except Exception:
             pass
     morceaux = [getattr(medecin, 'titre', None) or 'Dr', getattr(medecin, 'nom', None) or '', getattr(medecin, 'prenom', None) or '']
@@ -136,8 +136,17 @@ def _signature(c, hauteur, x0, x1, top0, top1, signature, nom_medecin=None):
     (preparer_image_signature), puis mise à l'échelle, proportions
     conservées, centrée dans la boîte [x0, x1] x [top0, top1] (tops mesurés
     depuis le haut de la page, comme _texte). Jamais bloquant : une image
-    illisible est ignorée plutôt que de faire échouer l'impression."""
+    illisible est ignorée plutôt que de faire échouer l'impression.
+    ⭐ 2026-10-24 (patron : EP INAM de la Clinique Orela « il n'y a pas son nom qui est sorti en bas ») : sans
+    signature enregistrée, le NOM du médecin s'écrit quand même en bas de la zone."""
+    def ecrire_nom():
+        if nom_medecin:
+            c.setFont(FONT, 8)
+            c.drawCentredString((x0 + x1) / 2, hauteur - top1 + 2, nom_medecin)
+            c.setFont(FONT, FONT_SIZE)
+
     if not signature:
+        ecrire_nom()
         return
     data = signature[0] if isinstance(signature, (tuple, list)) else signature
     prepare = preparer_image_signature(data)
@@ -145,8 +154,10 @@ def _signature(c, hauteur, x0, x1, top0, top1, signature, nom_medecin=None):
         image = ImageReader(io.BytesIO(prepare or data))
         largeur_img, hauteur_img = image.getSize()
     except Exception:
+        ecrire_nom()
         return
     if not largeur_img or not hauteur_img:
+        ecrire_nom()
         return
     boite_l, boite_h = x1 - x0, top1 - top0
     taille_nom = 8
@@ -157,10 +168,7 @@ def _signature(c, hauteur, x0, x1, top0, top1, signature, nom_medecin=None):
     x = x0 + (boite_l - l) / 2
     y = hauteur - top0 - zone_h + (zone_h - h_img) / 2
     c.drawImage(image, x, y, width=l, height=h_img, mask='auto')
-    if nom_medecin:
-        c.setFont(FONT, taille_nom)
-        c.drawCentredString((x0 + x1) / 2, hauteur - top1 + 2, nom_medecin)
-        c.setFont(FONT, FONT_SIZE)
+    ecrire_nom()
 
 
 def _ajuster_pour_largeur(valeur, largeur_max, taille_base):
@@ -481,7 +489,7 @@ def remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire, signatu
         # ~25 pt jusqu'au bord de la page — image à gauche, nom du médecin à sa droite.
         _signature(c, h, 318, 418, 753, 776, signature)
         nom = _nom_medecin(medecin)
-        if signature and nom:
+        if nom:   # ⭐ 2026-10-24 : même sans signature enregistrée
             _texte(c, h, 421, 767, nom, taille=8, largeur_max=130)
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
